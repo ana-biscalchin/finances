@@ -22,8 +22,12 @@ export function logger(req: Request, res: Response, next: NextFunction) {
     }
 
     try {
-      const responseBody = JSON.parse(body);
-      console.log('\nResponse Body:', JSON.stringify(responseBody, null, 2));
+      if (typeof body === 'string') {
+        const responseBody = JSON.parse(body);
+        console.log('\nResponse Body:', JSON.stringify(responseBody, null, 2));
+      } else {
+        console.log('\nResponse Body:', body);
+      }
     } catch (e) {
       console.log('\nResponse Body:', body);
     }
