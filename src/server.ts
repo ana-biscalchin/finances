@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { errorHandler } from './middlewares/errorHandler';
 import userRoutes from './routes/users';
-import accountRoutes from './routes/accounts';
+import createAccountsRouter from './routes/accounts';
 import logger from './config/logger';
 import { logger as requestLogger } from './middlewares/logger';
 
@@ -20,7 +20,7 @@ app.use(requestLogger);
 
 // Routes
 app.use('/api/v1/users', userRoutes);
-app.use('/api/v1/accounts', accountRoutes);
+app.use('/api/v1/accounts', createAccountsRouter());
 
 // Basic route
 app.get('/', (req, res) => {
