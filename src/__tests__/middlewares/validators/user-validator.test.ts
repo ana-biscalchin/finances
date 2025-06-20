@@ -38,7 +38,7 @@ describe('User Validator Middleware', () => {
       validateCreateUser(mockRequest as Request, mockResponse as Response, nextFunction);
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'Missing required fields' });
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'Required' });
       expect(nextFunction).not.toHaveBeenCalled();
     });
 
@@ -52,7 +52,7 @@ describe('User Validator Middleware', () => {
       validateCreateUser(mockRequest as Request, mockResponse as Response, nextFunction);
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'Invalid currency code' });
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'Currency code must be 3 uppercase letters' });
       expect(nextFunction).not.toHaveBeenCalled();
     });
   });
@@ -88,7 +88,7 @@ describe('User Validator Middleware', () => {
       validateUpdateUser(mockRequest as Request, mockResponse as Response, nextFunction);
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'Invalid currency code' });
+      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'Currency code must be 3 uppercase letters' });
       expect(nextFunction).not.toHaveBeenCalled();
     });
   });

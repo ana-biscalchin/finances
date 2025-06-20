@@ -1,0 +1,403 @@
+openapi: 3.0.0
+info:
+  title: Finances API
+  version: 1.0.0
+  description: API para cadastro e gerenciamento de usuários, contas e métodos de pagamento.
+servers:
+  - url: http://localhost:3000
+paths:
+  /users:
+    post:
+      summary: Cria um novo usuário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - default_currency
+              properties:
+                name:
+                  type: string
+                  example: Ana Silva
+                email:
+                  type: string
+                  example: ana@email.com
+                default_currency:
+                  type: string
+                  example: BRL
+      responses:
+        '201':
+          description: Usuário criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Dados inválidos
+        '409':
+          description: E-mail já cadastrado
+  /users/{id}:
+    get:
+      summary: Busca usuário por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Usuário encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: Usuário não encontrado
+    put:
+      summary: Atualiza um usuário
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                default_currency:
+                  type: string
+      responses:
+        '200':
+          description: Usuário atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: Usuário não encontrado
+    delete:
+      summary: Remove um usuário
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Usuário removido com sucesso
+        '404':
+          description: Usuário não encontrado
+  /accounts:
+    post:
+      summary: Cria uma nova conta
+      description: "Cria uma conta bancária. É obrigatório informar pelo menos um método de pagamento."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - institution_name
+                - initial_balance
+                - account_type
+                - payment_method_ids
+              properties:
+                user_id:
+                  type: string
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+                institution_name:
+                  type: string
+                  example: "Banco do Brasil"
+                initial_balance:
+                  type: number
+                  example: 1000.00
+                currency:
+                  type: string
+                  example: "BRL"
+                account_type:
+                  type: string
+                  enum: [checking, savings, investment, credit_card, payment_app, cash, other]
+                  example: "checking"
+                payment_method_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: "IDs dos métodos de pagamento aceitos pela conta (obrigatório)"
+                  example: ["789e0123-e89b-12d3-a456-426614174000", "890e1234-e89b-12d3-a456-426614174000"]
+                  minItems: 1
+      responses:
+        '201':
+          description: Conta criada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          description: Dados inválidos
+        '404':
+          description: Método de pagamento não encontrado
+  /accounts/{id}:
+    get:
+      summary: Busca conta por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Conta encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '404':
+          description: Conta não encontrada
+    put:
+      summary: Atualiza uma conta
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                institution_name:
+                  type: string
+                initial_balance:
+                  type: number
+                currency:
+                  type: string
+                account_type:
+                  type: string
+                  enum: [checking, savings, investment, credit_card, payment_app, cash, other]
+      responses:
+        '200':
+          description: Conta atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '404':
+          description: Conta não encontrada
+    delete:
+      summary: Remove uma conta
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Conta removida com sucesso
+        '404':
+          description: Conta não encontrada
+  /accounts/user/{userId}:
+    get:
+      summary: Busca contas por usuário
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contas encontradas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Account'
+        '404':
+          description: Nenhuma conta encontrada
+  /accounts/payment-methods:
+    get:
+      summary: Lista todos os métodos de pagamento disponíveis
+      description: "Retorna a lista de métodos de pagamento pré-definidos no sistema"
+      responses:
+        '200':
+          description: Lista de métodos de pagamento
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentMethod'
+  /accounts/payment-methods/{id}:
+    get:
+      summary: Busca método de pagamento por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Método de pagamento encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentMethod'
+        '404':
+          description: Método de pagamento não encontrado
+  /accounts/{accountId}/payment-methods:
+    post:
+      summary: Associa um método de pagamento a uma conta existente
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - payment_method_id
+              properties:
+                payment_method_id:
+                  type: string
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '201':
+          description: Método de pagamento associado com sucesso
+        '400':
+          description: Dados inválidos
+        '404':
+          description: Conta ou método de pagamento não encontrado
+    get:
+      summary: Lista métodos de pagamento de uma conta
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de métodos de pagamento da conta
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentMethod'
+        '404':
+          description: Conta não encontrada
+  /accounts/{accountId}/payment-methods/{paymentMethodId}:
+    delete:
+      summary: Remove associação entre conta e método de pagamento
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: paymentMethodId
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Associação removida com sucesso
+        '404':
+          description: Associação não encontrada
+  /accounts/payment-methods/{paymentMethodId}/accounts:
+    get:
+      summary: Lista contas que usam um método de pagamento
+      parameters:
+        - in: path
+          name: paymentMethodId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de contas que usam o método de pagamento
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Account'
+        '404':
+          description: Método de pagamento não encontrado
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        default_currency:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Account:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        institution_name:
+          type: string
+        initial_balance:
+          type: number
+        currency:
+          type: string
+        account_type:
+          type: string
+          enum: [checking, savings, investment, credit_card, payment_app, cash, other]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PaymentMethod:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string 

@@ -2,6 +2,18 @@ import fs from 'fs';
 import path from 'path';
 import pool from '../config/database';
 
+function splitSqlCommands(sql: string): string[] {
+  // Remove comments and split by semicolon
+  const commands = sql
+    .replace(/--.*$/gm, '') // Remove line comments
+    .replace(/\/\*[\s\S]*?\*\//g, '') // Remove block comments
+    .split(';')
+    .map(cmd => cmd.trim())
+    .filter(cmd => cmd.length > 0);
+  
+  return commands;
+}
+
 async function runMigrations() {
   const migrationsDir = path.join(__dirname, 'migrations');
   const files = fs.readdirSync(migrationsDir)
@@ -32,10 +44,18 @@ async function runMigrations() {
         console.log(`Running migration: ${file}`);
         
         const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+        const commands = splitSqlCommands(sql);
+        
         await connection.beginTransaction();
 
         try {
-          await connection.query(sql);
+          // Execute each SQL command separately
+          for (const command of commands) {
+            if (command.trim()) {
+              await connection.query(command);
+            }
+          }
+          
           await connection.execute(
             'INSERT INTO migrations (name, executed_at) VALUES (?, ?)',
             [file, new Date()]

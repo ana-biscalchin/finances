@@ -17,6 +17,16 @@ router.post('/', validateCreateUser, async (req, res, next) => {
   }
 });
 
+// Get all users
+router.get('/', async (req, res, next) => {
+  try {
+    const users = await userService.getAllUsers();
+    res.json(users);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get user by ID
 router.get('/:id', async (req, res, next) => {
   try {

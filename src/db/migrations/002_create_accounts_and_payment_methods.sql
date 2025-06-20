@@ -1,12 +1,3 @@
-CREATE TABLE IF NOT EXISTS users (
-  id CHAR(36) PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  email VARCHAR(255) NOT NULL UNIQUE,
-  default_currency VARCHAR(3) NOT NULL,
-  created_at DATETIME NOT NULL,
-  updated_at DATETIME NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS accounts (
   id CHAR(36) PRIMARY KEY,
   user_id CHAR(36) NOT NULL,
@@ -19,10 +10,15 @@ CREATE TABLE IF NOT EXISTS accounts (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
-CREATE TABLE IF NOT EXISTS categories (
+CREATE TABLE IF NOT EXISTS payment_methods (
   id CHAR(36) PRIMARY KEY,
-  user_id CHAR(36) NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  type ENUM('income', 'expense') NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users(id)
+  name VARCHAR(255) NOT NULL UNIQUE
 );
+
+CREATE TABLE IF NOT EXISTS account_payment_methods (
+  account_id CHAR(36) NOT NULL,
+  payment_method_id CHAR(36) NOT NULL,
+  PRIMARY KEY (account_id, payment_method_id),
+  FOREIGN KEY (account_id) REFERENCES accounts(id),
+  FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)
+); 
