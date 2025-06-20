@@ -48,7 +48,6 @@ export const PaymentMethodSchemas = {
 
 export const AccountPaymentMethodSchemas = {
   create: z.object({
-    account_id: z.string().min(1, 'Account ID is required'),
     payment_method_id: z.string().min(1, 'Payment method ID is required')
   })
 }; 
