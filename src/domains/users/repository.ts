@@ -20,6 +20,11 @@ export class UserRepository {
     return user;
   }
 
+  async findAll(): Promise<User[]> {
+    const [rows] = await pool.execute('SELECT * FROM users');
+    return rows as User[];
+  }
+
   async findById(id: string): Promise<User | null> {
     const [rows] = await pool.execute(
       'SELECT * FROM users WHERE id = ?',

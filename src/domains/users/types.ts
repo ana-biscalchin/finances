@@ -1,3 +1,6 @@
+import { z } from 'zod';
+import { UserSchemas } from '../../schemas/validation-schemas';
+
 export interface User {
   id: string;
   name: string;
@@ -7,14 +10,5 @@ export interface User {
   updated_at: Date;
 }
 
-export interface CreateUserDTO {
-  name: string;
-  email: string;
-  default_currency: string;
-}
-
-export interface UpdateUserDTO {
-  name?: string;
-  email?: string;
-  default_currency?: string;
-} 
+export type CreateUserDTO = z.infer<typeof UserSchemas.create>;
+export type UpdateUserDTO = z.infer<typeof UserSchemas.update>; 
