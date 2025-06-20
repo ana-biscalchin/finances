@@ -19,7 +19,7 @@ export const AccountSchemas = {
     user_id: z.string().min(1, 'User ID is required'),
     institution_name: z.string().min(1, 'Institution name is required'),
     initial_balance: z.number({ invalid_type_error: 'Initial balance must be a number' }),
-    currency: z.string().regex(/^[A-Z]{3}$/, 'Currency code must be 3 uppercase letters').optional(),
+    currency: z.string().regex(/^[A-Z]{3}$/, 'Currency code must be 3 uppercase letters'),
     account_type: z.enum(['checking', 'savings', 'investment', 'credit_card', 'payment_app', 'cash', 'other'], {
       errorMap: () => ({ message: 'Invalid account type' })
     }),
