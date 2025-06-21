@@ -60,42 +60,4 @@ export class PaymentMethodRepository {
         );
         return (result as any).affectedRows > 0;
     }
-
-    async associateWithAccount(accountId: string, paymentMethodId: string): Promise<void> {
-        await pool.execute(
-            'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES (?, ?)',
-            [accountId, paymentMethodId]
-        );
-    }
-
-    async disassociateFromAccount(accountId: string, paymentMethodId: string): Promise<boolean> {
-        const [result] = await pool.execute(
-            'DELETE FROM account_payment_methods WHERE account_id = ? AND payment_method_id = ?',
-            [accountId, paymentMethodId]
-        );
-        return (result as any).affectedRows > 0;
-    }
-
-    async getPaymentMethodsByAccountId(accountId: string): Promise<PaymentMethod[]> {
-        const [rows] = await pool.execute(
-            `SELECT pm.* 
-             FROM payment_methods pm
-             JOIN account_payment_methods apm ON pm.id = apm.payment_method_id
-             WHERE apm.account_id = ?
-             ORDER BY pm.name`,
-            [accountId]
-        );
-        return rows as PaymentMethod[];
-    }
-
-    async getAccountsByPaymentMethodId(paymentMethodId: string): Promise<any[]> {
-        const [rows] = await pool.execute(
-            `SELECT a.* 
-             FROM accounts a
-             JOIN account_payment_methods apm ON a.id = apm.account_id
-             WHERE apm.payment_method_id = ?`,
-            [paymentMethodId]
-        );
-        return rows as any[];
-    }
 } 

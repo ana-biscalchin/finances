@@ -1,17 +1,17 @@
-jest.mock('../../../config/database', () => ({
-  __esModule: true,
-  default: require('../../__mocks__/database').default,
-}));
-
 import { PaymentMethodRepository } from '../../../domains/accounts/payment-method-repository';
-import { PaymentMethod } from '../../../domains/accounts/types';
-import mockPool from '../../__mocks__/database';
+import pool from '../../../config/database';
+
+jest.mock('../../../config/database');
+
+const mockPool = pool as jest.Mocked<typeof pool>;
 
 describe('PaymentMethodRepository', () => {
   let repository: PaymentMethodRepository;
-  const mockPaymentMethod: PaymentMethod = {
+  const mockPaymentMethod = {
     id: '123',
     name: 'Credit Card',
+    created_at: new Date(),
+    updated_at: new Date(),
   };
 
   beforeEach(() => {
@@ -20,7 +20,7 @@ describe('PaymentMethodRepository', () => {
   });
 
   describe('create', () => {
-    it('should create a payment method successfully', async () => {
+    it('should create payment method successfully', async () => {
       const mockExecute = mockPool.execute as jest.Mock;
       mockExecute
         .mockResolvedValueOnce([{ affectedRows: 1 }])
@@ -30,7 +30,7 @@ describe('PaymentMethodRepository', () => {
 
       expect(mockExecute).toHaveBeenCalledWith(
         'INSERT INTO payment_methods (id, name) VALUES (?, ?)',
-        expect.arrayContaining([expect.any(String), 'Credit Card'])
+        [expect.any(String), 'Credit Card']
       );
       expect(result).toEqual(mockPaymentMethod);
     });
@@ -48,7 +48,7 @@ describe('PaymentMethodRepository', () => {
   });
 
   describe('findById', () => {
-    it('should return payment method when found', async () => {
+    it('should return payment method when found by id', async () => {
       const mockExecute = mockPool.execute as jest.Mock;
       mockExecute.mockResolvedValueOnce([[mockPaymentMethod]]);
 
@@ -61,7 +61,7 @@ describe('PaymentMethodRepository', () => {
       expect(result).toEqual(mockPaymentMethod);
     });
 
-    it('should return null when payment method not found', async () => {
+    it('should return null when payment method not found by id', async () => {
       const mockExecute = mockPool.execute as jest.Mock;
       mockExecute.mockResolvedValueOnce([[]]);
 
@@ -164,107 +164,6 @@ describe('PaymentMethodRepository', () => {
       const result = await repository.delete('123');
 
       expect(result).toBe(false);
-    });
-  });
-
-  describe('associateWithAccount', () => {
-    it('should associate payment method with account successfully', async () => {
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute.mockResolvedValueOnce([{ affectedRows: 1 }]);
-
-      await repository.associateWithAccount('account123', 'payment123');
-
-      expect(mockExecute).toHaveBeenCalledWith(
-        'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES (?, ?)',
-        ['account123', 'payment123']
-      );
-    });
-  });
-
-  describe('disassociateFromAccount', () => {
-    it('should disassociate payment method from account successfully', async () => {
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute.mockResolvedValueOnce([{ affectedRows: 1 }]);
-
-      const result = await repository.disassociateFromAccount('account123', 'payment123');
-
-      expect(mockExecute).toHaveBeenCalledWith(
-        'DELETE FROM account_payment_methods WHERE account_id = ? AND payment_method_id = ?',
-        ['account123', 'payment123']
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should return false when association not found', async () => {
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute.mockResolvedValueOnce([{ affectedRows: 0 }]);
-
-      const result = await repository.disassociateFromAccount('account123', 'payment123');
-
-      expect(result).toBe(false);
-    });
-  });
-
-  describe('getPaymentMethodsByAccountId', () => {
-    it('should return payment methods for account', async () => {
-      const mockPaymentMethods = [
-        { id: '1', name: 'Credit Card' },
-        { id: '2', name: 'Debit Card' },
-      ];
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute.mockResolvedValueOnce([mockPaymentMethods]);
-
-      const result = await repository.getPaymentMethodsByAccountId('account123');
-
-      expect(mockExecute).toHaveBeenCalledWith(
-        `SELECT pm.* 
-             FROM payment_methods pm
-             JOIN account_payment_methods apm ON pm.id = apm.payment_method_id
-             WHERE apm.account_id = ?
-             ORDER BY pm.name`,
-        ['account123']
-      );
-      expect(result).toEqual(mockPaymentMethods);
-    });
-
-    it('should return empty array when account has no payment methods', async () => {
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute.mockResolvedValueOnce([[]]);
-
-      const result = await repository.getPaymentMethodsByAccountId('account123');
-
-      expect(result).toEqual([]);
-    });
-  });
-
-  describe('getAccountsByPaymentMethodId', () => {
-    it('should return accounts for payment method', async () => {
-      const mockAccounts = [
-        { id: '1', user_id: 'user1', institution_name: 'Bank A' },
-        { id: '2', user_id: 'user2', institution_name: 'Bank B' },
-      ];
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute.mockResolvedValueOnce([mockAccounts]);
-
-      const result = await repository.getAccountsByPaymentMethodId('payment123');
-
-      expect(mockExecute).toHaveBeenCalledWith(
-        `SELECT a.* 
-             FROM accounts a
-             JOIN account_payment_methods apm ON a.id = apm.account_id
-             WHERE apm.payment_method_id = ?`,
-        ['payment123']
-      );
-      expect(result).toEqual(mockAccounts);
-    });
-
-    it('should return empty array when payment method has no accounts', async () => {
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute.mockResolvedValueOnce([[]]);
-
-      const result = await repository.getAccountsByPaymentMethodId('payment123');
-
-      expect(result).toEqual([]);
     });
   });
 }); 

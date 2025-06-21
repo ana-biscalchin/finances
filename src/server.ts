@@ -1,11 +1,15 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import swaggerUi from 'swagger-ui-express';
 import { errorHandler } from './middlewares/errorHandler';
 import userRoutes from './routes/users';
 import createAccountsRouter from './routes/accounts';
+import createTransactionsRouter from './routes/transactions';
+import createCategoriesRouter from './routes/categories';
 import logger from './config/logger';
 import { logger as requestLogger } from './middlewares/logger';
+import swaggerSpec from '../docs/swagger.json';
 
 // Load environment variables
 dotenv.config();
@@ -18,14 +22,26 @@ app.use(cors());
 app.use(express.json());
 app.use(requestLogger);
 
-// Routes
+// API Documentation Route
+app.use('/api-docs', swaggerUi.serve as any);
+app.get('/api-docs', swaggerUi.setup(swaggerSpec) as any);
+
+// Export Swagger JSON
+app.get('/swagger.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
+// Application Routes
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/accounts', createAccountsRouter());
+app.use('/api/v1/transactions', createTransactionsRouter());
+app.use('/api/v1/categories', createCategoriesRouter());
 
 // Basic route
 app.get('/', (req, res) => {
   logger.info('Root route accessed');
-  res.json({ message: 'Welcome to the Finances API' });
+  res.json({ message: 'Bem-vindo à API de Finanças! Acesse /api-docs para ver a documentação.' });
 });
 
 // Error handling
@@ -33,5 +49,6 @@ app.use(errorHandler);
 
 // Start server
 app.listen(port, () => {
-  logger.info(`Server is running on port ${port}`);
+  logger.info(`Servidor rodando na porta ${port}`);
+  logger.info(`Documentação da API disponível em http://localhost:${port}/api-docs`);
 }); 

@@ -1,0 +1,1827 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Finances API",
+    "version": "1.0.0",
+    "description": "API para gerenciamento financeiro pessoal, com controle de contas, transações e categorias."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000/api/v1",
+      "description": "Servidor de Desenvolvimento"
+    }
+  ],
+  "paths": {
+    "/accounts/payment-methods": {
+      "get": {
+        "summary": "List all available payment methods",
+        "tags": [
+          "Accounts"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of payment methods",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PaymentMethod"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new payment method",
+        "tags": [
+          "Accounts"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Payment method name",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "example": {
+                  "name": "Credit Card"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Payment method created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentMethod"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "409": {
+            "description": "Payment method already exists"
+          }
+        }
+      }
+    },
+    "/accounts/payment-methods/{id}": {
+      "put": {
+        "summary": "Update an existing payment method",
+        "tags": [
+          "Accounts"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Payment method ID to update"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Payment method name",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "example": {
+                  "name": "Updated Credit Card"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment method updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentMethod"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "404": {
+            "description": "Payment method not found"
+          },
+          "409": {
+            "description": "Payment method name already exists"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a payment method",
+        "tags": [
+          "Accounts"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Payment method ID to delete"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Payment method deleted successfully"
+          },
+          "404": {
+            "description": "Payment method not found"
+          }
+        }
+      }
+    },
+    "/accounts/{accountId}/payment-methods": {
+      "post": {
+        "summary": "Associate a payment method with an account",
+        "tags": [
+          "Accounts"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Account ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "payment_method_id"
+                ],
+                "properties": {
+                  "payment_method_id": {
+                    "type": "string",
+                    "description": "Payment method ID to associate",
+                    "minLength": 1
+                  }
+                },
+                "example": {
+                  "payment_method_id": "payment123"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Payment method associated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Payment method associated successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "404": {
+            "description": "Account or payment method not found"
+          },
+          "409": {
+            "description": "Payment method already associated with this account"
+          }
+        }
+      },
+      "get": {
+        "summary": "Get payment methods associated with an account",
+        "tags": [
+          "Accounts"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Account ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of associated payment methods",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PaymentMethod"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found"
+          }
+        }
+      }
+    },
+    "/accounts/{accountId}/payment-methods/{paymentMethodId}": {
+      "delete": {
+        "summary": "Disassociate a payment method from an account",
+        "tags": [
+          "Accounts"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Account ID"
+          },
+          {
+            "in": "path",
+            "name": "paymentMethodId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Payment method ID to disassociate"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Payment method disassociated successfully"
+          },
+          "404": {
+            "description": "Association not found"
+          }
+        }
+      }
+    },
+    "/accounts": {
+      "post": {
+        "summary": "Create a new account",
+        "tags": [
+          "Accounts"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "user_id",
+                  "institution_name",
+                  "account_type",
+                  "initial_balance",
+                  "currency",
+                  "payment_method_ids"
+                ],
+                "properties": {
+                  "user_id": {
+                    "type": "string",
+                    "description": "User ID"
+                  },
+                  "institution_name": {
+                    "type": "string",
+                    "description": "Institution name"
+                  },
+                  "account_type": {
+                    "type": "string",
+                    "enum": [
+                      "checking",
+                      "savings",
+                      "investment",
+                      "credit_card",
+                      "payment_app",
+                      "cash",
+                      "other"
+                    ],
+                    "description": "Account type"
+                  },
+                  "initial_balance": {
+                    "type": "number",
+                    "description": "Initial balance"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Currency code (e.g., BRL, USD)"
+                  },
+                  "payment_method_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Array of payment method IDs"
+                  }
+                },
+                "example": {
+                  "user_id": "456e7890-e89b-12d3-a456-426614174001",
+                  "institution_name": "Main Bank",
+                  "account_type": "checking",
+                  "initial_balance": 1000,
+                  "currency": "BRL",
+                  "payment_method_ids": [
+                    "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      },
+      "get": {
+        "summary": "List all accounts for a user",
+        "tags": [
+          "Accounts"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "User ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of user accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Account"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "User ID not provided"
+          }
+        }
+      }
+    },
+    "/accounts/{id}": {
+      "get": {
+        "summary": "Get account by ID",
+        "tags": [
+          "Accounts"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Account ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing account",
+        "tags": [
+          "Accounts"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Account ID to update"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "institution_name": {
+                    "type": "string",
+                    "description": "Institution name"
+                  },
+                  "initial_balance": {
+                    "type": "number",
+                    "description": "Initial balance"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Currency code (e.g., BRL, USD)"
+                  },
+                  "account_type": {
+                    "type": "string",
+                    "enum": [
+                      "checking",
+                      "savings",
+                      "investment",
+                      "credit_card",
+                      "payment_app",
+                      "cash",
+                      "other"
+                    ],
+                    "description": "Account type"
+                  },
+                  "payment_method_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Array of payment method IDs"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "404": {
+            "description": "Account not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an account",
+        "tags": [
+          "Accounts"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Account ID to delete"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Account deleted successfully"
+          },
+          "404": {
+            "description": "Account not found"
+          }
+        }
+      }
+    },
+    "/accounts/{id}/balance": {
+      "get": {
+        "summary": "Get current balance of an account",
+        "tags": [
+          "Accounts"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Account ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account balance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "balance": {
+                      "type": "number",
+                      "description": "Current account balance"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found"
+          }
+        }
+      }
+    },
+    "/categories": {
+      "post": {
+        "summary": "Create a new category",
+        "tags": [
+          "Categories"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "user_id",
+                  "name",
+                  "type"
+                ],
+                "properties": {
+                  "user_id": {
+                    "type": "string",
+                    "description": "User ID"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Category name"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "income",
+                      "expense"
+                    ],
+                    "description": "Category type"
+                  },
+                  "color": {
+                    "type": "string",
+                    "description": "Category color (hex format)",
+                    "example": "#FF5733"
+                  },
+                  "icon": {
+                    "type": "string",
+                    "description": "Category icon name",
+                    "example": "utensils"
+                  }
+                },
+                "example": {
+                  "user_id": "456e7890-e89b-12d3-a456-426614174001",
+                  "name": "Food",
+                  "type": "expense",
+                  "color": "#FF5733",
+                  "icon": "utensils"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Category created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "409": {
+            "description": "Category with this name already exists for this user"
+          }
+        }
+      },
+      "get": {
+        "summary": "List all categories for a user",
+        "tags": [
+          "Categories"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "User ID"
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "income",
+                "expense"
+              ]
+            },
+            "description": "Filter by category type"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of user categories",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Category"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "User ID not provided"
+          }
+        }
+      }
+    },
+    "/categories/{id}": {
+      "get": {
+        "summary": "Get category by ID",
+        "tags": [
+          "Categories"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Category ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Category details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Category not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing category",
+        "tags": [
+          "Categories"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Category ID to update"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Category name"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "income",
+                      "expense"
+                    ],
+                    "description": "Category type"
+                  },
+                  "color": {
+                    "type": "string",
+                    "description": "Category color (hex format)"
+                  },
+                  "icon": {
+                    "type": "string",
+                    "description": "Category icon name"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Category updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "404": {
+            "description": "Category not found"
+          },
+          "409": {
+            "description": "Category with this name already exists for this user"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a category",
+        "tags": [
+          "Categories"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "Category ID to delete"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Category deleted successfully"
+          },
+          "404": {
+            "description": "Category not found"
+          }
+        }
+      }
+    },
+    "/transactions": {
+      "post": {
+        "summary": "Cria uma nova transação",
+        "tags": [
+          "Transactions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "account_id",
+                  "name",
+                  "amount",
+                  "type",
+                  "transaction_date"
+                ],
+                "properties": {
+                  "account_id": {
+                    "type": "string",
+                    "description": "ID da conta"
+                  },
+                  "category_id": {
+                    "type": "string",
+                    "description": "ID da categoria (opcional)"
+                  },
+                  "category_name": {
+                    "type": "string",
+                    "description": "Nome da categoria (criada automaticamente se não existir)"
+                  },
+                  "payment_method_id": {
+                    "type": "string",
+                    "description": "ID do método de pagamento (opcional)"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Nome/descrição da transação"
+                  },
+                  "amount": {
+                    "type": "number",
+                    "description": "Valor da transação"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "income",
+                      "expense"
+                    ],
+                    "description": "Tipo da transação"
+                  },
+                  "transaction_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Data da transação"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Descrição adicional (opcional)"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Tags da transação (opcional)"
+                  }
+                },
+                "example": {
+                  "account_id": "abc123-def456-ghi789",
+                  "category_name": "Alimentação",
+                  "payment_method_id": "payment123",
+                  "name": "Compra no Supermercado",
+                  "amount": 150.5,
+                  "type": "expense",
+                  "transaction_date": "2023-01-15",
+                  "description": "Compras da semana",
+                  "tags": [
+                    "alimentação",
+                    "supermercado"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Transação criada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Dados de entrada inválidos"
+          },
+          "404": {
+            "description": "Conta não encontrada"
+          }
+        }
+      },
+      "get": {
+        "summary": "Lista transações com filtros opcionais",
+        "tags": [
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "account_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filtrar por ID da conta"
+          },
+          {
+            "in": "query",
+            "name": "category_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filtrar por ID da categoria"
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "income",
+                "expense"
+              ]
+            },
+            "description": "Filtrar por tipo de transação"
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Data inicial para filtro"
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Data final para filtro"
+          },
+          {
+            "in": "query",
+            "name": "min_amount",
+            "schema": {
+              "type": "number"
+            },
+            "description": "Valor mínimo para filtro"
+          },
+          {
+            "in": "query",
+            "name": "max_amount",
+            "schema": {
+              "type": "number"
+            },
+            "description": "Valor máximo para filtro"
+          },
+          {
+            "in": "query",
+            "name": "payment_method_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filtrar por método de pagamento"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Buscar por nome ou descrição"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de transações",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Transaction"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transactions/{id}": {
+      "get": {
+        "summary": "Busca uma transação pelo ID",
+        "tags": [
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "ID da transação"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalhes da transação",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Transação não encontrada"
+          }
+        }
+      },
+      "put": {
+        "summary": "Atualiza uma transação existente",
+        "tags": [
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "ID da transação a ser atualizada"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "category_id": {
+                    "type": "string"
+                  },
+                  "category_name": {
+                    "type": "string"
+                  },
+                  "payment_method_id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "number"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "income",
+                      "expense"
+                    ]
+                  },
+                  "transaction_date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transação atualizada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Dados de entrada inválidos"
+          },
+          "404": {
+            "description": "Transação não encontrada"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove uma transação",
+        "tags": [
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "ID da transação a ser removida"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Transação removida com sucesso"
+          },
+          "404": {
+            "description": "Transação não encontrada"
+          }
+        }
+      }
+    },
+    "/transactions/account/{accountId}": {
+      "get": {
+        "summary": "Lista transações de uma conta específica",
+        "tags": [
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "ID da conta"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de transações da conta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Transaction"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conta não encontrada"
+          }
+        }
+      }
+    },
+    "/transactions/user/{userId}": {
+      "get": {
+        "summary": "Lista transações de um usuário específico",
+        "tags": [
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "ID do usuário"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de transações do usuário",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Transaction"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transactions/account/{accountId}/balance": {
+      "get": {
+        "summary": "Obtém o saldo atual de uma conta",
+        "tags": [
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "ID da conta"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saldo da conta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "balance": {
+                      "type": "number",
+                      "description": "Saldo atual da conta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conta não encontrada"
+          }
+        }
+      }
+    },
+    "/transactions/account/{accountId}/balance-details": {
+      "get": {
+        "summary": "Obtém detalhes do saldo de uma conta",
+        "tags": [
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "ID da conta"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalhes do saldo da conta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "initial_balance": {
+                      "type": "number",
+                      "description": "Saldo inicial da conta"
+                    },
+                    "total_income": {
+                      "type": "number",
+                      "description": "Total de receitas"
+                    },
+                    "total_expense": {
+                      "type": "number",
+                      "description": "Total de despesas"
+                    },
+                    "current_balance": {
+                      "type": "number",
+                      "description": "Saldo atual"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conta não encontrada"
+          }
+        }
+      }
+    },
+    "/transactions/account/{accountId}/current-month": {
+      "get": {
+        "summary": "Lista transações do mês atual de uma conta",
+        "tags": [
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "ID da conta"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transações do mês atual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Transaction"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conta não encontrada"
+          }
+        }
+      }
+    },
+    "/transactions/user/{userId}/current-month": {
+      "get": {
+        "summary": "Lista transações do mês atual de um usuário",
+        "tags": [
+          "Transactions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "ID do usuário"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transações do mês atual do usuário",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Transaction"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users": {
+      "post": {
+        "summary": "Create a new user",
+        "tags": [
+          "Users"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "email",
+                  "default_currency"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "User's full name"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "User's email address (must be unique)"
+                  },
+                  "default_currency": {
+                    "type": "string",
+                    "description": "User's default currency (e.g., BRL, USD)"
+                  }
+                },
+                "example": {
+                  "name": "Ana Silva",
+                  "email": "ana@email.com",
+                  "default_currency": "BRL"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "409": {
+            "description": "Email already in use"
+          }
+        }
+      },
+      "get": {
+        "summary": "List all users",
+        "tags": [
+          "Users"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "summary": "Get user by ID",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "User ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing user",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "User ID to update"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "User's full name"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "User's email address (must be unique)"
+                  },
+                  "default_currency": {
+                    "type": "string",
+                    "description": "User's default currency (e.g., BRL, USD)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "404": {
+            "description": "User not found"
+          },
+          "409": {
+            "description": "Email already in use by another user"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a user",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "User ID to delete"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "User deleted successfully"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+    "/users/email/{email}": {
+      "get": {
+        "summary": "Get user by email",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "email",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "User's email address"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Account": {
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "institution_name",
+          "initial_balance",
+          "currency",
+          "account_type",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID único da conta, gerado automaticamente (UUID)"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "ID do usuário proprietário da conta"
+          },
+          "institution_name": {
+            "type": "string",
+            "description": "Nome da instituição bancária"
+          },
+          "initial_balance": {
+            "type": "number",
+            "format": "decimal",
+            "description": "Saldo inicial da conta"
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency code (e.g., BRL, USD)"
+          },
+          "account_type": {
+            "type": "string",
+            "description": "Tipo da conta",
+            "enum": [
+              "checking",
+              "savings",
+              "investment",
+              "credit_card",
+              "payment_app",
+              "cash",
+              "other"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Data e hora de criação da conta"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Data e hora da última atualização da conta"
+          },
+          "payment_methods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentMethod"
+            },
+            "description": "Métodos de pagamento associados à conta"
+          }
+        },
+        "example": {
+          "id": "123e4567-e89b-12d3-a456-426614174000",
+          "user_id": "456e7890-e89b-12d3-a456-426614174001",
+          "institution_name": "Banco do Brasil",
+          "initial_balance": 1000,
+          "currency": "BRL",
+          "account_type": "checking",
+          "created_at": "2023-01-10T10:00:00Z",
+          "updated_at": "2023-01-10T10:00:00Z"
+        }
+      },
+      "PaymentMethod": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID único do método de pagamento"
+          },
+          "name": {
+            "type": "string",
+            "description": "Nome do método de pagamento"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Data e hora de criação"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Data e hora da última atualização"
+          }
+        },
+        "example": {
+          "id": "789e0123-e89b-12d3-a456-426614174002",
+          "name": "Cartão de Crédito",
+          "created_at": "2023-01-10T10:00:00Z",
+          "updated_at": "2023-01-10T10:00:00Z"
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Accounts",
+      "description": "Bank account operations"
+    },
+    {
+      "name": "Categories",
+      "description": "Transaction categories operations"
+    },
+    {
+      "name": "Transactions",
+      "description": "Operações relacionadas a transações financeiras"
+    },
+    {
+      "name": "Users",
+      "description": "User management operations"
+    }
+  ]
+}
