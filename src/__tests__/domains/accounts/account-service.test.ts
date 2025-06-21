@@ -31,6 +31,10 @@ describe('AccountService', () => {
   beforeEach(() => {
     service = new AccountService();
     jest.clearAllMocks();
+    
+    mockAccountRepository.prototype.findById.mockReset();
+    mockAccountRepository.prototype.update.mockReset();
+    mockPaymentMethodRepository.prototype.findById.mockReset();
   });
 
   describe('createAccount', () => {
@@ -123,6 +127,37 @@ describe('AccountService', () => {
 
       expect(mockAccountRepository.prototype.update).toHaveBeenCalledWith('account123', updateData);
       expect(result).toEqual(updatedAccount);
+    });
+
+    it('should validate payment methods when updating', async () => {
+      const updateData: UpdateAccountDTO = { 
+        payment_method_ids: ['payment123', 'payment456'] 
+      };
+      const updatedAccount = { ...mockAccount, payment_methods: [mockPaymentMethod] };
+      
+      mockPaymentMethodRepository.prototype.findById
+        .mockResolvedValueOnce(mockPaymentMethod)
+        .mockResolvedValueOnce({ ...mockPaymentMethod, id: 'payment456' });
+      mockAccountRepository.prototype.update.mockResolvedValueOnce(updatedAccount);
+
+      const result = await service.updateAccount('account123', updateData);
+
+      expect(mockPaymentMethodRepository.prototype.findById).toHaveBeenCalledWith('payment123');
+      expect(mockPaymentMethodRepository.prototype.findById).toHaveBeenCalledWith('payment456');
+      expect(mockAccountRepository.prototype.update).toHaveBeenCalledWith('account123', updateData);
+      expect(result).toEqual(updatedAccount);
+    });
+
+    it('should throw error when payment method not found during update', async () => {
+      const updateData: UpdateAccountDTO = { 
+        payment_method_ids: ['invalid-payment'] 
+      };
+      
+      mockPaymentMethodRepository.prototype.findById.mockResolvedValueOnce(null);
+
+      await expect(service.updateAccount('account123', updateData)).rejects.toThrow(
+        'Payment method with ID invalid-payment not found'
+      );
     });
   });
 
@@ -225,6 +260,126 @@ describe('AccountService', () => {
       mockPaymentMethodRepository.prototype.delete.mockResolvedValueOnce(false);
 
       const result = await service.deletePaymentMethod('payment123');
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('associatePaymentMethodWithAccount', () => {
+    it('should associate payment method with account successfully', async () => {
+      const accountWithPaymentMethods = { 
+        ...mockAccount, 
+        payment_methods: [mockPaymentMethod] 
+      };
+      
+      mockAccountRepository.prototype.findById
+        .mockResolvedValueOnce(accountWithPaymentMethods)
+        .mockResolvedValueOnce(accountWithPaymentMethods);
+      mockPaymentMethodRepository.prototype.findById.mockResolvedValueOnce(mockPaymentMethod);
+      mockAccountRepository.prototype.update.mockResolvedValueOnce(accountWithPaymentMethods);
+
+      await service.associatePaymentMethodWithAccount('account123', 'payment456');
+
+      expect(mockAccountRepository.prototype.findById).toHaveBeenCalledWith('account123');
+      expect(mockPaymentMethodRepository.prototype.findById).toHaveBeenCalledWith('payment456');
+      expect(mockAccountRepository.prototype.update).toHaveBeenCalledWith('account123', {
+        payment_method_ids: ['payment123', 'payment456']
+      });
+    });
+
+    it('should throw error when account not found', async () => {
+      mockAccountRepository.prototype.findById.mockResolvedValue(null);
+
+      await expect(service.associatePaymentMethodWithAccount('account123', 'payment456')).rejects.toThrow(
+        'Account not found'
+      );
+    });
+
+    it('should throw error when payment method not found', async () => {
+      mockAccountRepository.prototype.findById.mockResolvedValue(mockAccount);
+      mockPaymentMethodRepository.prototype.findById.mockResolvedValue(null);
+
+      await expect(service.associatePaymentMethodWithAccount('account123', 'payment456')).rejects.toThrow(
+        'Payment method not found'
+      );
+    });
+  });
+
+  describe('getPaymentMethodsByAccountId', () => {
+    it('should return payment methods for account', async () => {
+      const accountWithPaymentMethods = { 
+        ...mockAccount, 
+        payment_methods: [mockPaymentMethod] 
+      };
+      
+      mockAccountRepository.prototype.findById.mockResolvedValueOnce(accountWithPaymentMethods);
+
+      const result = await service.getPaymentMethodsByAccountId('account123');
+
+      expect(mockAccountRepository.prototype.findById).toHaveBeenCalledWith('account123');
+      expect(result).toEqual([mockPaymentMethod]);
+    });
+
+    it('should throw error when account not found', async () => {
+      mockAccountRepository.prototype.findById.mockResolvedValue(null);
+
+      await expect(service.getPaymentMethodsByAccountId('account123')).rejects.toThrow(
+        'Account not found'
+      );
+    });
+
+    it('should return empty array when account has no payment methods', async () => {
+      const accountWithoutPaymentMethods = { 
+        ...mockAccount, 
+        payment_methods: [] 
+      };
+      
+      mockAccountRepository.prototype.findById.mockResolvedValue(accountWithoutPaymentMethods);
+
+      const result = await service.getPaymentMethodsByAccountId('account123');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('disassociatePaymentMethodFromAccount', () => {
+    it('should disassociate payment method from account successfully', async () => {
+      const accountWithPaymentMethods = { 
+        ...mockAccount, 
+        payment_methods: [mockPaymentMethod, { ...mockPaymentMethod, id: 'payment456' }] 
+      };
+      
+      mockAccountRepository.prototype.findById
+        .mockResolvedValueOnce(accountWithPaymentMethods)
+        .mockResolvedValueOnce(accountWithPaymentMethods);
+      mockAccountRepository.prototype.update.mockResolvedValueOnce(accountWithPaymentMethods);
+
+      const result = await service.disassociatePaymentMethodFromAccount('account123', 'payment456');
+
+      expect(mockAccountRepository.prototype.findById).toHaveBeenCalledWith('account123');
+      expect(mockAccountRepository.prototype.update).toHaveBeenCalledWith('account123', {
+        payment_method_ids: ['payment123']
+      });
+      expect(result).toBe(true);
+    });
+
+    it('should return false when account not found', async () => {
+      mockAccountRepository.prototype.findById.mockResolvedValue(null);
+
+      const result = await service.disassociatePaymentMethodFromAccount('account123', 'payment456');
+
+      expect(result).toBe(false);
+    });
+
+    it('should return false when payment method not associated with account', async () => {
+      const accountWithPaymentMethods = { 
+        ...mockAccount, 
+        payment_methods: [mockPaymentMethod] 
+      };
+      
+      mockAccountRepository.prototype.findById.mockResolvedValue(accountWithPaymentMethods);
+
+      const result = await service.disassociatePaymentMethodFromAccount('account123', 'payment456');
 
       expect(result).toBe(false);
     });
