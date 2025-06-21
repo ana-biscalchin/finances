@@ -1,57 +1,97 @@
 ```mermaid
 erDiagram
     User {
-        CHAR(36) id PK
-        VARCHAR(255) name
-        VARCHAR(255) email
-        VARCHAR(3) default_currency
-        DATETIME created_at
-        DATETIME updated_at
+        string id
+        string name
+        string email
+        string default_currency
+        datetime created_at
+        datetime updated_at
     }
     Account {
-        CHAR(36) id PK
-        CHAR(36) user_id FK
-        VARCHAR(255) institution_name
-        DECIMAL10_2 initial_balance
-        VARCHAR(4) currency
-        ENUM account_type
-        DATETIME created_at
-        DATETIME updated_at
+        string id
+        string user_id
+        string institution_name
+        decimal initial_balance
+        string currency
+        string account_type
+        datetime created_at
+        datetime updated_at
     }
     Category {
-        CHAR(36) id PK
-        CHAR(36) user_id FK
-        VARCHAR name
-        ENUM type
-    }
-    Transaction {
-        CHAR(36) id PK
-        CHAR(36) account_id FK
-        CHAR(36) category_id FK
-        DECIMAL amount
-        TEXT description
-        DATE date
-        DATETIME created_at
-        DATETIME updated_at
-        ENUM status
-        VARCHAR reference
-        VARCHAR external_party
-        ENUM method
+        string id
+        string user_id
+        string name
+        string type
     }
     PaymentMethod {
-        CHAR(36) id PK
-        VARCHAR(255) name
+        string id
+        string name
     }
     AccountPaymentMethod {
-        CHAR(36) account_id FK
-        CHAR(36) payment_method_id FK
-        PRIMARY KEY (account_id, payment_method_id)
+        string account_id
+        string payment_method_id
+    }
+    CreditCard {
+        string id
+        string account_id
+        string card_name
+        string card_number
+        string card_brand
+        decimal credit_limit
+        decimal available_credit
+        date expiration_date
+        datetime created_at
+        datetime updated_at
+    }
+    Transaction {
+        string id
+        string account_id
+        string payment_method_id
+        string category_id
+        string name
+        text description
+        decimal amount
+        enum transaction_type
+        string payee
+        date transaction_date
+        string reference_number
+        string tags
+        string recurring_id
+        datetime created_at
+        datetime updated_at
+    }
+    CreditTransaction {
+        string id
+        string credit_card_id
+        string category_id
+        string name
+        text description
+        decimal amount
+        enum transaction_type
+        string payee
+        date transaction_date
+        date due_date
+        date payment_date
+        enum status
+        int installments
+        int current_installment
+        decimal installment_amount
+        string reference_number
+        string tags
+        string recurring_id
+        datetime created_at
+        datetime updated_at
     }
 
     User ||--o{ Account : owns
-    Account ||--o{ Transaction : records
     User ||--o{ Category : categorizes
-    Category ||--o{ Transaction : classifies
-    Account ||--o{ PaymentMethod : uses
-    AccountPaymentMethod ||--o{ PaymentMethod : uses
-```
+    Account ||--o{ AccountPaymentMethod : uses
+    AccountPaymentMethod ||--o{ PaymentMethod : references
+    Account ||--o{ CreditCard : contains
+    Account ||--o{ Transaction : contains
+    PaymentMethod ||--o{ Transaction : used_in
+    Category ||--o{ Transaction : categorizes
+    CreditCard ||--o{ CreditTransaction : contains
+    Category ||--o{ CreditTransaction : categorizes
+``` 

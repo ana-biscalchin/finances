@@ -38,7 +38,13 @@ describe('User Validator Middleware', () => {
       validateCreateUser(mockRequest as Request, mockResponse as Response, nextFunction);
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'Required' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          default_currency: { _errors: ['Required'] },
+          _errors: []
+        }
+      });
       expect(nextFunction).not.toHaveBeenCalled();
     });
 
@@ -52,7 +58,13 @@ describe('User Validator Middleware', () => {
       validateCreateUser(mockRequest as Request, mockResponse as Response, nextFunction);
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'Currency code must be 3 uppercase letters' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          default_currency: { _errors: ['Currency code must be exactly 3 uppercase letters (e.g., BRL, USD)'] },
+          _errors: []
+        }
+      });
       expect(nextFunction).not.toHaveBeenCalled();
     });
   });
@@ -88,7 +100,13 @@ describe('User Validator Middleware', () => {
       validateUpdateUser(mockRequest as Request, mockResponse as Response, nextFunction);
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ message: 'Currency code must be 3 uppercase letters' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          default_currency: { _errors: ['Currency code must be exactly 3 uppercase letters (e.g., BRL, USD)'] },
+          _errors: []
+        }
+      });
       expect(nextFunction).not.toHaveBeenCalled();
     });
   });

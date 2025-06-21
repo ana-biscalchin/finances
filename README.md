@@ -9,7 +9,7 @@ A TypeScript-based personal finance management system for tracking expenses, man
 - **Architecture**: REST API, Domain-driven folder structure
 - **Infra**: Optional Docker support (planned)
 
-## 📦 Features
+## 📦 Features income
 
 - Register multiple accounts (checking, savings, investment, credit card)
 - Track income, expenses, and transfers
