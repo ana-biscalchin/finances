@@ -6,8 +6,10 @@ export function validateWithZod(schema: z.ZodSchema) {
     const result = schema.safeParse(req.body);
     
     if (!result.success) {
-      const errorMessage = result.error.errors[0]?.message || 'Validation failed';
-      return res.status(400).json({ message: errorMessage });
+      return res.status(400).json({ 
+        message: 'Validation failed',
+        errors: result.error.format() 
+      });
     }
     
     req.body = result.data;

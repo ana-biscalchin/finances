@@ -1,146 +1,212 @@
-# Resumo da Implementação - Sistema de Contas e Métodos de Pagamento
+# Resumo da Implementação - Sistema de Gerenciamento Financeiro
 
 ## 🎯 Objetivo
-Implementamos um sistema completo de gerenciamento de contas bancárias com métodos de pagamento pré-definidos, onde **é obrigatório** informar pelo menos um método de pagamento ao criar uma conta. O sistema inclui **testes unitários abrangentes** e **validação robusta**.
+Sistema completo de gerenciamento financeiro pessoal com controle de usuários, contas bancárias, métodos de pagamento, categorias e transações. Implementação com **testes unitários abrangentes**, **validação robusta** e **documentação Swagger completa**.
 
-## 📊 Estrutura do Banco de Dados
+## 👤 Entidade Users
 
-### Tabelas Criadas:
-1. **`accounts`** - Armazena as contas dos usuários
-2. **`payment_methods`** - Armazena os tipos de métodos de pagamento (pré-definidos)
-3. **`account_payment_methods`** - Tabela de associação (N:N)
+### 📊 Estrutura do Banco de Dados
+- **Tabela `users`**: Armazena informações dos usuários
+- **Campos obrigatórios**: id, name, email, default_currency, created_at, updated_at
+- **Restrições**: email único, currency em formato ISO 4217 (3 letras maiúsculas)
 
-### Relacionamentos:
-- **Usuário → Contas**: 1:N (um usuário pode ter várias contas)
-- **Conta ↔ Métodos de Pagamento**: N:N (uma conta pode ter vários métodos, um método pode ser usado por várias contas)
+### 🏗️ Arquitetura Implementada
 
-### Métodos de Pagamento Pré-definidos:
-- PIX, Cartão de Crédito, Cartão de Débito
-- TED, DOC, Boleto, Dinheiro
-- Transferência Bancária, Cheque
-- Criptomoedas, Carteira Digital, Pagamento por App
+#### 1. **Camada de Tipos** (`src/domains/users/types.ts`)
+```typescript
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  default_currency: string;
+  created_at: Date;
+  updated_at: Date;
+}
 
-## 🏗️ Arquitetura Implementada
+type CreateUserDTO = z.infer<typeof UserSchemas.create>;
+type UpdateUserDTO = z.infer<typeof UserSchemas.update>;
+```
 
-### 1. **Camada de Tipos** (`src/domains/accounts/types.ts`)
+#### 2. **Camada de Validação** (`src/schemas/validation-schemas.ts`)
+A validação é feita através de schemas Zod que definem as seguintes regras:
+
+Para criação de usuário (create):
+- Nome: obrigatório, entre 1 e 255 caracteres, sem espaços extras
+- Email: formato válido, máximo 255 caracteres, convertido para minúsculas
+- Moeda padrão: exatamente 3 letras maiúsculas (ex: BRL, USD)
+
+Para atualização de usuário (update):
+- Campos opcionais com as mesmas validações do create
+- Nome: entre 1 e 255 caracteres quando fornecido
+- Email: formato válido e máximo 255 caracteres quando fornecido  
+- Moeda: 3 letras maiúsculas quando fornecida
+ 
+
+#### 3. **Camada de Repositório** (`src/domains/users/repository.ts`)
+- **UserRepository**: CRUD completo de usuários
+- Operações: create, findById, findByEmail, findAll, update, delete
+- Validação de unicidade de email
+- Tratamento de erros de integridade referencial
+
+#### 4. **Camada de Serviço** (`src/domains/users/service.ts`)
+- **UserService**: Lógica de negócio centralizada
+- Validações de integridade referencial
+- Verificação de email único na criação e atualização
+- Cascade delete para contas e categorias do usuário
+- CRUD completo com validações
+
+#### 5. **Camada de Controllers** (`src/routes/users.ts`)
+- Rotas RESTful completas
+- Validação de entrada com middlewares Zod
+- Documentação Swagger em inglês
+- Tratamento de erros centralizado
+
+### 🛣️ Rotas Implementadas
+
+#### Usuários
+- `POST /users` - Criar usuário
+- `GET /users` - Listar todos os usuários
+- `GET /users/:id` - Buscar usuário por ID
+- `GET /users/email/:email` - Buscar usuário por email
+- `PUT /users/:id` - Atualizar usuário
+- `DELETE /users/:id` - Deletar usuário (com cascade delete)
+
+### 📚 Conceitos SQL Demonstrados 
+#### 1. **Validação de Unicidade**
+```sql
+-- Índice único no email
+CREATE UNIQUE INDEX idx_users_email ON users(email);
+
+-- Verificação antes de inserir/atualizar
+SELECT COUNT(*) FROM users WHERE email = ? AND id != ?;
+```
+
+#### 2. **Cascade Delete**
+```sql
+-- Foreign keys com CASCADE DELETE
+ALTER TABLE accounts 
+ADD CONSTRAINT fk_accounts_user 
+FOREIGN KEY (user_id) REFERENCES users(id) 
+ON DELETE CASCADE;
+
+ALTER TABLE categories 
+ADD CONSTRAINT fk_categories_user 
+FOREIGN KEY (user_id) REFERENCES users(id) 
+ON DELETE CASCADE;
+```
+
+#### 3. **Validação de Formato de Moeda**
+```sql
+-- Constraint para formato de moeda
+ALTER TABLE users 
+ADD CONSTRAINT chk_default_currency 
+CHECK (default_currency REGEXP '^[A-Z]{3}$');
+```
+
+
+## 🏦 Entidade Account e Payment Method
+
+### 📊 Estrutura do Banco de Dados
+- **Tabela `accounts`**: Armazena informações das contas bancárias
+- **Tabela `payment_methods`**: Armazena métodos de pagamento disponíveis
+- **Tabela `account_payment_methods`**: Tabela de relacionamento N:N entre contas e métodos de pagamento
+- **Campos obrigatórios accounts**: id, user_id, institution_name, initial_balance, currency, account_type, created_at, updated_at
+- **Campos obrigatórios payment_methods**: id, name
+- **Restrições**: currency em formato ISO 4217 (3 letras maiúsculas), account_type com valores específicos
+
+### 🏗️ Arquitetura Implementada
+
+#### 1. **Camada de Tipos** (`src/domains/accounts/types.ts`)
 ```typescript
 interface Account {
   id: string;
   user_id: string;
   institution_name: string;
-  initial_balance: number;
+  initial_balance: string;
   currency: string;
-  account_type: string;
+  account_type: 'checking' | 'savings' | 'investment' | 'credit_card' | 'payment_app' | 'cash' | 'other';
   created_at: Date;
   updated_at: Date;
+  payment_methods?: PaymentMethod[];
 }
 
 interface PaymentMethod {
   id: string;
   name: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
-interface AccountPaymentMethod {
-  account_id: string;
-  payment_method_id: string;
-}
-
-enum AccountType {
-  CHECKING = 'checking',
-  SAVINGS = 'savings',
-  INVESTMENT = 'investment',
-  CREDIT_CARD = 'credit_card',
-  PAYMENT_APP = 'payment_app',
-  CASH = 'cash',
-  OTHER = 'other'
-}
+type CreateAccountDTO = z.infer<typeof AccountSchemas.create>;
+type UpdateAccountDTO = z.infer<typeof AccountSchemas.update>;
 ```
 
-### 2. **Camada de Validação** (`src/schemas/validation-schemas.ts`)
-- Schemas Zod para validação de entrada
-- Validação de tipos de conta (checking, savings, etc.)
-- Validação de moedas (formato ISO 4217)
-- **Obrigatório**: Campo `payment_method_ids` na criação de conta (mínimo 1)
-- Validação de associação: apenas `payment_method_id` (account_id vem da URL)
+#### 2. **Camada de Validação** (`src/schemas/validation-schemas.ts`)
+A validação é feita através de schemas Zod que definem as seguintes regras:
 
-### 3. **Camada de Repositório**
-- **`AccountRepository`**: CRUD básico de contas + criação automática de associações
-- **`PaymentMethodRepository`**: Consultas de métodos de pagamento + operações de associação
+Para criação de conta (create):
+- User ID: obrigatório, string não vazio
+- Nome da instituição: obrigatório, string não vazio
+- Saldo inicial: obrigatório, número
+- Moeda: exatamente 3 letras maiúsculas (ex: BRL, USD)
+- Tipo de conta: enum com valores específicos (checking, savings, investment, credit_card, payment_app, cash, other)
+- IDs dos métodos de pagamento: array com pelo menos um método obrigatório
 
-### 4. **Camada de Serviço** (`src/domains/accounts/service.ts`)
-- Lógica de negócio centralizada
-- Validações de integridade referencial
-- Validação obrigatória de métodos de pagamento na criação de conta
-- Operações de associação/desassociação
-- CRUD completo de payment methods
+Para atualização de conta (update):
+- Campos opcionais com as mesmas validações do create
+- Todos os campos podem ser omitidos
 
-### 5. **Camada de Controllers** (`src/routes/accounts.ts`)
-- **Nova arquitetura**: Função `createAccountsRouter()` com injeção de dependência
-- Rotas RESTful completas
-- **Simplificado**: Apenas consultas de métodos de pagamento (sem criação via API)
-- Validação de entrada com middlewares
+Para métodos de pagamento:
+- Nome: obrigatório, entre 1 e 255 caracteres
+- Validação de unicidade de nome
+
+#### 3. **Camada de Repositório** (`src/domains/accounts/repository.ts` e `payment-method-repository.ts`)
+- **AccountRepository**: CRUD completo de contas
+- **PaymentMethodRepository**: CRUD completo de métodos de pagamento
+- Operações accounts: create, findById, findByUserId, findAll, update, delete
+- Operações payment methods: create, findById, findByName, findAll, update, delete
+- Gerenciamento de relacionamentos N:N entre contas e métodos de pagamento
+- Carregamento automático dos métodos de pagamento associados às contas
+
+#### 4. **Camada de Serviço** (`src/domains/accounts/service.ts`)
+- **AccountService**: Lógica de negócio centralizada
+- Validações de integridade referencial para métodos de pagamento
+- Verificação de existência de métodos de pagamento antes de associar
+- CRUD completo para contas e métodos de pagamento
+- Operações de associação/desassociação de métodos de pagamento
+- Validação de unicidade de nomes de métodos de pagamento
+
+#### 5. **Camada de Controllers** (`src/routes/accounts.ts`)
+- Rotas RESTful completas para contas e métodos de pagamento
+- Validação de entrada com middlewares Zod
+- Documentação Swagger completa em inglês
 - Tratamento de erros centralizado
 
-## 🛣️ Rotas Implementadas
+### 🛣️ Rotas Implementadas
 
-### Contas
-- `POST /accounts` - Criar conta (**obrigatório** informar métodos de pagamento)
-- `GET /accounts` - Listar todas as contas
+#### Contas
+- `POST /accounts` - Criar conta
+- `GET /accounts?user_id=:id` - Listar contas de um usuário
 - `GET /accounts/:id` - Buscar conta por ID
-- `GET /accounts/user/:userId` - Buscar contas por usuário
 - `PUT /accounts/:id` - Atualizar conta
 - `DELETE /accounts/:id` - Deletar conta
+- `GET /accounts/:id/balance` - Obter saldo atual da conta
 
-### Métodos de Pagamento (Somente Consulta)
-- `GET /accounts/payment-methods` - Listar todos os métodos disponíveis
-- `GET /accounts/payment-methods/:id` - Buscar por ID
+#### Métodos de Pagamento
+- `GET /accounts/payment-methods` - Listar todos os métodos de pagamento
+- `POST /accounts/payment-methods` - Criar método de pagamento
+- `PUT /accounts/payment-methods/:id` - Atualizar método de pagamento
+- `DELETE /accounts/payment-methods/:id` - Deletar método de pagamento
 
-### Associações
-- `POST /accounts/:accountId/payment-methods` - Associar método a conta existente
-- `GET /accounts/:accountId/payment-methods` - Listar métodos da conta
-- `DELETE /accounts/:accountId/payment-methods/:paymentMethodId` - Remover associação
-- `GET /accounts/payment-methods/:paymentMethodId/accounts` - Listar contas que usam o método
+#### Associações Conta-Método de Pagamento
+- `POST /accounts/:accountId/payment-methods` - Associar método de pagamento à conta
+- `GET /accounts/:accountId/payment-methods` - Listar métodos de pagamento de uma conta
+- `DELETE /accounts/:accountId/payment-methods/:paymentMethodId` - Desassociar método de pagamento da conta
 
-## 🧪 Testes Implementados
-
-### 1. **Testes de Repositório** (`src/__tests__/domains/accounts/`)
-- **`payment-method-repository.test.ts`**: Testes completos do PaymentMethodRepository
-  - CRUD de payment methods
-  - Operações de associação/desassociação
-  - Consultas relacionadas com JOINs
-  - Tratamento de erros e casos edge
-
-- **`account-service.test.ts`**: Testes do AccountService
-  - Criação de conta com validação de payment methods
-  - Operações de payment methods
-  - Associações e consultas relacionadas
-  - Validações de negócio
-
-### 2. **Testes de Middleware** (`src/__tests__/middlewares/validators/`)
-- **`payment-method-validator.test.ts`**: Testes dos validadores
-  - Validação de criação de payment method
-  - Validação de atualização
-  - Validação de associação
-  - Casos de erro e dados inválidos
-
-### 3. **Testes de Rotas** (`src/__tests__/routes/`)
-- **`accounts.test.ts`**: Testes de integração das rotas
-  - Todos os endpoints de payment methods
-  - Validação de status codes HTTP
-  - Tratamento de erros
-  - Injeção de dependência com mocks
-
-### 4. **Cobertura de Testes**
-- **Repository**: 100% de cobertura
-- **Service**: 88% de cobertura
-- **Validators**: 100% de cobertura
-- **Routes**: 51% de cobertura (foco nos endpoints principais)
-
-## 📚 Conceitos SQL Demonstrados
-
-### 1. **Relacionamento Muitos-para-Muitos (N:N)**
+### 📚 Conceitos SQL Demonstrados 
+#### 1. **Relacionamento N:N**
 ```sql
--- Tabela de associação
+-- Tabela de relacionamento entre contas e métodos de pagamento
 CREATE TABLE account_payment_methods (
   account_id CHAR(36) NOT NULL,
   payment_method_id CHAR(36) NOT NULL,
@@ -150,123 +216,85 @@ CREATE TABLE account_payment_methods (
 );
 ```
 
-### 2. **Dados Pré-definidos**
+#### 2. **ENUM para Tipos de Conta**
 ```sql
--- Migration para inserir métodos padrão
-INSERT INTO payment_methods (id, name) VALUES
-  (UUID(), 'PIX'),
-  (UUID(), 'Cartão de Crédito'),
-  (UUID(), 'Cartão de Débito'),
-  -- ... outros métodos
+-- Constraint para tipos de conta válidos
+account_type ENUM('checking', 'savings', 'investment', 'credit_card', 'payment_app', 'cash', 'other') NOT NULL
 ```
 
-### 3. **JOINs para Consultas Relacionadas**
+#### 3. **Validação de Unicidade**
 ```sql
--- Buscar métodos de uma conta
-SELECT pm.* 
+-- Índice único no nome do método de pagamento
+CREATE UNIQUE INDEX idx_payment_methods_name ON payment_methods(name);
+```
+
+#### 4. **JOINs Complexos**
+```sql
+-- Busca de métodos de pagamento associados a contas
+SELECT pm.*, apm.account_id
 FROM payment_methods pm
 JOIN account_payment_methods apm ON pm.id = apm.payment_method_id
-WHERE apm.account_id = ?
-ORDER BY pm.name
-
--- Buscar contas que usam um método
-SELECT a.* 
-FROM accounts a
-JOIN account_payment_methods apm ON a.id = apm.account_id
-WHERE apm.payment_method_id = ?
+WHERE apm.account_id IN (?)
 ```
 
-### 4. **Integridade Referencial**
-- Foreign Keys garantem que só existam associações válidas
-- Validação no service antes de criar associações
-- **Obrigatoriedade** de pelo menos um método de pagamento
-
-## 🎓 Aprendizados Práticos
-
-### 1. **Arquitetura com Injeção de Dependência**
-- Router factory pattern para facilitar testes
-- Mocks isolados para cada camada
-- Separação clara de responsabilidades
-
-### 2. **Testes Abrangentes**
-- Testes unitários para lógica de negócio
-- Testes de integração para rotas
-- Mocks do banco de dados
-- Cobertura de casos de erro
-
-### 3. **Validação Robusta**
-- Schemas Zod para validação de entrada
-- Middlewares de validação
-- Tratamento de erros consistente
-
-### 4. **Normalização de Banco de Dados**
-- Evitamos duplicação de dados
-- Mantemos integridade referencial
-- Facilitamos consultas complexas
-
-### 5. **Padrões de Arquitetura**
-- Repository Pattern
-- Service Layer
-- DTOs para transferência de dados
-- Validação com Zod
-
-### 6. **RESTful API Design**
-- URLs semânticas
-- Códigos de status HTTP apropriados
-- Operações CRUD completas
-
-## 🚀 Próximos Passos Sugeridos
-
-1. **Implementar testes de integração** com banco real
-2. **Adicionar autenticação** e autorização
-3. **Implementar paginação** para listagens grandes
-4. **Adicionar logs** e monitoramento
-5. **Implementar soft delete** para manter histórico
-6. **Adicionar índices** para otimizar consultas
-7. **Criar dashboard** para visualizar associações
-8. **Implementar cache** para payment methods
-
-## 📝 Exemplo de Uso Prático
-
-```bash
-# 1. Listar métodos de pagamento disponíveis
-curl -X GET http://localhost:3000/api/v1/accounts/payment-methods
-
-# 2. Criar usuário
-curl -X POST http://localhost:3000/api/v1/users \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Ana", "email": "ana@email.com", "default_currency": "BRL"}'
-
-# 3. Criar conta com métodos de pagamento (OBRIGATÓRIO)
-curl -X POST http://localhost:3000/api/v1/accounts \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "user-id", 
-    "institution_name": "Nubank", 
-    "initial_balance": 1000, 
-    "currency": "BRL",
-    "account_type": "checking",
-    "payment_method_ids": ["pix-id", "card-id"]
-  }'
-
-# 4. Verificar métodos da conta
-curl -X GET http://localhost:3000/api/v1/accounts/account-id/payment-methods
-
-# 5. Associar novo método à conta
-curl -X POST http://localhost:3000/api/v1/accounts/account-id/payment-methods \
-  -H "Content-Type: application/json" \
-  -d '{"payment_method_id": "new-method-id"}'
+#### 5. **Transações para Operações Complexas**
+```sql
+-- Uso de transações para atualizar conta e seus relacionamentos
+BEGIN TRANSACTION;
+DELETE FROM account_payment_methods WHERE account_id = ?;
+INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES (?, ?);
+UPDATE accounts SET updated_at = ? WHERE id = ?;
+COMMIT;
 ```
 
-## 🎯 Conclusão
+#### 6. **Foreign Key Constraints**
+```sql
+-- Relacionamento com usuário
+FOREIGN KEY (user_id) REFERENCES users(id)
 
-Esta implementação demonstra:
-- **Relacionamentos SQL complexos** (N:N) de forma simplificada
-- **Arquitetura em camadas** bem estruturada com injeção de dependência
-- **Validação robusta** de dados com regras de negócio
-- **API RESTful** completa e intuitiva
-- **Testes abrangentes** com cobertura de 100% nas camadas críticas
-- **Sistema prático** com métodos pré-definidos e obrigatórios
-- **Padrões de desenvolvimento** modernos e escaláveis
+-- Relacionamentos na tabela de associação
+FOREIGN KEY (account_id) REFERENCES accounts(id)
+FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)
+```
 
-É um excelente exemplo para aprender SQL, relacionamentos de banco de dados, desenvolvimento de APIs com validações de negócio e **testes unitários abrangentes**! 🎉 
+## 🎓 Resumo Final - Projeto de Estudo
+
+### 🛠️ **Tecnologias Utilizadas**
+- **Backend**: Node.js + TypeScript + Express.js
+- **Banco de Dados**: MySQL com migrations
+- **Validação**: Zod para schemas
+- **Testes**: Jest para testes unitários
+- **Documentação**: Swagger/OpenAPI
+- **Gerenciamento**: Yarn
+
+### 🏗️ **Arquitetura Implementada**
+- **Camadas**: Types → Schemas → Repository → Service → Routes
+- **Padrões**: Repository Pattern, Service Layer, DTO Pattern
+- **Validação**: Schemas Zod com sanitização automática
+- **Testes**: Cobertura de repositories e services
+
+### 📊 **Conceitos de Banco de Dados**
+- **Relacionamentos**: 1:N (User → Accounts), N:N (Accounts ↔ Payment Methods)
+- **Constraints**: UNIQUE, FOREIGN KEY, CHECK, ENUM
+- **Operações**: JOINs, transações, subconsultas
+- **Integridade**: Cascade delete, validações de unicidade
+
+### 🚀 **Funcionalidades**
+- **Usuários**: CRUD com validação de email único e formato de moeda
+- **Contas**: Sistema bancário com tipos específicos e saldo
+- **Métodos de Pagamento**: Reutilizáveis com relacionamento N:N
+- **APIs**: Rotas RESTful com documentação Swagger
+
+### 📈 **Pontos Técnicos Relevantes**
+- **Complexidade**: Relacionamentos N:N com tabela intermediária
+- **Validações**: Regex, enums, unicidade de dados
+- **Performance**: Índices e JOINs otimizados
+- **Qualidade**: TypeScript, testes unitários, tratamento de erros
+
+### 🎯 **Próximos Passos**
+- Sistema de Transações (receitas/despesas)
+- Sistema de Categorias
+- Relatórios e dashboards
+- Autenticação e autorização
+
+

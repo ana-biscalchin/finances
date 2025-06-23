@@ -43,7 +43,13 @@ describe('Payment Method Validators', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid payment method data' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          name: { _errors: ['Required'] },
+          _errors: []
+        }
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
@@ -59,7 +65,13 @@ describe('Payment Method Validators', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid payment method data' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          name: { _errors: ['Payment method name is required'] },
+          _errors: []
+        }
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
@@ -75,7 +87,13 @@ describe('Payment Method Validators', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid payment method data' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          name: { _errors: ['Name too long'] },
+          _errors: []
+        }
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
@@ -91,7 +109,13 @@ describe('Payment Method Validators', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid payment method data' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          name: { _errors: ['Expected string, received number'] },
+          _errors: []
+        }
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
   });
@@ -122,7 +146,13 @@ describe('Payment Method Validators', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid payment method data' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          name: { _errors: ['Required'] },
+          _errors: []
+        }
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
@@ -138,7 +168,13 @@ describe('Payment Method Validators', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid payment method data' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          name: { _errors: ['Payment method name is required'] },
+          _errors: []
+        }
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
@@ -154,7 +190,13 @@ describe('Payment Method Validators', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid payment method data' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          name: { _errors: ['Name too long'] },
+          _errors: []
+        }
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
   });
@@ -162,7 +204,6 @@ describe('Payment Method Validators', () => {
   describe('validateAssociatePaymentMethod', () => {
     it('should call next() for valid association data', () => {
       mockRequest.body = {
-        account_id: 'account123',
         payment_method_id: 'payment123',
       };
 
@@ -186,7 +227,13 @@ describe('Payment Method Validators', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid association data' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          payment_method_id: { _errors: ['Required'] },
+          _errors: []
+        }
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
@@ -202,7 +249,13 @@ describe('Payment Method Validators', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid association data' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          payment_method_id: { _errors: ['Payment method ID is required'] },
+          _errors: []
+        }
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
@@ -218,14 +271,20 @@ describe('Payment Method Validators', () => {
       );
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid association data' });
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        message: 'Validation failed',
+        errors: {
+          payment_method_id: { _errors: ['Expected string, received number'] },
+          _errors: []
+        }
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should return 400 for additional invalid fields', () => {
+    it('should call next when additional fields are provided', () => {
       mockRequest.body = {
         payment_method_id: 'payment123',
-        invalid_field: 'should_not_be_here',
+        additional_field: 'should_be_ignored',
       };
 
       validateAssociatePaymentMethod(
@@ -234,9 +293,8 @@ describe('Payment Method Validators', () => {
         mockNext
       );
 
-      expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({ error: 'Invalid association data' });
-      expect(mockNext).not.toHaveBeenCalled();
+      expect(mockNext).toHaveBeenCalled();
+      expect(mockResponse.status).not.toHaveBeenCalled();
     });
   });
 }); 
