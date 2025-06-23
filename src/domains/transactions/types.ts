@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { UserSchemas, AccountSchemas, PaymentMethodSchemas, CategorySchemas } from '../../schemas/validation-schemas';
+import { UserSchemas, AccountSchemas, PaymentMethodSchemas, CategorySchemas, TransactionSchemas } from '../../schemas/validation-schemas';
 
 export interface Category {
   id: string;
   user_id: string;
   name: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   color?: string;
   icon?: string;
   created_at: Date;
@@ -20,7 +20,7 @@ export interface Transaction {
   payment_method_id?: string;
   name: string;
   amount: number;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   transaction_date: Date;
   description?: string;
   tags?: string[];
@@ -34,7 +34,7 @@ export interface Transaction {
 export interface TransactionFilters {
   account_id?: string;
   category_id?: string;
-  type?: 'income' | 'expense';
+  type?: 'income' | 'expense' | 'transfer';
   start_date?: Date;
   end_date?: Date;
   min_amount?: number;
@@ -51,7 +51,7 @@ export type CreateTransactionDTO = {
   payment_method_id?: string | null;
   name: string;
   amount: number;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'transfer';
   transaction_date: Date;
   description?: string | null;
   tags?: string[] | null;
@@ -66,7 +66,7 @@ export type UpdateTransactionDTO = {
   payment_method_id?: string;
   name?: string;
   amount?: number;
-  type?: 'income' | 'expense';
+  type?: 'income' | 'expense' | 'transfer';
   transaction_date?: Date;
   description?: string;
   tags?: string[];
@@ -76,4 +76,6 @@ export type UpdateTransactionDTO = {
 };
 
 export type CreateCategoryDTO = z.infer<typeof CategorySchemas.create>;
-export type UpdateCategoryDTO = z.infer<typeof CategorySchemas.update>; 
+export type UpdateCategoryDTO = z.infer<typeof CategorySchemas.update>;
+export type CreateTransactionSchemaDTO = z.infer<typeof TransactionSchemas.create>;
+export type UpdateTransactionSchemaDTO = z.infer<typeof TransactionSchemas.update>; 

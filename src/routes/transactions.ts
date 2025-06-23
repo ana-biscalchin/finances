@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { TransactionService } from '../domains/transactions/service';
 import { CreateTransactionDTO, UpdateTransactionDTO, TransactionFilters } from '../domains/transactions/types';
+import { validateCreateTransaction, validateUpdateTransaction } from '../middlewares/validators/transaction-validator';
 
 export default function createTransactionsRouter(): Router {
   const router = Router();
@@ -52,7 +53,7 @@ export default function createTransactionsRouter(): Router {
    *                 description: Valor da transação
    *               type:
    *                 type: string
-   *                 enum: [income, expense]
+   *                 enum: [income, expense, transfer]
    *                 description: Tipo da transação
    *               transaction_date:
    *                 type: string
@@ -88,7 +89,7 @@ export default function createTransactionsRouter(): Router {
    *       404:
    *         description: Conta não encontrada
    */
-  router.post('/', async (req, res, next) => {
+  router.post('/', validateCreateTransaction, async (req, res, next) => {
     try {
       const transactionData: CreateTransactionDTO = req.body;
       const transaction = await transactionService.createTransaction(transactionData);
@@ -119,7 +120,7 @@ export default function createTransactionsRouter(): Router {
    *         name: type
    *         schema:
    *           type: string
-   *           enum: [income, expense]
+   *           enum: [income, expense, transfer]
    *         description: Filtrar por tipo de transação
    *       - in: query
    *         name: start_date
@@ -169,7 +170,7 @@ export default function createTransactionsRouter(): Router {
         account_id: req.query.account_id as string,
         category_id: req.query.category_id as string,
         payment_method_id: req.query.payment_method_id as string,
-        type: req.query.type as 'income' | 'expense',
+        type: req.query.type as 'income' | 'expense' | 'transfer',
         start_date: req.query.start_date ? new Date(req.query.start_date as string) : undefined,
         end_date: req.query.end_date ? new Date(req.query.end_date as string) : undefined,
         min_amount: req.query.min_amount ? Number(req.query.min_amount) : undefined,
@@ -253,7 +254,7 @@ export default function createTransactionsRouter(): Router {
    *                 type: number
    *               type:
    *                 type: string
-   *                 enum: [income, expense]
+   *                 enum: [income, expense, transfer]
    *               transaction_date:
    *                 type: string
    *                 format: date
@@ -275,7 +276,7 @@ export default function createTransactionsRouter(): Router {
    *       404:
    *         description: Transação não encontrada
    */
-  router.put('/:id', async (req, res, next) => {
+  router.put('/:id', validateUpdateTransaction, async (req, res, next) => {
     try {
       const transactionData: UpdateTransactionDTO = req.body;
       const transaction = await transactionService.updateTransaction(req.params.id, transactionData);

@@ -39,7 +39,7 @@ export default function createCategoriesRouter(): Router {
    *                 description: Category name
    *               type:
    *                 type: string
-   *                 enum: [income, expense]
+   *                 enum: [income, expense, transfer]
    *                 description: Category type
    *               color:
    *                 type: string
@@ -94,7 +94,7 @@ export default function createCategoriesRouter(): Router {
    *         name: type
    *         schema:
    *           type: string
-   *           enum: [income, expense]
+   *           enum: [income, expense, transfer]
    *         description: Filter by category type
    *     responses:
    *       200:
@@ -191,7 +191,7 @@ export default function createCategoriesRouter(): Router {
    *                 description: Category name
    *               type:
    *                 type: string
-   *                 enum: [income, expense]
+   *                 enum: [income, expense, transfer]
    *                 description: Category type
    *               color:
    *                 type: string

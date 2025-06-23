@@ -94,7 +94,7 @@ describe('Category Validator Middleware', () => {
       expect(mockResponse.json).toHaveBeenCalledWith({
         message: 'Validation failed',
         errors: {
-          type: { _errors: ['Category type must be either income or expense'] },
+          type: { _errors: ['Category type must be either income, expense, or transfer'] },
           _errors: []
         }
       });
@@ -114,7 +114,7 @@ describe('Category Validator Middleware', () => {
       expect(mockResponse.json).toHaveBeenCalledWith({
         message: 'Validation failed',
         errors: {
-          type: { _errors: ['Category type must be either income or expense'] },
+          type: { _errors: ['Category type must be either income, expense, or transfer'] },
           _errors: []
         }
       });
@@ -213,7 +213,7 @@ describe('Category Validator Middleware', () => {
       expect(mockResponse.json).toHaveBeenCalledWith({
         message: 'Validation failed',
         errors: {
-          type: { _errors: ['Category type must be either income or expense'] },
+          type: { _errors: ['Category type must be either income, expense, or transfer'] },
           _errors: []
         }
       });
