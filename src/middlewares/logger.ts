@@ -23,13 +23,18 @@ export function logger(req: Request, res: Response, next: NextFunction) {
 
     try {
       if (typeof body === 'string') {
-        const responseBody = JSON.parse(body);
-        console.log('\nResponse Body:', JSON.stringify(responseBody, null, 2));
+        if (body.trim()) {
+          const responseBody = JSON.parse(body);
+          console.log('\nResponse Body:', JSON.stringify(responseBody, null, 2));
+        } else {
+          console.log('\nResponse Body: (empty)');
+        }
       } else {
         console.log('\nResponse Body:', body);
       }
     } catch (e) {
-      console.log('\nResponse Body:', body);
+      console.log('\nResponse Body (raw):', body);
+      console.log('Parse error:', e instanceof Error ? e.message : String(e));
     }
 
     console.log('=== END REQUEST LOG ===\n');

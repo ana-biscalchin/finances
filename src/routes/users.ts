@@ -85,8 +85,9 @@ router.post('/', validateCreateUser, async (req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const users = await userService.getAllUsers();
-    res.json(users);
+    res.status(200).json(users);
   } catch (error) {
+    console.error('Error in GET /users:', error);
     next(error);
   }
 });

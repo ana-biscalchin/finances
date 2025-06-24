@@ -21,8 +21,13 @@ export class UserRepository {
   }
 
   async findAll(): Promise<User[]> {
-    const result = await pool.query('SELECT * FROM users');
-    return result.rows as User[];
+    try {
+      const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
+      return result.rows || [];
+    } catch (error) {
+      console.error('Error in findAll:', error);
+      throw error;
+    }
   }
 
   async findById(id: string): Promise<User | null> {
