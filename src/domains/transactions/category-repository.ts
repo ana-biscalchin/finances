@@ -7,9 +7,9 @@ export class CategoryRepository {
     const id = uuidv4();
     const now = new Date();
     
-    await pool.execute(
+    await pool.query(
       `INSERT INTO categories (id, user_id, name, type, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6)`,
       [id, categoryData.user_id, categoryData.name, categoryData.type, now, now]
     );
 
@@ -21,45 +21,45 @@ export class CategoryRepository {
   }
 
   async findAll(): Promise<Category[]> {
-    const [rows] = await pool.execute('SELECT * FROM categories');
-    return rows as Category[];
+    const result = await pool.query('SELECT * FROM categories');
+    return result.rows as Category[];
   }
 
   async findById(id: string): Promise<Category | null> {
-    const [rows] = await pool.execute(
-      'SELECT * FROM categories WHERE id = ?',
+    const result = await pool.query(
+      'SELECT * FROM categories WHERE id = $1',
       [id]
     );
 
-    const categories = rows as Category[];
+    const categories = result.rows as Category[];
     return categories[0] || null;
   }
 
   async findByUserId(userId: string): Promise<Category[]> {
-    const [rows] = await pool.execute(
-      'SELECT * FROM categories WHERE user_id = ? ORDER BY name',
+    const result = await pool.query(
+      'SELECT * FROM categories WHERE user_id = $1 ORDER BY name',
       [userId]
     );
 
-    return rows as Category[];
+    return result.rows as Category[];
   }
 
   async findByUserIdAndType(userId: string, type: string): Promise<Category[]> {
-    const [rows] = await pool.execute(
-      'SELECT * FROM categories WHERE user_id = ? AND type = ? ORDER BY name',
+    const result = await pool.query(
+      'SELECT * FROM categories WHERE user_id = $1 AND type = $2 ORDER BY name',
       [userId, type]
     );
 
-    return rows as Category[];
+    return result.rows as Category[];
   }
 
   async findByNameAndUserId(name: string, userId: string): Promise<Category | null> {
-    const [rows] = await pool.execute(
-      'SELECT * FROM categories WHERE name = ? AND user_id = ?',
+    const result = await pool.query(
+      'SELECT * FROM categories WHERE name = $1 AND user_id = $2',
       [name, userId]
     );
 
-    const categories = rows as Category[];
+    const categories = result.rows as Category[];
     return categories[0] || null;
   }
 
@@ -67,13 +67,14 @@ export class CategoryRepository {
     const now = new Date();
     const updates: string[] = [];
     const values: any[] = [];
+    let paramCount = 1;
 
     if (categoryData.name) {
-      updates.push('name = ?');
+      updates.push(`name = $${paramCount++}`);
       values.push(categoryData.name);
     }
     if (categoryData.type) {
-      updates.push('type = ?');
+      updates.push(`type = $${paramCount++}`);
       values.push(categoryData.type);
     }
 
@@ -81,12 +82,12 @@ export class CategoryRepository {
       return this.findById(id);
     }
 
-    updates.push('updated_at = ?');
+    updates.push(`updated_at = $${paramCount++}`);
     values.push(now);
     values.push(id);
 
-    await pool.execute(
-      `UPDATE categories SET ${updates.join(', ')} WHERE id = ?`,
+    await pool.query(
+      `UPDATE categories SET ${updates.join(', ')} WHERE id = $${paramCount}`,
       values
     );
 
@@ -94,20 +95,20 @@ export class CategoryRepository {
   }
 
   async delete(id: string): Promise<boolean> {
-    const [result] = await pool.execute(
-      'DELETE FROM categories WHERE id = ?',
+    const result = await pool.query(
+      'DELETE FROM categories WHERE id = $1',
       [id]
     );
 
-    return (result as any).affectedRows > 0;
+    return (result.rowCount || 0) > 0;
   }
 
   async deleteByUserId(userId: string): Promise<boolean> {
-    const [result] = await pool.execute(
-      'DELETE FROM categories WHERE user_id = ?',
+    const result = await pool.query(
+      'DELETE FROM categories WHERE user_id = $1',
       [userId]
     );
 
-    return (result as any).affectedRows > 0;
+    return (result.rowCount || 0) > 0;
   }
 } 

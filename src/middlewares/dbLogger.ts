@@ -9,7 +9,7 @@ export function dbLogger(req: Request, res: Response, next: NextFunction) {
     console.log('Parameters:', params);
    
     try {
-      const result = await pool.execute(sql, params);
+      const result = await pool.query(sql, params);
       const duration = Date.now() - start;
       console.log(`Query Duration: ${duration}ms`);
       console.log('Result:', JSON.stringify(result, null, 2));

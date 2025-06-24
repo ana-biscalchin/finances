@@ -3,11 +3,12 @@
 ## 🎯 Objetivo
 Sistema completo de gerenciamento financeiro pessoal com controle de usuários, contas bancárias, métodos de pagamento, categorias e transações. Implementação com **testes unitários abrangentes**, **validação robusta** e **documentação Swagger completa**.
 
+
 ## 👤 Entidade Users
 
 ### 📊 Estrutura do Banco de Dados
 - **Tabela `users`**: Armazena informações dos usuários
-- **Campos obrigatórios**: id, name, email, default_currency, created_at, updated_at
+- **Campos obrigatórios**: id (UUID), name, email, default_currency, created_at, updated_at
 - **Restrições**: email único, currency em formato ISO 4217 (3 letras maiúsculas)
 
 ### 🏗️ Arquitetura Implementada
@@ -15,7 +16,7 @@ Sistema completo de gerenciamento financeiro pessoal com controle de usuários, 
 #### 1. **Camada de Tipos** (`src/domains/users/types.ts`)
 ```typescript
 interface User {
-  id: string;
+  id: string; // UUID
   name: string;
   email: string;
   default_currency: string;
@@ -47,6 +48,7 @@ Para atualização de usuário (update):
 - Operações: create, findById, findByEmail, findAll, update, delete
 - Validação de unicidade de email
 - Tratamento de erros de integridade referencial
+- **API PostgreSQL**: `pool.query()` com parâmetros `$1, $2...`
 
 #### 4. **Camada de Serviço** (`src/domains/users/service.ts`)
 - **UserService**: Lógica de negócio centralizada
@@ -74,16 +76,16 @@ Para atualização de usuário (update):
 ### 📚 Conceitos SQL Demonstrados 
 #### 1. **Validação de Unicidade**
 ```sql
--- Índice único no email
+-- Índice único no email (PostgreSQL)
 CREATE UNIQUE INDEX idx_users_email ON users(email);
 
 -- Verificação antes de inserir/atualizar
-SELECT COUNT(*) FROM users WHERE email = ? AND id != ?;
+SELECT COUNT(*) FROM users WHERE email = $1 AND id != $2;
 ```
 
 #### 2. **Cascade Delete**
 ```sql
--- Foreign keys com CASCADE DELETE
+-- Foreign keys com CASCADE DELETE (PostgreSQL)
 ALTER TABLE accounts 
 ADD CONSTRAINT fk_accounts_user 
 FOREIGN KEY (user_id) REFERENCES users(id) 
@@ -97,10 +99,10 @@ ON DELETE CASCADE;
 
 #### 3. **Validação de Formato de Moeda**
 ```sql
--- Constraint para formato de moeda
+-- Constraint para formato de moeda (PostgreSQL)
 ALTER TABLE users 
 ADD CONSTRAINT chk_default_currency 
-CHECK (default_currency REGEXP '^[A-Z]{3}$');
+CHECK (default_currency ~ '^[A-Z]{3}$');
 ```
 
 
@@ -110,8 +112,8 @@ CHECK (default_currency REGEXP '^[A-Z]{3}$');
 - **Tabela `accounts`**: Armazena informações das contas bancárias
 - **Tabela `payment_methods`**: Armazena métodos de pagamento disponíveis
 - **Tabela `account_payment_methods`**: Tabela de relacionamento N:N entre contas e métodos de pagamento
-- **Campos obrigatórios accounts**: id, user_id, institution_name, initial_balance, currency, account_type, created_at, updated_at
-- **Campos obrigatórios payment_methods**: id, name
+- **Campos obrigatórios accounts**: id (UUID), user_id (UUID), institution_name, initial_balance, currency, account_type, created_at, updated_at
+- **Campos obrigatórios payment_methods**: id (UUID), name
 - **Restrições**: currency em formato ISO 4217 (3 letras maiúsculas), account_type com valores específicos
 
 ### 🏗️ Arquitetura Implementada
@@ -119,8 +121,8 @@ CHECK (default_currency REGEXP '^[A-Z]{3}$');
 #### 1. **Camada de Tipos** (`src/domains/accounts/types.ts`)
 ```typescript
 interface Account {
-  id: string;
-  user_id: string;
+  id: string; // UUID
+  user_id: string; // UUID
   institution_name: string;
   initial_balance: string;
   currency: string;
@@ -131,7 +133,7 @@ interface Account {
 }
 
 interface PaymentMethod {
-  id: string;
+  id: string; // UUID
   name: string;
   created_at: Date;
   updated_at: Date;
@@ -145,7 +147,7 @@ type UpdateAccountDTO = z.infer<typeof AccountSchemas.update>;
 A validação é feita através de schemas Zod que definem as seguintes regras:
 
 Para criação de conta (create):
-- User ID: obrigatório, string não vazio
+- User ID: obrigatório, string não vazio (UUID)
 - Nome da instituição: obrigatório, string não vazio
 - Saldo inicial: obrigatório, número
 - Moeda: exatamente 3 letras maiúsculas (ex: BRL, USD)
@@ -167,6 +169,7 @@ Para métodos de pagamento:
 - Operações payment methods: create, findById, findByName, findAll, update, delete
 - Gerenciamento de relacionamentos N:N entre contas e métodos de pagamento
 - Carregamento automático dos métodos de pagamento associados às contas
+- **API PostgreSQL**: `pool.query()` e `pool.connect()` para transações
 
 #### 4. **Camada de Serviço** (`src/domains/accounts/service.ts`)
 - **AccountService**: Lógica de negócio centralizada
@@ -206,10 +209,10 @@ Para métodos de pagamento:
 ### 📚 Conceitos SQL Demonstrados 
 #### 1. **Relacionamento N:N**
 ```sql
--- Tabela de relacionamento entre contas e métodos de pagamento
+-- Tabela de relacionamento entre contas e métodos de pagamento (PostgreSQL)
 CREATE TABLE account_payment_methods (
-  account_id CHAR(36) NOT NULL,
-  payment_method_id CHAR(36) NOT NULL,
+  account_id UUID NOT NULL,
+  payment_method_id UUID NOT NULL,
   PRIMARY KEY (account_id, payment_method_id),
   FOREIGN KEY (account_id) REFERENCES accounts(id),
   FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)
@@ -218,38 +221,38 @@ CREATE TABLE account_payment_methods (
 
 #### 2. **ENUM para Tipos de Conta**
 ```sql
--- Constraint para tipos de conta válidos
-account_type ENUM('checking', 'savings', 'investment', 'credit_card', 'payment_app', 'cash', 'other') NOT NULL
+-- Constraint para tipos de conta válidos (PostgreSQL)
+account_type VARCHAR(20) CHECK (account_type IN ('checking', 'savings', 'investment', 'credit_card', 'payment_app', 'cash', 'other')) NOT NULL
 ```
 
 #### 3. **Validação de Unicidade**
 ```sql
--- Índice único no nome do método de pagamento
+-- Índice único no nome do método de pagamento (PostgreSQL)
 CREATE UNIQUE INDEX idx_payment_methods_name ON payment_methods(name);
 ```
 
 #### 4. **JOINs Complexos**
 ```sql
--- Busca de métodos de pagamento associados a contas
+-- Busca de métodos de pagamento associados a contas (PostgreSQL)
 SELECT pm.*, apm.account_id
 FROM payment_methods pm
 JOIN account_payment_methods apm ON pm.id = apm.payment_method_id
-WHERE apm.account_id IN (?)
+WHERE apm.account_id = ANY($1)
 ```
 
 #### 5. **Transações para Operações Complexas**
 ```sql
--- Uso de transações para atualizar conta e seus relacionamentos
-BEGIN TRANSACTION;
-DELETE FROM account_payment_methods WHERE account_id = ?;
-INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES (?, ?);
-UPDATE accounts SET updated_at = ? WHERE id = ?;
+-- Uso de transações para atualizar conta e seus relacionamentos (PostgreSQL)
+BEGIN;
+DELETE FROM account_payment_methods WHERE account_id = $1;
+INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES ($1, $2);
+UPDATE accounts SET updated_at = NOW() WHERE id = $1;
 COMMIT;
 ```
 
 #### 6. **Foreign Key Constraints**
 ```sql
--- Relacionamento com usuário
+-- Relacionamento com usuário (PostgreSQL)
 FOREIGN KEY (user_id) REFERENCES users(id)
 
 -- Relacionamentos na tabela de associação
@@ -261,7 +264,7 @@ FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)
 
 ### 🛠️ **Tecnologias Utilizadas**
 - **Backend**: Node.js + TypeScript + Express.js
-- **Banco de Dados**: MySQL com migrations
+- **Banco de Dados**: **PostgreSQL** com migrations (migrado de MySQL)
 - **Validação**: Zod para schemas
 - **Testes**: Jest para testes unitários
 - **Documentação**: Swagger/OpenAPI
@@ -272,12 +275,14 @@ FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)
 - **Padrões**: Repository Pattern, Service Layer, DTO Pattern
 - **Validação**: Schemas Zod com sanitização automática
 - **Testes**: Cobertura de repositories e services
+- **API Database**: PostgreSQL `pg` library com `pool.query()` e `pool.connect()`
 
 ### 📊 **Conceitos de Banco de Dados**
 - **Relacionamentos**: 1:N (User → Accounts), N:N (Accounts ↔ Payment Methods)
 - **Constraints**: UNIQUE, FOREIGN KEY, CHECK, ENUM
 - **Operações**: JOINs, transações, subconsultas
 - **Integridade**: Cascade delete, validações de unicidade
+- **Tipos PostgreSQL**: UUID, JSONB, TIMESTAMP, ENUM, DECIMAL
 
 ### 🚀 **Funcionalidades**
 - **Usuários**: CRUD com validação de email único e formato de moeda
@@ -290,11 +295,13 @@ FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)
 - **Validações**: Regex, enums, unicidade de dados
 - **Performance**: Índices e JOINs otimizados
 - **Qualidade**: TypeScript, testes unitários, tratamento de erros
+- **PostgreSQL**: Sintaxe específica, tipos avançados, extensibilidade
 
 ### 🎯 **Próximos Passos**
 - Sistema de Transações (receitas/despesas)
 - Sistema de Categorias
 - Relatórios e dashboards
 - Autenticação e autorização
+- **Deploy no Supabase**: Configuração de produção com PostgreSQL
 
 

@@ -1,54 +1,58 @@
 ```mermaid
 erDiagram
     User {
-        string id
+        uuid id
         string name
         string email
         string default_currency
-        datetime created_at
-        datetime updated_at
+        timestamp created_at
+        timestamp updated_at
     }
     Account {
-        string id
-        string user_id
+        uuid id
+        uuid user_id
         string institution_name
         decimal initial_balance
         string currency
-        string account_type
-        datetime created_at
-        datetime updated_at
+        enum account_type
+        timestamp created_at
+        timestamp updated_at
     }
     Category {
-        string id
-        string user_id
+        uuid id
+        uuid user_id
         string name
-        string type
+        enum type
+        timestamp created_at
+        timestamp updated_at
     }
     PaymentMethod {
-        string id
+        uuid id
         string name
+        timestamp created_at
+        timestamp updated_at
     }
     AccountPaymentMethod {
-        string account_id
-        string payment_method_id
+        uuid account_id
+        uuid payment_method_id
     }
     CreditCard {
-        string id
-        string account_id
+        uuid id
+        uuid account_id
         string card_name
         string card_number
         string card_brand
         decimal credit_limit
         decimal available_credit
         date expiration_date
-        datetime created_at
-        datetime updated_at
+        timestamp created_at
+        timestamp updated_at
     }
     Transaction {
-        string id
-        string account_id
-        string payment_method_id
-        string category_id
+        uuid id
+        uuid account_id
+        uuid payment_method_id
+        uuid category_id
         string name
         text description
         decimal amount
@@ -56,15 +60,15 @@ erDiagram
         string payee
         date transaction_date
         string reference_number
-        string tags
+        jsonb tags
         string recurring_id
-        datetime created_at
-        datetime updated_at
+        timestamp created_at
+        timestamp updated_at
     }
     CreditTransaction {
-        string id
-        string credit_card_id
-        string category_id
+        uuid id
+        uuid credit_card_id
+        uuid category_id
         string name
         text description
         decimal amount
@@ -78,10 +82,10 @@ erDiagram
         int current_installment
         decimal installment_amount
         string reference_number
-        string tags
+        jsonb tags
         string recurring_id
-        datetime created_at
-        datetime updated_at
+        timestamp created_at
+        timestamp updated_at
     }
 
     User ||--o{ Account : owns
@@ -94,4 +98,28 @@ erDiagram
     Category ||--o{ Transaction : categorizes
     CreditCard ||--o{ CreditTransaction : contains
     Category ||--o{ CreditTransaction : categorizes
+```
+
+## Tipos de Dados PostgreSQL Utilizados
+
+### Identificadores
+- **UUID**: Para todos os IDs primários (mais seguro que auto-increment)
+- **SERIAL**: Para sequências quando necessário
+
+### Tipos Específicos
+- **JSONB**: Para campos `tags` (mais eficiente que JSON para consultas)
+- **ENUM**: Para tipos de conta, transação, status
+- **TIMESTAMP**: Para campos de data/hora com timezone
+- **DECIMAL**: Para valores monetários (precisão)
+
+### Constraints PostgreSQL
+- **CHECK**: Validação de formato de moeda (`^[A-Z]{3}$`)
+- **UNIQUE**: Índices únicos em emails e nomes
+- **FOREIGN KEY**: Com CASCADE DELETE para integridade referencial
+- **NOT NULL**: Campos obrigatórios
+
+### Índices Otimizados
+- **B-tree**: Para consultas de igualdade e range
+- **GIN**: Para consultas em campos JSONB
+- **Hash**: Para consultas de igualdade simples
 ``` 

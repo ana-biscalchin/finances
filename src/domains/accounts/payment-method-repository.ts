@@ -6,8 +6,8 @@ export class PaymentMethodRepository {
     async create(name: string): Promise<PaymentMethod> {
         const id = uuidv4();
 
-        await pool.execute(
-            'INSERT INTO payment_methods (id, name) VALUES (?, ?)',
+        await pool.query(
+            'INSERT INTO payment_methods (id, name) VALUES ($1, $2)',
             [id, name]
         );
         
@@ -20,33 +20,33 @@ export class PaymentMethodRepository {
     }
 
     async findById(id: string): Promise<PaymentMethod | null> {
-        const [rows] = await pool.execute(
-            'SELECT * FROM payment_methods WHERE id = ?',
+        const result = await pool.query(
+            'SELECT * FROM payment_methods WHERE id = $1',
             [id]
         );
         
-        const paymentMethods = rows as PaymentMethod[];
+        const paymentMethods = result.rows as PaymentMethod[];
         return paymentMethods[0] || null;
     }
 
     async findByName(name: string): Promise<PaymentMethod | null> {
-        const [rows] = await pool.execute(
-            'SELECT * FROM payment_methods WHERE name = ?',
+        const result = await pool.query(
+            'SELECT * FROM payment_methods WHERE name = $1',
             [name]
         );
         
-        const paymentMethods = rows as PaymentMethod[];
+        const paymentMethods = result.rows as PaymentMethod[];
         return paymentMethods[0] || null;
     }
 
     async findAll(): Promise<PaymentMethod[]> {
-        const [rows] = await pool.execute('SELECT * FROM payment_methods ORDER BY name');
-        return rows as PaymentMethod[];
+        const result = await pool.query('SELECT * FROM payment_methods ORDER BY name');
+        return result.rows as PaymentMethod[];
     }
 
     async update(id: string, name: string): Promise<PaymentMethod | null> {
-        await pool.execute(
-            'UPDATE payment_methods SET name = ? WHERE id = ?',
+        await pool.query(
+            'UPDATE payment_methods SET name = $1 WHERE id = $2',
             [name, id]
         );
 
@@ -54,10 +54,10 @@ export class PaymentMethodRepository {
     }
 
     async delete(id: string): Promise<boolean> {
-        const [result] = await pool.execute(
-            'DELETE FROM payment_methods WHERE id = ?',
+        const result = await pool.query(
+            'DELETE FROM payment_methods WHERE id = $1',
             [id]
         );
-        return (result as any).affectedRows > 0;
+        return (result.rowCount || 0) > 0;
     }
 } 

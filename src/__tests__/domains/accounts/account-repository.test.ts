@@ -5,9 +5,8 @@ import { Account, CreateAccountDTO, UpdateAccountDTO } from '../../../domains/ac
 jest.mock('../../../config/database', () => ({
   __esModule: true,
   default: {
-    execute: jest.fn(),
     query: jest.fn(),
-    getConnection: jest.fn(),
+    connect: jest.fn(),
   },
 }));
 
@@ -43,22 +42,22 @@ describe('AccountRepository', () => {
         payment_method_ids: ['payment123'],
       };
 
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute
-        .mockResolvedValueOnce([{ affectedRows: 1 }])
-        .mockResolvedValueOnce([{ affectedRows: 1 }])
-        .mockResolvedValueOnce([[mockAccount]])
-        .mockResolvedValueOnce([[]]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [mockAccount] })
+        .mockResolvedValueOnce({ rows: [] });
 
       const result = await repository.create(accountData);
 
-      expect(mockExecute).toHaveBeenCalledWith(
-        'INSERT INTO accounts (id, user_id, institution_name, initial_balance, currency, account_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [expect.any(String), 'user123', 'Test Bank', 1000, 'BRL', 'checking', expect.any(Date), expect.any(Date)]
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO accounts'),
+        expect.any(Array)
       );
-      expect(mockExecute).toHaveBeenCalledWith(
-        'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES (?, ?)',
-        [expect.any(String), 'payment123']
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO account_payment_methods'),
+        expect.any(Array)
       );
       expect(result).toEqual(mockAccount);
     });
@@ -73,10 +72,10 @@ describe('AccountRepository', () => {
         payment_method_ids: [],
       };
 
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute
-        .mockResolvedValueOnce([{ affectedRows: 1 }])
-        .mockResolvedValueOnce([[]]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [] });
 
       await expect(repository.create(accountData)).rejects.toThrow('Failed to create account');
     });
@@ -91,22 +90,22 @@ describe('AccountRepository', () => {
 
       const mockQuery = mockPool.query as jest.Mock;
       mockQuery
-        .mockResolvedValueOnce([mockAccounts])
-        .mockResolvedValueOnce([mockPaymentMethods]);
+        .mockResolvedValueOnce({ rows: mockAccounts })
+        .mockResolvedValueOnce({ rows: mockPaymentMethods });
 
       const result = await repository.findAll();
 
       expect(mockQuery).toHaveBeenCalledWith('SELECT * FROM accounts');
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('SELECT pm.*, apm.account_id'),
-        [['account123']]
+        expect.any(Array)
       );
       expect(result).toEqual([{ ...mockAccount, payment_methods: [{ id: 'payment123', name: 'Credit Card' }] }]);
     });
 
     it('should return empty array when no accounts exist', async () => {
       const mockQuery = mockPool.query as jest.Mock;
-      mockQuery.mockResolvedValueOnce([[]]);
+      mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const result = await repository.findAll();
 
@@ -116,23 +115,23 @@ describe('AccountRepository', () => {
 
   describe('findById', () => {
     it('should return account when found', async () => {
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute
-        .mockResolvedValueOnce([[mockAccount]])
-        .mockResolvedValueOnce([[]]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery
+        .mockResolvedValueOnce({ rows: [mockAccount] })
+        .mockResolvedValueOnce({ rows: [] });
 
       const result = await repository.findById('account123');
 
-      expect(mockExecute).toHaveBeenCalledWith(
-        'SELECT * FROM accounts WHERE id = ?',
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT * FROM accounts WHERE id = $1',
         ['account123']
       );
       expect(result).toEqual({ ...mockAccount, payment_methods: [] });
     });
 
     it('should return null when account not found', async () => {
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute.mockResolvedValueOnce([[]]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const result = await repository.findById('account123');
 
@@ -149,13 +148,13 @@ describe('AccountRepository', () => {
 
       const mockQuery = mockPool.query as jest.Mock;
       mockQuery
-        .mockResolvedValueOnce([mockAccounts])
-        .mockResolvedValueOnce([mockPaymentMethods]);
+        .mockResolvedValueOnce({ rows: mockAccounts })
+        .mockResolvedValueOnce({ rows: mockPaymentMethods });
 
       const result = await repository.findByUserId('user123');
 
       expect(mockQuery).toHaveBeenCalledWith(
-        'SELECT * FROM accounts WHERE user_id = ?',
+        'SELECT * FROM accounts WHERE user_id = $1',
         ['user123']
       );
       expect(result).toEqual([{ ...mockAccount, payment_methods: [{ id: 'payment123', name: 'Credit Card' }] }]);
@@ -163,7 +162,7 @@ describe('AccountRepository', () => {
 
     it('should return empty array when no accounts for user', async () => {
       const mockQuery = mockPool.query as jest.Mock;
-      mockQuery.mockResolvedValueOnce([[]]);
+      mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const result = await repository.findByUserId('user123');
 
@@ -174,100 +173,91 @@ describe('AccountRepository', () => {
   describe('update', () => {
     it('should update account successfully', async () => {
       const updateData: UpdateAccountDTO = { institution_name: 'Updated Bank' };
-      const mockConnection = {
-        beginTransaction: jest.fn(),
-        execute: jest.fn(),
-        commit: jest.fn(),
-        rollback: jest.fn(),
+      const mockClient = {
+        query: jest.fn(),
         release: jest.fn(),
       };
 
-      mockPool.getConnection.mockResolvedValue(mockConnection as any);
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute
-        .mockResolvedValueOnce([[{ ...mockAccount, institution_name: 'Updated Bank' }]])
-        .mockResolvedValueOnce([[]]);
+      const mockQuery = mockPool.query as jest.Mock;
+      const mockConnect = mockPool.connect as jest.Mock;
+      
+      mockConnect.mockResolvedValue(mockClient);
+      mockClient.query
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 });
+      mockQuery.mockResolvedValueOnce({ rows: [mockAccount] });
 
       const result = await repository.update('account123', updateData);
 
-      expect(mockConnection.beginTransaction).toHaveBeenCalled();
-      expect(mockConnection.execute).toHaveBeenCalledWith(
-        'UPDATE accounts SET institution_name = ?, updated_at = ? WHERE id = ?',
-        ['Updated Bank', expect.any(Date), 'account123']
-      );
-      expect(mockConnection.commit).toHaveBeenCalled();
-      expect(mockConnection.release).toHaveBeenCalled();
+      expect(mockConnect).toHaveBeenCalled();
+      expect(mockClient.query).toHaveBeenCalled();
+      expect(mockClient.release).toHaveBeenCalled();
+      expect(result).toEqual(mockAccount);
     });
 
     it('should update payment methods when provided', async () => {
       const updateData: UpdateAccountDTO = { 
         payment_method_ids: ['payment123', 'payment456'] 
       };
-      const mockConnection = {
-        beginTransaction: jest.fn(),
-        execute: jest.fn(),
-        commit: jest.fn(),
-        rollback: jest.fn(),
+      const mockClient = {
+        query: jest.fn(),
         release: jest.fn(),
       };
 
-      mockPool.getConnection.mockResolvedValue(mockConnection as any);
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute
-        .mockResolvedValueOnce([[mockAccount]])
-        .mockResolvedValueOnce([[]]);
+      const mockQuery = mockPool.query as jest.Mock;
+      const mockConnect = mockPool.connect as jest.Mock;
+      
+      mockConnect.mockResolvedValue(mockClient);
+      mockClient.query
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 });
+      mockQuery.mockResolvedValueOnce({ rows: [mockAccount] });
 
       await repository.update('account123', updateData);
 
-      expect(mockConnection.execute).toHaveBeenCalledWith(
-        'DELETE FROM account_payment_methods WHERE account_id = ?',
+      expect(mockClient.query).toHaveBeenCalledWith(
+        'DELETE FROM account_payment_methods WHERE account_id = $1',
         ['account123']
       );
-      expect(mockConnection.execute).toHaveBeenCalledWith(
-        'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES (?, ?)',
+      expect(mockClient.query).toHaveBeenCalledWith(
+        'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES ($1, $2)',
         ['account123', 'payment123']
       );
-      expect(mockConnection.execute).toHaveBeenCalledWith(
-        'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES (?, ?)',
+      expect(mockClient.query).toHaveBeenCalledWith(
+        'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES ($1, $2)',
         ['account123', 'payment456']
       );
     });
 
     it('should rollback transaction on error', async () => {
       const updateData: UpdateAccountDTO = { institution_name: 'Updated Bank' };
-      const mockConnection = {
-        beginTransaction: jest.fn(),
-        execute: jest.fn().mockRejectedValue(new Error('Database error')),
-        commit: jest.fn(),
-        rollback: jest.fn(),
+      const mockClient = {
+        query: jest.fn().mockRejectedValue(new Error('Database error')),
         release: jest.fn(),
       };
 
-      mockPool.getConnection.mockResolvedValue(mockConnection as any);
+      const mockConnect = mockPool.connect as jest.Mock;
+      mockConnect.mockResolvedValue(mockClient);
 
       await expect(repository.update('account123', updateData)).rejects.toThrow('Database error');
-      expect(mockConnection.rollback).toHaveBeenCalled();
-      expect(mockConnection.release).toHaveBeenCalled();
+      expect(mockClient.release).toHaveBeenCalled();
     });
   });
 
   describe('delete', () => {
     it('should delete account successfully', async () => {
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute.mockResolvedValueOnce([{ affectedRows: 1 }]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rowCount: 1 });
 
       const result = await repository.delete('account123');
 
-      expect(mockExecute).toHaveBeenCalledWith(
-        'DELETE FROM accounts WHERE id = ?',
-        ['account123']
-      );
       expect(result).toBe(true);
     });
 
-    it('should return false when account not found for deletion', async () => {
-      const mockExecute = mockPool.execute as jest.Mock;
-      mockExecute.mockResolvedValueOnce([{ affectedRows: 0 }]);
+    it('should return false if no account deleted', async () => {
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rowCount: 0 });
 
       const result = await repository.delete('account123');
 

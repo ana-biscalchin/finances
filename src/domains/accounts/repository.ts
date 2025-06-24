@@ -1,21 +1,20 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../../config/database';
 import { Account, CreateAccountDTO, UpdateAccountDTO, PaymentMethod } from './types';
-import { RowDataPacket } from 'mysql2';
 
 export class AccountRepository {
     async create(accountData: CreateAccountDTO): Promise<Account> {
         const id = uuidv4();
         const now = new Date();
 
-        await pool.execute(
-            'INSERT INTO accounts (id, user_id, institution_name, initial_balance, currency, account_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        await pool.query(
+            'INSERT INTO accounts (id, user_id, institution_name, initial_balance, currency, account_type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
             [id, accountData.user_id, accountData.institution_name, accountData.initial_balance, accountData.currency, accountData.account_type, now, now]
         );
         
         for (const paymentMethodId of accountData.payment_method_ids) {
-            await pool.execute(
-                'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES (?, ?)',
+            await pool.query(
+                'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES ($1, $2)',
                 [id, paymentMethodId]
             );
         }
@@ -29,7 +28,8 @@ export class AccountRepository {
     }
 
     async findAll(): Promise<Account[]> {
-        const [accounts] = await pool.query<RowDataPacket[]>('SELECT * FROM accounts');
+        const result = await pool.query('SELECT * FROM accounts');
+        const accounts = result.rows;
 
         if (accounts.length === 0) {
             return [];
@@ -37,15 +37,15 @@ export class AccountRepository {
 
         const accountIds = accounts.map(a => a.id);
         
-        const [paymentMethodRows] = await pool.query<RowDataPacket[]>(
+        const paymentMethodResult = await pool.query(
             `SELECT pm.*, apm.account_id
              FROM payment_methods pm
              JOIN account_payment_methods apm ON pm.id = apm.payment_method_id
-             WHERE apm.account_id IN (?)`,
+             WHERE apm.account_id = ANY($1)`,
             [accountIds]
         );
 
-        const paymentMethodsByAccountId = paymentMethodRows.reduce((acc, row) => {
+        const paymentMethodsByAccountId = paymentMethodResult.rows.reduce((acc, row) => {
             const accountId = row.account_id;
             if (!acc[accountId]) {
                 acc[accountId] = [];
@@ -63,12 +63,12 @@ export class AccountRepository {
     }
 
     async findById(id: string): Promise<Account | null> {
-        const [rows] = await pool.execute(
-            'SELECT * FROM accounts WHERE id = ?',
+        const result = await pool.query(
+            'SELECT * FROM accounts WHERE id = $1',
             [id]
         );
         
-        const accounts = rows as Account[];
+        const accounts = result.rows;
         
         if (accounts.length === 0) {
             return null;
@@ -76,24 +76,25 @@ export class AccountRepository {
 
         const account = accounts[0];
 
-        const [paymentMethodRows] = await pool.execute(
+        const paymentMethodResult = await pool.query(
             `SELECT pm.*
              FROM payment_methods pm
              JOIN account_payment_methods apm ON pm.id = apm.payment_method_id
-             WHERE apm.account_id = ?`,
+             WHERE apm.account_id = $1`,
             [id]
         );
 
-        account.payment_methods = paymentMethodRows as PaymentMethod[];
+        account.payment_methods = paymentMethodResult.rows as PaymentMethod[];
 
         return account;
     }
 
     async findByUserId(userId: string): Promise<Account[]> {
-        const [accounts] = await pool.query<RowDataPacket[]>(
-            'SELECT * FROM accounts WHERE user_id = ?',
+        const result = await pool.query(
+            'SELECT * FROM accounts WHERE user_id = $1',
             [userId]
         );
+        const accounts = result.rows;
 
         if (accounts.length === 0) {
             return [];
@@ -101,15 +102,15 @@ export class AccountRepository {
 
         const accountIds = accounts.map(a => a.id);
         
-        const [paymentMethodRows] = await pool.query<RowDataPacket[]>(
+        const paymentMethodResult = await pool.query(
             `SELECT pm.*, apm.account_id
              FROM payment_methods pm
              JOIN account_payment_methods apm ON pm.id = apm.payment_method_id
-             WHERE apm.account_id IN (?)`,
+             WHERE apm.account_id = ANY($1)`,
             [accountIds]
         );
 
-        const paymentMethodsByAccountId = paymentMethodRows.reduce((acc, row) => {
+        const paymentMethodsByAccountId = paymentMethodResult.rows.reduce((acc, row) => {
             const accountId = row.account_id;
             if (!acc[accountId]) {
                 acc[accountId] = [];
@@ -127,28 +128,29 @@ export class AccountRepository {
     }
 
     async update(id: string, accountData: UpdateAccountDTO): Promise<Account | null> {
-        const conn = await pool.getConnection();
+        const client = await pool.connect();
         
         try {
-            await conn.beginTransaction();
+            await client.query('BEGIN');
             const now = new Date();
             const updates: string[] = [];
             const values: any[] = [];
+            let paramCount = 1;
 
             if (accountData.institution_name) {
-                updates.push('institution_name = ?');
+                updates.push(`institution_name = $${paramCount++}`);
                 values.push(accountData.institution_name);
             }
             if (accountData.initial_balance) {
-                updates.push('initial_balance = ?');
+                updates.push(`initial_balance = $${paramCount++}`);
                 values.push(accountData.initial_balance);
             }
             if (accountData.currency) {
-                updates.push('currency = ?');
+                updates.push(`currency = $${paramCount++}`);
                 values.push(accountData.currency);
             }
             if (accountData.account_type) {
-                updates.push('account_type = ?');
+                updates.push(`account_type = $${paramCount++}`);
                 values.push(accountData.account_type);
             }
 
@@ -156,46 +158,46 @@ export class AccountRepository {
 
             if (accountData.payment_method_ids) {
                 somethingChanged = true;
-                await conn.execute('DELETE FROM account_payment_methods WHERE account_id = ?', [id]);
+                await client.query('DELETE FROM account_payment_methods WHERE account_id = $1', [id]);
                 for (const paymentMethodId of accountData.payment_method_ids) {
-                    await conn.execute(
-                        'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES (?, ?)',
+                    await client.query(
+                        'INSERT INTO account_payment_methods (account_id, payment_method_id) VALUES ($1, $2)',
                         [id, paymentMethodId]
                     );
                 }
             }
 
             if (somethingChanged) {
-                updates.push('updated_at = ?');
+                updates.push(`updated_at = $${paramCount++}`);
                 values.push(now);
                 
                 const setClause = updates.join(', ');
                 if (updates.length > 1) { // More than just updated_at
-                    await conn.execute(
-                        `UPDATE accounts SET ${setClause} WHERE id = ?`,
+                    await client.query(
+                        `UPDATE accounts SET ${setClause} WHERE id = $${paramCount}`,
                         [...values, id]
                     );
                 } else {
-                    await conn.execute(`UPDATE accounts SET updated_at = ? WHERE id = ?`, [now, id]);
+                    await client.query(`UPDATE accounts SET updated_at = $1 WHERE id = $2`, [now, id]);
                 }
             }
 
-            await conn.commit();
+            await client.query('COMMIT');
         } catch (error) {
-            await conn.rollback();
+            await client.query('ROLLBACK');
             throw error;
         } finally {
-            conn.release();
+            client.release();
         }
 
         return this.findById(id);
     }
 
     async delete(id: string): Promise<boolean> {
-        const [result] = await pool.execute(
-            'DELETE FROM accounts WHERE id = ?',
+        const result = await pool.query(
+            'DELETE FROM accounts WHERE id = $1',
             [id]
         );
-        return (result as any).affectedRows > 0;
+        return (result.rowCount || 0) > 0;
     }
 }

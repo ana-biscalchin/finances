@@ -1,5 +1,6 @@
 const mockPool = {
-  execute: jest.fn(),
+  query: jest.fn(),
+  connect: jest.fn(),
 };
 
 export default mockPool; 
