@@ -12,7 +12,7 @@ export function dbLogger(req: Request, res: Response, next: NextFunction) {
       const result = await pool.query(sql, params);
       const duration = Date.now() - start;
       console.log(`Query Duration: ${duration}ms`);
-      console.log('Result:', JSON.stringify(result, null, 2));
+      console.log('Result Rows:', JSON.stringify(result.rows, null, 2));
       console.log('=== END DATABASE QUERY LOG ===\n');
       return result;
     } catch (error) {
