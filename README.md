@@ -4,10 +4,20 @@ A TypeScript-based personal finance management system for tracking expenses, man
 
 ## 🚀 Tech Stack
 
-- **Backend**: Node.js + Express, TypeScript, MySQL (raw SQL, no ORM)
+- **Backend**: Node.js + Express, TypeScript, **PostgreSQL** (raw SQL, no ORM)
 - **Frontend**: Next.js 14 + TypeScript
 - **Architecture**: REST API, Domain-driven folder structure
 - **Infra**: Optional Docker support (planned)
+
+> **Atenção:** O projeto foi migrado de MySQL para PostgreSQL para compatibilidade com Supabase e recursos avançados.
+
+## 🆚 Diferenças Básicas: MySQL vs PostgreSQL
+
+- **Licença:** MySQL (GPL/Oracle), PostgreSQL (MIT-like, mais permissiva)
+- **Foco:** MySQL prioriza simplicidade e velocidade; PostgreSQL prioriza recursos avançados, extensibilidade e conformidade com o padrão SQL.
+- **Recursos:** PostgreSQL suporta tipos avançados (JSONB, ARRAY), queries analíticas, extensões e constraints mais sofisticadas.
+- **Sintaxe:** PostgreSQL usa parâmetros `$1, $2...`, `ILIKE` para busca case-insensitive, e tipos como `SERIAL`, `UUID`, `JSONB`.
+- **Integridade:** PostgreSQL tem suporte mais forte a constraints, transações e integridade referencial.
 
 ## 📦 Features income
 
@@ -24,19 +34,19 @@ A TypeScript-based personal finance management system for tracking expenses, man
 
 ## Prerequisites
 
-- Node.js (v18 or higher)
-- MySQL (v8 or higher)
+- Node.js (v18 ou superior)
+- **PostgreSQL** (v14 ou superior) ou Supabase
 - Yarn package manager
 
 ## Setup
 
-1. Clone the repository
-2. Install dependencies:
+1. Clone o repositório
+2. Instale as dependências:
    ```bash
    yarn install
    ```
 
-3. Create a `.env` file in the root directory with the following variables:
+3. Crie um arquivo `.env` na raiz com as variáveis:
    ```
    # Server Configuration
    PORT=3000
@@ -44,7 +54,7 @@ A TypeScript-based personal finance management system for tracking expenses, man
 
    # Database Configuration
    DB_HOST=localhost
-   DB_PORT=3306
+   DB_PORT=5432
    DB_USER=your_db_user
    DB_PASSWORD=your_db_password
    DB_NAME=finances
@@ -54,13 +64,17 @@ A TypeScript-based personal finance management system for tracking expenses, man
    JWT_EXPIRES_IN=24h
    ```
 
-4. Create the database:
+4. Crie o banco de dados no PostgreSQL:
    ```bash
-   mysql -u your_db_user -p
+   psql -U your_db_user
    CREATE DATABASE finances;
    ```
 
-5. Run the development server:
+   Ou, se for usar o Supabase, siga as instruções do arquivo `SUPABASE_SETUP.md`.
+
+5. Execute as migrações SQL em `src/db/migrations/` para criar o schema e dados iniciais.
+
+6. Rode o servidor de desenvolvimento:
    ```bash
    yarn dev
    ```

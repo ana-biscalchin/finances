@@ -1,18 +1,23 @@
 import { UserRepository } from '../../../domains/users/repository';
-import { User, CreateUserDTO, UpdateUserDTO } from '../../../domains/users/types';
 import pool from '../../../config/database';
+import { User, CreateUserDTO, UpdateUserDTO } from '../../../domains/users/types';
 
 jest.mock('../../../config/database', () => ({
-  execute: jest.fn(),
+  __esModule: true,
+  default: {
+    query: jest.fn(),
+  },
 }));
+
+const mockPool = pool as jest.Mocked<typeof pool>;
 
 describe('UserRepository', () => {
   let repository: UserRepository;
   const mockUser: User = {
-    id: '123',
+    id: 'user123',
     name: 'Test User',
     email: 'test@example.com',
-    default_currency: 'USD',
+    default_currency: 'BRL',
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -23,60 +28,106 @@ describe('UserRepository', () => {
   });
 
   describe('create', () => {
-    it('should create a new user', async () => {
+    it('should create user successfully', async () => {
       const userData: CreateUserDTO = {
         name: 'Test User',
         email: 'test@example.com',
-        default_currency: 'USD',
+        default_currency: 'BRL',
       };
 
-      (pool.execute as jest.Mock).mockResolvedValueOnce([{ affectedRows: 1 }]);
-      (pool.execute as jest.Mock).mockResolvedValueOnce([[mockUser]]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [mockUser] });
 
       const result = await repository.create(userData);
 
-      expect(pool.execute).toHaveBeenCalledTimes(2);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO users'),
+        expect.any(Array)
+      );
       expect(result).toEqual(mockUser);
+    });
+
+    it('should throw error when user creation fails', async () => {
+      const userData: CreateUserDTO = {
+        name: 'Test User',
+        email: 'test@example.com',
+        default_currency: 'BRL',
+      };
+
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await expect(repository.create(userData)).rejects.toThrow('Failed to create user');
+    });
+  });
+
+  describe('findAll', () => {
+    it('should return all users', async () => {
+      const mockUsers = [mockUser];
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: mockUsers });
+
+      const result = await repository.findAll();
+
+      expect(mockQuery).toHaveBeenCalledWith('SELECT * FROM users');
+      expect(result).toEqual(mockUsers);
+    });
+
+    it('should return empty array when no users exist', async () => {
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+
+      const result = await repository.findAll();
+
+      expect(result).toEqual([]);
     });
   });
 
   describe('findById', () => {
     it('should return user when found', async () => {
-      (pool.execute as jest.Mock).mockResolvedValueOnce([[mockUser]]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [mockUser] });
 
-      const result = await repository.findById('123');
+      const result = await repository.findById('user123');
 
-      expect(pool.execute).toHaveBeenCalledWith(
-        'SELECT * FROM users WHERE id = ?',
-        ['123']
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT * FROM users WHERE id = $1',
+        ['user123']
       );
       expect(result).toEqual(mockUser);
     });
 
     it('should return null when user not found', async () => {
-      (pool.execute as jest.Mock).mockResolvedValueOnce([[]]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [] });
 
-      const result = await repository.findById('123');
+      const result = await repository.findById('user123');
 
       expect(result).toBeNull();
     });
   });
 
   describe('findByEmail', () => {
-    it('should return user when found', async () => {
-      (pool.execute as jest.Mock).mockResolvedValueOnce([[mockUser]]);
+    it('should return user when found by email', async () => {
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [mockUser] });
 
       const result = await repository.findByEmail('test@example.com');
 
-      expect(pool.execute).toHaveBeenCalledWith(
-        'SELECT * FROM users WHERE email = ?',
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT * FROM users WHERE email = $1',
         ['test@example.com']
       );
       expect(result).toEqual(mockUser);
     });
 
-    it('should return null when user not found', async () => {
-      (pool.execute as jest.Mock).mockResolvedValueOnce([[]]);
+    it('should return null when user not found by email', async () => {
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const result = await repository.findByEmail('test@example.com');
 
@@ -85,78 +136,66 @@ describe('UserRepository', () => {
   });
 
   describe('update', () => {
-    it('should update user with all fields', async () => {
-      const updateData: UpdateUserDTO = {
-        name: 'Updated User',
-        email: 'updated@example.com',
-        default_currency: 'EUR',
-      };
+    it('should update user successfully', async () => {
+      const updateData: UpdateUserDTO = { name: 'Updated User' };
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [mockUser] });
 
-      (pool.execute as jest.Mock).mockResolvedValueOnce([{ affectedRows: 1 }]);
-      (pool.execute as jest.Mock).mockResolvedValueOnce([[mockUser]]);
+      const result = await repository.update('user123', updateData);
 
-      const result = await repository.update('123', updateData);
-
-      expect(pool.execute).toHaveBeenCalledTimes(2);
+      expect(mockQuery).toHaveBeenCalled();
       expect(result).toEqual(mockUser);
     });
 
-    it('should update user with partial fields', async () => {
-      const updateData: UpdateUserDTO = {
-        name: 'Updated User',
-      };
-
-      (pool.execute as jest.Mock).mockResolvedValueOnce([{ affectedRows: 1 }]);
-      (pool.execute as jest.Mock).mockResolvedValueOnce([[mockUser]]);
-
-      const result = await repository.update('123', updateData);
-
-      expect(pool.execute).toHaveBeenCalledTimes(2);
-      expect(result).toEqual(mockUser);
-    });
-
-    it('should return user when no fields to update', async () => {
+    it('should return user when no updates provided', async () => {
       const updateData: UpdateUserDTO = {};
-      (pool.execute as jest.Mock).mockResolvedValueOnce([[mockUser]]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [mockUser] });
 
-      const result = await repository.update('123', updateData);
+      const result = await repository.update('user123', updateData);
 
-      expect(pool.execute).toHaveBeenCalledTimes(1);
       expect(result).toEqual(mockUser);
     });
 
-    it('should update email successfully', async () => {
-      const updateData: UpdateUserDTO = {
-        email: 'new@example.com',
+    it('should update multiple fields successfully', async () => {
+      const updateData: UpdateUserDTO = { 
+        name: 'Updated User', 
+        email: 'updated@example.com',
+        default_currency: 'USD'
       };
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [mockUser] });
 
-      (pool.execute as jest.Mock).mockResolvedValueOnce([{ affectedRows: 1 }]);
-      (pool.execute as jest.Mock).mockResolvedValueOnce([[mockUser]]);
+      const result = await repository.update('user123', updateData);
 
-      const result = await repository.update('123', updateData);
-
-      expect(pool.execute).toHaveBeenCalledTimes(2);
+      expect(mockQuery).toHaveBeenCalled();
       expect(result).toEqual(mockUser);
     });
   });
 
   describe('delete', () => {
     it('should delete user successfully', async () => {
-      (pool.execute as jest.Mock).mockResolvedValueOnce([{ affectedRows: 1 }]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rowCount: 1 });
 
-      const result = await repository.delete('123');
+      const result = await repository.delete('user123');
 
-      expect(pool.execute).toHaveBeenCalledWith(
-        'DELETE FROM users WHERE id = ?',
-        ['123']
+      expect(mockQuery).toHaveBeenCalledWith(
+        'DELETE FROM users WHERE id = $1',
+        ['user123']
       );
       expect(result).toBe(true);
     });
 
-    it('should return false when user not found', async () => {
-      (pool.execute as jest.Mock).mockResolvedValueOnce([{ affectedRows: 0 }]);
+    it('should return false when user not found for deletion', async () => {
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rowCount: 0 });
 
-      const result = await repository.delete('123');
+      const result = await repository.delete('user123');
 
       expect(result).toBe(false);
     });

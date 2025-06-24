@@ -1,14 +1,23 @@
 import { UserRepository } from '../../../domains/users/repository';
-import { User, CreateUserDTO } from '../../../domains/users/types';
-import mockPool from '../../__mocks__/database';
+import pool from '../../../config/database';
+import { User, CreateUserDTO, UpdateUserDTO } from '../../../domains/users/types';
+
+jest.mock('../../../config/database', () => ({
+  __esModule: true,
+  default: {
+    query: jest.fn(),
+  },
+}));
+
+const mockPool = pool as jest.Mocked<typeof pool>;
 
 describe('UserRepository', () => {
   let repository: UserRepository;
   const mockUser: User = {
-    id: '123',
+    id: 'user123',
     name: 'Test User',
     email: 'test@example.com',
-    default_currency: 'USD',
+    default_currency: 'BRL',
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -19,40 +28,47 @@ describe('UserRepository', () => {
   });
 
   describe('create', () => {
-    it('should create a new user', async () => {
+    it('should create user successfully', async () => {
       const userData: CreateUserDTO = {
         name: 'Test User',
         email: 'test@example.com',
-        default_currency: 'USD',
+        default_currency: 'BRL',
       };
 
-      mockPool.execute.mockResolvedValueOnce([[], []]);
-      mockPool.execute.mockResolvedValueOnce([[mockUser], []]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [mockUser] });
 
       const result = await repository.create(userData);
 
-      expect(mockPool.execute).toHaveBeenCalledTimes(2);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO users'),
+        expect.any(Array)
+      );
       expect(result).toEqual(mockUser);
     });
   });
 
   describe('findById', () => {
     it('should return user when found', async () => {
-      mockPool.execute.mockResolvedValueOnce([[mockUser], []]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [mockUser] });
 
-      const result = await repository.findById('123');
+      const result = await repository.findById('user123');
 
-      expect(mockPool.execute).toHaveBeenCalledWith(
-        'SELECT * FROM users WHERE id = ?',
-        ['123']
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT * FROM users WHERE id = $1',
+        ['user123']
       );
       expect(result).toEqual(mockUser);
     });
 
     it('should return null when user not found', async () => {
-      mockPool.execute.mockResolvedValueOnce([[], []]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [] });
 
-      const result = await repository.findById('123');
+      const result = await repository.findById('user123');
 
       expect(result).toBeNull();
     });
@@ -60,19 +76,21 @@ describe('UserRepository', () => {
 
   describe('findByEmail', () => {
     it('should return user when found by email', async () => {
-      mockPool.execute.mockResolvedValueOnce([[mockUser], []]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [mockUser] });
 
       const result = await repository.findByEmail('test@example.com');
 
-      expect(mockPool.execute).toHaveBeenCalledWith(
-        'SELECT * FROM users WHERE email = ?',
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT * FROM users WHERE email = $1',
         ['test@example.com']
       );
       expect(result).toEqual(mockUser);
     });
 
     it('should return null when user not found by email', async () => {
-      mockPool.execute.mockResolvedValueOnce([[], []]);
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const result = await repository.findByEmail('test@example.com');
 
@@ -81,39 +99,39 @@ describe('UserRepository', () => {
   });
 
   describe('update', () => {
-    it('should update user and return updated user', async () => {
-      const updateData = {
-        name: 'Updated Name',
-        email: 'updated@example.com',
-      };
+    it('should update user successfully', async () => {
+      const updateData: UpdateUserDTO = { name: 'Updated User' };
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [{ ...mockUser, ...updateData }] });
 
-      mockPool.execute.mockResolvedValueOnce([[], []]);
-      mockPool.execute.mockResolvedValueOnce([[{ ...mockUser, ...updateData }], []]);
+      const result = await repository.update('user123', updateData);
 
-      const result = await repository.update('123', updateData);
-
-      expect(mockPool.execute).toHaveBeenCalledTimes(2);
+      expect(mockQuery).toHaveBeenCalled();
       expect(result).toEqual({ ...mockUser, ...updateData });
     });
   });
 
   describe('delete', () => {
-    it('should delete user and return true', async () => {
-      mockPool.execute.mockResolvedValueOnce([{ affectedRows: 1 }, []]);
+    it('should delete user successfully', async () => {
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rowCount: 1 });
 
-      const result = await repository.delete('123');
+      const result = await repository.delete('user123');
 
-      expect(mockPool.execute).toHaveBeenCalledWith(
-        'DELETE FROM users WHERE id = ?',
-        ['123']
+      expect(mockQuery).toHaveBeenCalledWith(
+        'DELETE FROM users WHERE id = $1',
+        ['user123']
       );
       expect(result).toBe(true);
     });
 
-    it('should return false when user not found', async () => {
-      mockPool.execute.mockResolvedValueOnce([{ affectedRows: 0 }, []]);
+    it('should return false when user not found for deletion', async () => {
+      const mockQuery = mockPool.query as jest.Mock;
+      mockQuery.mockResolvedValueOnce({ rowCount: 0 });
 
-      const result = await repository.delete('123');
+      const result = await repository.delete('user123');
 
       expect(result).toBe(false);
     });

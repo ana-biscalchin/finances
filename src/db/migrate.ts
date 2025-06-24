@@ -20,23 +20,21 @@ async function runMigrations() {
     .filter(file => file.endsWith('.sql'))
     .sort();
 
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     // Create migrations table if it doesn't exist
-    await connection.execute(`
+    await client.query(`
       CREATE TABLE IF NOT EXISTS migrations (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
-        executed_at DATETIME NOT NULL
+        executed_at TIMESTAMP NOT NULL
       )
     `);
 
     // Get executed migrations
-    const [executedMigrations] = await connection.execute(
-      'SELECT name FROM migrations'
-    );
-    const executedNames = (executedMigrations as any[]).map(m => m.name);
+    const result = await client.query('SELECT name FROM migrations');
+    const executedNames = result.rows.map(row => row.name);
 
     // Run pending migrations
     for (const file of files) {
@@ -46,24 +44,24 @@ async function runMigrations() {
         const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
         const commands = splitSqlCommands(sql);
         
-        await connection.beginTransaction();
+        await client.query('BEGIN');
 
         try {
           // Execute each SQL command separately
           for (const command of commands) {
             if (command.trim()) {
-              await connection.query(command);
+              await client.query(command);
             }
           }
           
-          await connection.execute(
-            'INSERT INTO migrations (name, executed_at) VALUES (?, ?)',
+          await client.query(
+            'INSERT INTO migrations (name, executed_at) VALUES ($1, $2)',
             [file, new Date()]
           );
-          await connection.commit();
+          await client.query('COMMIT');
           console.log(`Migration ${file} completed successfully`);
         } catch (error) {
-          await connection.rollback();
+          await client.query('ROLLBACK');
           throw error;
         }
       }
@@ -71,7 +69,7 @@ async function runMigrations() {
 
     console.log('All migrations completed successfully');
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
