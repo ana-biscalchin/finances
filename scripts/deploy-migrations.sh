@@ -30,8 +30,9 @@ echo "🔧 Opções:"
 echo "1) Executar todas as migrations via código (recomendado)"
 echo "2) Gerar SQLs combinados para SQL Editor"
 echo "3) Executar migration específica"
+echo "4) Executar migrations via código Node.js (produção)"
 echo ""
-read -p "Escolha uma opção (1-3): " choice
+read -p "Escolha uma opção (1-4): " choice
 
 case $choice in
     1)
@@ -81,6 +82,17 @@ case $choice in
         else
             echo "❌ Número inválido"
         fi
+        ;;
+    4)
+        echo "🏃 Executando migrations via Node.js..."
+        echo "📡 Usando configuração:"
+        echo "  Host: $DB_HOST"
+        echo "  Database: $DB_NAME"
+        echo "  User: $DB_USER"
+        echo ""
+        
+        # Execute migration using TypeScript directly
+        DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" DB_NAME="$DB_NAME" NODE_ENV="production" yarn migrate
         ;;
     *)
         echo "❌ Opção inválida"
