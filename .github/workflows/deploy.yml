@@ -1,0 +1,41 @@
+name: Deploy to Supabase
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'yarn'
+    
+    - name: Install dependencies
+      run: yarn install --frozen-lockfile
+    
+    - name: Build project
+      run: yarn build
+    
+    - name: Run tests
+      run: yarn test
+    
+    - name: Deploy to Supabase
+      uses: supabase/setup-cli@v1
+      with:
+        version: latest
+    
+    - name: Deploy Edge Functions
+      run: |
+        supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+        supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }} 
