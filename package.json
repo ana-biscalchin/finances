@@ -5,7 +5,7 @@
   "repository": "git@github.com:ana-biscalchin/finances.git",
   "license": "MIT",
   "scripts": {
-    "start": "ts-node src/server.ts",
+    "start": "node dist/server.js",
     "dev": "nodemon src/server.ts",
     "build": "rm -rf dist && tsc",
     "test": "jest",
