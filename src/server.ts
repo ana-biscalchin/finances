@@ -43,6 +43,42 @@ app.get('/test', (req, res) => {
   res.json({ message: 'Test route working!' });
 });
 
+// Debug route to check database configuration
+app.get('/debug', (req, res) => {
+  res.json({
+    message: 'Debug information',
+    environment: {
+      NODE_ENV: process.env.NODE_ENV,
+      PORT: process.env.PORT,
+      DB_HOST: process.env.DB_HOST ? `${process.env.DB_HOST.substring(0, 10)}...` : 'NOT_SET',
+      DB_PORT: process.env.DB_PORT,
+      DB_USER: process.env.DB_USER,
+      DB_NAME: process.env.DB_NAME,
+      DB_PASSWORD: process.env.DB_PASSWORD ? '[SET]' : 'NOT_SET'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Database connection test route
+app.get('/db-test', async (req, res) => {
+  try {
+    const pool = require('./config/database').default;
+    const result = await pool.query('SELECT NOW() as current_time');
+    res.json({
+      status: 'Database connection successful',
+      result: result.rows[0],
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'Database connection failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Basic route
 app.get('/', (req, res) => {
   logger.info('Root route accessed');
