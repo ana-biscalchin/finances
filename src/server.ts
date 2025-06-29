@@ -44,6 +44,11 @@ app.get('/', (req, res) => {
   res.json({ message: 'Bem-vindo à API de Finanças! Acesse /api-docs para ver a documentação.' });
 });
 
+// Health check route for Render
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
 // Error handling
 app.use(errorHandler);
 
