@@ -71,6 +71,7 @@ app.get('/db-test', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    console.error('Database connection test failed:', error);
     res.status(500).json({
       status: 'Database connection failed',
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -116,6 +117,17 @@ app.use(errorHandler);
 
 // Start server
 app.listen(port, '0.0.0.0', () => {
+  console.log('='.repeat(50));
+  console.log('🚀 FINANCES API STARTED SUCCESSFULLY');
+  console.log('='.repeat(50));
+  console.log(`📍 Server running on port: ${port}`);
+  console.log(`🌐 Server accessible on all interfaces: 0.0.0.0:${port}`);
+  console.log(`📚 API Documentation: http://localhost:${port}/api-docs`);
+  console.log(`🔍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🗄️  Database Host: ${process.env.DB_HOST || 'not configured'}`);
+  console.log('='.repeat(50));
+  
+  // Log startup info
   logger.info(`Servidor rodando na porta ${port}`);
   logger.info(`Servidor acessível em todas as interfaces (0.0.0.0:${port})`);
   logger.info(`Documentação da API disponível em http://localhost:${port}/api-docs`);
