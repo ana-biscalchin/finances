@@ -46,7 +46,11 @@ app.get('/', (req, res) => {
 
 // Health check route for Render
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    service: 'finances-api'
+  });
 });
 
 // Error handling
