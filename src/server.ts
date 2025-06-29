@@ -15,7 +15,7 @@ import swaggerSpec from '../docs/swagger.json';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = Number(process.env.PORT) || 3000;
 
 // Middleware
 app.use(cors());
@@ -48,7 +48,8 @@ app.get('/', (req, res) => {
 app.use(errorHandler);
 
 // Start server
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   logger.info(`Servidor rodando na porta ${port}`);
+  logger.info(`Servidor acessível em todas as interfaces (0.0.0.0:${port})`);
   logger.info(`Documentação da API disponível em http://localhost:${port}/api-docs`);
 }); 
