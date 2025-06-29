@@ -15,10 +15,25 @@ function splitSqlCommands(sql: string): string[] {
 }
 
 async function runMigrations() {
-  const migrationsDir = path.join(__dirname, 'migrations');
+  // In production (compiled), look for migrations in src/db/migrations
+  // In development, use current directory
+  const isProduction = process.env.NODE_ENV === 'production';
+  const migrationsDir = isProduction 
+    ? path.join(process.cwd(), 'src', 'db', 'migrations')
+    : path.join(__dirname, 'migrations');
+  
+  console.log(`Looking for migrations in: ${migrationsDir}`);
+  
+  if (!fs.existsSync(migrationsDir)) {
+    console.error(`Migrations directory not found: ${migrationsDir}`);
+    process.exit(1);
+  }
+  
   const files = fs.readdirSync(migrationsDir)
     .filter(file => file.endsWith('.sql'))
     .sort();
+
+  console.log(`Found ${files.length} migration files:`, files);
 
   const client = await pool.connect();
 
