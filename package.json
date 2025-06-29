@@ -8,7 +8,6 @@
     "start": "node dist/server.js",
     "dev": "nodemon src/server.ts",
     "build": "rm -rf dist && tsc",
-    "postbuild": "node dist/db/migrate.js",
     "test": "jest",
     "migrate": "ts-node src/db/migrate.ts",
     "lint": "eslint . --ext .ts",

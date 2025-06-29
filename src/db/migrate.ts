@@ -19,7 +19,7 @@ async function runMigrations() {
   // In development, use current directory
   const isProduction = process.env.NODE_ENV === 'production';
   const migrationsDir = isProduction 
-    ? path.join(process.cwd(), 'src', 'db', 'migrations')
+    ? path.join(__dirname, '..', '..', 'src', 'db', 'migrations')
     : path.join(__dirname, 'migrations');
   
   console.log(`Looking for migrations in: ${migrationsDir}`);

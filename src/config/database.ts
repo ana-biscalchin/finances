@@ -26,9 +26,14 @@ const pool = new Pool({
   ssl: isSupabase || isProduction ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000,
   client_encoding: 'utf8',
   application_name: 'finances-api',
+  // Additional connection options for Supabase
+  ...(isSupabase && {
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 0,
+  })
 });
 
 pool.on('error', (err) => {
