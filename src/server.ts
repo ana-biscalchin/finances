@@ -38,6 +38,11 @@ app.use('/api/v1/accounts', createAccountsRouter());
 app.use('/api/v1/transactions', createTransactionsRouter());
 app.use('/api/v1/categories', createCategoriesRouter());
 
+// Debug route to test routing
+app.get('/test', (req, res) => {
+  res.json({ message: 'Test route working!' });
+});
+
 // Basic route
 app.get('/', (req, res) => {
   logger.info('Root route accessed');
@@ -51,6 +56,23 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     service: 'finances-api'
   });
+});
+
+// List all routes for debugging
+app.get('/routes', (req, res) => {
+  const routes: any[] = [];
+  app._router.stack.forEach((middleware: any) => {
+    if (middleware.route) {
+      routes.push(`${Object.keys(middleware.route.methods)[0].toUpperCase()} ${middleware.route.path}`);
+    } else if (middleware.name === 'router') {
+      middleware.handle.stack.forEach((handler: any) => {
+        if (handler.route) {
+          routes.push(`${Object.keys(handler.route.methods)[0].toUpperCase()} ${middleware.regexp}${handler.route.path}`);
+        }
+      });
+    }
+  });
+  res.json({ routes });
 });
 
 // Error handling
