@@ -1,14 +1,16 @@
 #!/bin/bash
 
-# Script para deployar migrations no Supabase
+# Script para deployar migrations no Supabase (apenas banco de dados)
 # Uso: ./scripts/deploy-migrations.sh
+# Requer: yarn supabase login (feito uma vez)
 
-echo "🚀 Deploy de Migrations no Supabase"
-echo "=================================="
+echo "🚀 Deploy de Migrations no Supabase PostgreSQL"
+echo "============================================="
 
 # Verificar se está no ambiente Supabase
 if [ ! -f ".env.supabase" ]; then
     echo "❌ Arquivo .env.supabase não encontrado"
+    echo "💡 Execute: yarn env:local (opção 2) para configurar"
     exit 1
 fi
 
@@ -27,25 +29,32 @@ done
 
 echo ""
 echo "🔧 Opções:"
-echo "1) Executar todas as migrations via código (recomendado)"
-echo "2) Gerar SQLs combinados para SQL Editor"
+echo "1) Executar migrations via código Node.js (recomendado)"
+echo "2) Gerar SQL combinado para Supabase SQL Editor"
 echo "3) Executar migration específica"
-echo "4) Executar migrations via código Node.js (produção)"
 echo ""
-read -p "Escolha uma opção (1-4): " choice
+read -p "Escolha uma opção (1-3): " choice
 
 case $choice in
     1)
-        echo "🏃 Executando migrations via código..."
-        yarn migrate
+        echo "🏃 Executando migrations via código Node.js..."
+        echo "📡 Usando configuração Supabase PostgreSQL:"
+        echo "  Host: $DB_HOST"
+        echo "  Database: $DB_NAME"
+        echo "  User: $DB_USER"
+        echo ""
+        
+        # Execute migration using TypeScript directly
+        DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" DB_NAME="$DB_NAME" NODE_ENV="production" yarn migrate
         ;;
     2)
-        echo "📝 Gerando SQL combinado..."
+        echo "📝 Gerando SQL combinado para Supabase..."
         OUTPUT_FILE="combined_migrations.sql"
         > $OUTPUT_FILE
         
-        echo "-- Combined Migrations for Supabase" >> $OUTPUT_FILE
+        echo "-- Combined Migrations for Supabase PostgreSQL" >> $OUTPUT_FILE
         echo "-- Generated on $(date)" >> $OUTPUT_FILE
+        echo "-- Cole este arquivo no SQL Editor do Supabase Dashboard" >> $OUTPUT_FILE
         echo "" >> $OUTPUT_FILE
         
         for migration in "${MIGRATIONS[@]}"; do
@@ -57,7 +66,11 @@ case $choice in
         done
         
         echo "✅ SQL combinado gerado em: $OUTPUT_FILE"
-        echo "   Cole este arquivo no SQL Editor do Supabase"
+        echo "📋 Próximos passos:"
+        echo "   1. Acesse https://app.supabase.com"
+        echo "   2. Vá em SQL Editor"
+        echo "   3. Cole o conteúdo do arquivo $OUTPUT_FILE"
+        echo "   4. Execute o SQL"
         ;;
     3)
         echo "📂 Migrations disponíveis:"
@@ -75,24 +88,13 @@ case $choice in
             cat $selected_migration
             echo "================================"
             echo ""
-            read -p "Confirma execução? (y/N): " confirm
+            read -p "Confirma execução no Supabase? (y/N): " confirm
             if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
                 psql "postgres://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME" -f $selected_migration
             fi
         else
             echo "❌ Número inválido"
         fi
-        ;;
-    4)
-        echo "🏃 Executando migrations via Node.js..."
-        echo "📡 Usando configuração:"
-        echo "  Host: $DB_HOST"
-        echo "  Database: $DB_NAME"
-        echo "  User: $DB_USER"
-        echo ""
-        
-        # Execute migration using TypeScript directly
-        DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" DB_NAME="$DB_NAME" NODE_ENV="production" yarn migrate
         ;;
     *)
         echo "❌ Opção inválida"

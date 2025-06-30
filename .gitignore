@@ -8,6 +8,8 @@ dist
 *.log.*.*.*.*
 *.log.*.*.*.*.*
 *.log.*.*.*.*.*.*
+combined.log
+error.log
 
 coverage/
 coverage/lcov-report/

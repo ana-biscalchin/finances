@@ -115,3 +115,24 @@ yarn test
 ## License
 
 MIT
+
+## 🚀 Deploy (Render + Supabase)
+
+### Configuração Rápida:
+1. **Supabase**: Configure suas credenciais no `.env.supabase`
+2. **Migrações**: Execute `echo "2" | yarn env:local && yarn migrate`
+3. **Render**: Adicione as variáveis de ambiente no dashboard
+4. **Deploy**: Push para o GitHub, Render detecta automaticamente
+
+### Variáveis de Ambiente no Render:
+```
+DB_HOST=seu-projeto-ref.supabase.co
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=sua-senha-supabase
+DB_NAME=postgres
+NODE_ENV=production
+PORT=3000
+```
+
+📖 **Guia completo**: [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)

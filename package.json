@@ -6,6 +6,7 @@
   "license": "MIT",
   "scripts": {
     "start": "node dist/server.js",
+    "start:prod": "yarn build && yarn start",
     "dev": "nodemon src/server.ts",
     "build": "rm -rf dist && tsc",
     "test": "jest",
@@ -16,10 +17,8 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "swagger:generate": "ts-node scripts/generate-swagger.ts",
     "env:local": "./scripts/switch-env.sh",
-    "env:supabase": "echo 'Use: yarn env:local e escolha opção 2'",
-    "supabase:login": "npx supabase login",
-    "supabase:link": "npx supabase link --project-ref",
-    "supabase:deploy": "npx supabase functions deploy"
+    "supabase:login": "yarn supabase login",
+    "supabase:link": "yarn supabase link --project-ref"
   },
   "dependencies": {
     "@types/cors": "^2.8.19",
