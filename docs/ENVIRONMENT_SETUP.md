@@ -38,6 +38,30 @@ O Render detectará automaticamente o `package.json` e usará:
 - **Build Command**: `yarn build`
 - **Start Command**: `yarn start`
 
+### ⚠️ **Problemas Comuns - IPv6 e Conectividade**
+
+Se você receber erro `ENETUNREACH` ou `connect ENETUNREACH` em produção:
+
+**Causa**: O Render às vezes tem problemas com conexões IPv6 ao Supabase.
+
+**Solução**: O código já foi ajustado com:
+- ✅ `family: 4` - Força IPv4
+- ✅ Timeouts aumentados
+- ✅ Configurações específicas para produção
+
+**Verificação**:
+```bash
+# Teste a conexão em produção
+curl https://seu-app.onrender.com/db-test
+```
+
+**Logs de Debug**:
+```bash
+# Acesse os logs no dashboard do Render para ver:
+# "✅ Initial database connection successful" ou
+# "❌ Initial database connection failed"
+```
+
 ---
 
 ## 🛡️ Segurança
