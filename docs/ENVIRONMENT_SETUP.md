@@ -31,6 +31,10 @@ DB_PASSWORD=SUA-SENHA-SUPABASE
 DB_NAME=postgres
 NODE_ENV=production
 PORT=3000
+
+# Força IPv4 para resolver problemas de conectividade
+NODE_OPTIONS=--dns-result-order=ipv4first
+UV_THREADPOOL_SIZE=16
 ```
 
 ### Passo 4: Deploy
