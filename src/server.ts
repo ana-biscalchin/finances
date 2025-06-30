@@ -50,11 +50,38 @@ app.get('/debug', (req, res) => {
     environment: {
       NODE_ENV: process.env.NODE_ENV,
       PORT: process.env.PORT,
-      DB_HOST: process.env.DB_HOST ? `${process.env.DB_HOST.substring(0, 10)}...` : 'NOT_SET',
+      DB_HOST: process.env.DB_HOST ? `${process.env.DB_HOST.substring(0, 20)}...` : 'NOT_SET',
       DB_PORT: process.env.DB_PORT,
       DB_USER: process.env.DB_USER,
       DB_NAME: process.env.DB_NAME,
       DB_PASSWORD: process.env.DB_PASSWORD ? '[SET]' : 'NOT_SET'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Enhanced debug route with full host validation
+app.get('/debug-host', (req, res) => {
+  const host = process.env.DB_HOST;
+  const isSupabase = host?.includes('supabase.co') || false;
+  
+  res.json({
+    message: 'Host Debug Information',
+    host_info: {
+      raw_host: host || 'NOT_SET',
+      host_length: host?.length || 0,
+      is_supabase: isSupabase,
+      ends_with_supabase: host?.endsWith('.supabase.co') || false,
+      host_format_valid: host && host.match(/^db\..+\.supabase\.co$/) ? true : false,
+      expected_format: 'db.PROJECT-REF.supabase.co'
+    },
+    all_env_vars: {
+      DB_HOST: process.env.DB_HOST || 'MISSING',
+      DB_PORT: process.env.DB_PORT || 'MISSING', 
+      DB_USER: process.env.DB_USER || 'MISSING',
+      DB_NAME: process.env.DB_NAME || 'MISSING',
+      DB_PASSWORD: process.env.DB_PASSWORD ? 'SET' : 'MISSING',
+      NODE_ENV: process.env.NODE_ENV || 'MISSING'
     },
     timestamp: new Date().toISOString()
   });

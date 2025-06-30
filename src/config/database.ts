@@ -1,7 +1,11 @@
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
+import dns from 'dns';
 
 dotenv.config();
+
+// Force IPv4 DNS resolution globally
+dns.setDefaultResultOrder('ipv4first');
 
 // Detect if using Supabase or local database
 const isSupabase = process.env.DB_HOST?.includes('supabase.co') || false;
