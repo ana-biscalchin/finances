@@ -26,24 +26,28 @@ const pool = new Pool({
   ssl: isSupabase || isProduction ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  connectionTimeoutMillis: 20000,
   client_encoding: 'utf8',
   application_name: 'finances-api',
-  // Additional connection options for Supabase
-  ...(isSupabase && {
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 0,
-  })
 });
 
 pool.on('error', (err) => {
   console.error('Database pool error:', err);
-  // Don't exit the process, just log the error
-  // process.exit(-1);
 });
 
 pool.on('connect', () => {
   console.log('Successfully connected to database');
 });
+
+// Test connection on startup
+pool.connect()
+  .then(client => {
+    console.log('✅ Initial database connection successful');
+    client.release();
+  })
+  .catch(err => {
+    console.error('❌ Initial database connection failed:', err.message);
+    console.error('Full error:', err);
+  });
 
 export default pool; 

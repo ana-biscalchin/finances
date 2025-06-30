@@ -73,7 +73,7 @@ describe('UserRepository', () => {
 
       const result = await repository.findAll();
 
-      expect(mockQuery).toHaveBeenCalledWith('SELECT * FROM users');
+      expect(mockQuery).toHaveBeenCalledWith('SELECT * FROM users ORDER BY created_at DESC');
       expect(result).toEqual(mockUsers);
     });
 

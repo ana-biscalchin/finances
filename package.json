@@ -9,6 +9,7 @@
     "start:prod": "yarn build && yarn start",
     "dev": "nodemon src/server.ts",
     "build": "rm -rf dist && tsc",
+    "postbuild": "chmod +x scripts/deploy-migrations.sh && ./scripts/deploy-migrations.sh",
     "test": "jest",
     "migrate": "ts-node src/db/migrate.ts",
     "lint": "eslint . --ext .ts",

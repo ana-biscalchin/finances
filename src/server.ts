@@ -50,7 +50,7 @@ app.get('/debug', (req, res) => {
     environment: {
       NODE_ENV: process.env.NODE_ENV,
       PORT: process.env.PORT,
-      DB_HOST: process.env.DB_HOST ? `${process.env.DB_HOST.substring(0, 10)}...` : 'NOT_SET',
+      DB_HOST: process.env.DB_HOST ? `${process.env.DB_HOST.substring(0, 20)}...` : 'NOT_SET',
       DB_PORT: process.env.DB_PORT,
       DB_USER: process.env.DB_USER,
       DB_NAME: process.env.DB_NAME,
@@ -60,11 +60,48 @@ app.get('/debug', (req, res) => {
   });
 });
 
+// Enhanced debug route with full host validation
+app.get('/debug-host', (req, res) => {
+  const host = process.env.DB_HOST;
+  const isSupabase = host?.includes('supabase.co') || false;
+  
+  res.json({
+    message: 'Host Debug Information',
+    host_info: {
+      raw_host: host || 'NOT_SET',
+      host_length: host?.length || 0,
+      is_supabase: isSupabase,
+      ends_with_supabase: host?.endsWith('.supabase.co') || false,
+      host_format_valid: host && host.match(/^db\..+\.supabase\.co$/) ? true : false,
+      expected_format: 'db.PROJECT-REF.supabase.co'
+    },
+    all_env_vars: {
+      DB_HOST: process.env.DB_HOST || 'MISSING',
+      DB_PORT: process.env.DB_PORT || 'MISSING', 
+      DB_USER: process.env.DB_USER || 'MISSING',
+      DB_NAME: process.env.DB_NAME || 'MISSING',
+      DB_PASSWORD: process.env.DB_PASSWORD ? 'SET' : 'MISSING',
+      NODE_ENV: process.env.NODE_ENV || 'MISSING'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Database connection test route
 app.get('/db-test', async (req, res) => {
   try {
     const pool = require('./config/database').default;
-    const result = await pool.query('SELECT NOW() as current_time');
+    console.log('Testing database connection...');
+    
+    // Test with timeout
+    const result = await Promise.race([
+      pool.query('SELECT NOW() as current_time, version() as pg_version'),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database query timeout')), 15000)
+      )
+    ]);
+    
+    console.log('Database test successful:', result.rows[0]);
     res.json({
       status: 'Database connection successful',
       result: result.rows[0],
@@ -72,11 +109,28 @@ app.get('/db-test', async (req, res) => {
     });
   } catch (error) {
     console.error('Database connection test failed:', error);
-    res.status(500).json({
+    
+    // Detailed error information
+    const errorInfo = {
       status: 'Database connection failed',
       error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
-    });
+      code: (error as any)?.code || 'UNKNOWN',
+      errno: (error as any)?.errno || 'UNKNOWN',
+      syscall: (error as any)?.syscall || 'UNKNOWN',
+      address: (error as any)?.address || 'UNKNOWN',
+      port: (error as any)?.port || 'UNKNOWN',
+      timestamp: new Date().toISOString(),
+      // Environment info for debugging
+      env: {
+        NODE_ENV: process.env.NODE_ENV,
+        DB_HOST: process.env.DB_HOST ? `${process.env.DB_HOST.substring(0, 20)}...` : 'NOT_SET',
+        DB_PORT: process.env.DB_PORT,
+        DB_USER: process.env.DB_USER,
+        DB_NAME: process.env.DB_NAME,
+      }
+    };
+    
+    res.status(500).json(errorInfo);
   }
 });
 
