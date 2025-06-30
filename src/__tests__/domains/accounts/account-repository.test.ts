@@ -185,7 +185,9 @@ describe('AccountRepository', () => {
       mockClient.query
         .mockResolvedValueOnce({ rowCount: 1 })
         .mockResolvedValueOnce({ rowCount: 1 });
-      mockQuery.mockResolvedValueOnce({ rows: [mockAccount] });
+      mockQuery
+        .mockResolvedValueOnce({ rows: [mockAccount] })
+        .mockResolvedValueOnce({ rows: [] });
 
       const result = await repository.update('account123', updateData);
 
@@ -212,7 +214,9 @@ describe('AccountRepository', () => {
         .mockResolvedValueOnce({ rowCount: 1 })
         .mockResolvedValueOnce({ rowCount: 1 })
         .mockResolvedValueOnce({ rowCount: 1 });
-      mockQuery.mockResolvedValueOnce({ rows: [mockAccount] });
+      mockQuery
+        .mockResolvedValueOnce({ rows: [mockAccount] })
+        .mockResolvedValueOnce({ rows: [] });
 
       await repository.update('account123', updateData);
 
