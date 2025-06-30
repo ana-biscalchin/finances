@@ -17,32 +17,33 @@ console.log('Database configuration:', {
   ssl: isSupabase || isProduction
 });
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT || '5432'),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  ssl: isSupabase || isProduction ? { rejectUnauthorized: false } : false,
+// Build connection string for better IPv4 compatibility
+const connectionString = isSupabase || isProduction 
+  ? `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT || '5432'}/${process.env.DB_NAME}?sslmode=require`
+  : undefined;
+
+const pool = new Pool(connectionString ? {
+  connectionString,
+  ssl: { rejectUnauthorized: false },
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 20000,
   client_encoding: 'utf8',
   application_name: 'finances-api',
-  // Force IPv4 for Supabase connections to avoid IPv6 issues on Render
-  ...(isSupabase && {
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 0,
-    // Force IPv4 to avoid ENETUNREACH errors
-    family: 4,
-  }),
-  // Production-specific settings
-  ...(isProduction && {
-    statement_timeout: 30000,
-    query_timeout: 30000,
-    // Additional connection pooling for production
-    acquireTimeoutMillis: 30000,
-  })
+  statement_timeout: 30000,
+  query_timeout: 30000,
+} : {
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT || '5432'),
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  ssl: false,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+  client_encoding: 'utf8',
+  application_name: 'finances-api',
 });
 
 pool.on('error', (err) => {
