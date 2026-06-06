@@ -4,34 +4,34 @@ Lista inicial para comecar o codigo do projeto.
 
 ## Agora
 
-- [ ] Decidir gerenciador de pacotes: `pnpm`, `npm workspaces` ou outro.
-- [ ] Confirmar estrutura inicial do workspace.
-- [ ] Criar scaffold do monorepo/local workspace.
-- [ ] Configurar scripts raiz para `typecheck`, `lint`, `test` e `build`.
-- [ ] Definir comando unico de verificacao local, por exemplo `check`.
-- [ ] Garantir que toda tarefa de codigo passe pelo loop fechado: typecheck, lint, testes relevantes e build.
-- [ ] Criar `apps/web` com Vite + React + TypeScript.
-- [ ] Instalar e configurar Mantine no frontend.
-- [ ] Criar layout base do app com navegacao e telas vazias.
-- [ ] Criar `apps/api` com Fastify + TypeScript.
-- [ ] Criar rota `GET /health`.
-- [ ] Configurar CORS entre web e API local.
-- [ ] Criar scripts raiz para rodar web e API.
+- [x] Decidir gerenciador de pacotes: `pnpm`, `npm workspaces` ou outro.
+- [x] Confirmar estrutura inicial do workspace.
+- [x] Criar scaffold do monorepo/local workspace.
+- [x] Configurar scripts raiz para `typecheck`, `lint`, `test` e `build`.
+- [x] Definir comando unico de verificacao local, por exemplo `check`.
+- [x] Garantir que toda tarefa de codigo passe pelo loop fechado: typecheck, lint, testes relevantes e build.
+- [x] Criar `apps/web` com Vite + React + TypeScript.
+- [x] Instalar e configurar Mantine no frontend.
+- [x] Criar layout base do app com navegacao e telas vazias.
+- [x] Criar `apps/api` com Fastify + TypeScript.
+- [x] Criar rota `GET /health`.
+- [x] Configurar CORS entre web e API local.
+- [x] Criar scripts raiz para rodar web e API.
 
 ## Banco E Dominio
 
-- [ ] Criar pacote `packages/domain`.
-- [ ] Criar pacote `packages/shared`.
-- [ ] Criar pacote `packages/database`.
-- [ ] Configurar SQLite.
-- [ ] Configurar Drizzle.
-- [ ] Criar primeira migration.
-- [ ] Definir convencao de dinheiro em centavos.
-- [ ] Definir helpers de datas: `YYYY-MM-DD` e `YYYY-MM`.
-- [ ] Criar tabelas iniciais de contas, meios de pagamento e categorias.
-- [ ] Criar seed de meios de pagamento brasileiros.
-- [ ] Criar seed das categorias iniciais.
-- [ ] Criar primeiros testes unitarios para helpers de dinheiro e datas.
+- [x] Criar pacote `packages/domain`.
+- [x] Criar pacote `packages/shared`.
+- [x] Criar pacote `packages/database`.
+- [x] Configurar SQLite.
+- [x] Configurar Drizzle.
+- [x] Criar primeira migration.
+- [x] Definir convencao de dinheiro em centavos.
+- [x] Definir helpers de datas: `YYYY-MM-DD` e `YYYY-MM`.
+- [x] Criar tabelas iniciais de contas, meios de pagamento e categorias.
+- [x] Criar seed de meios de pagamento brasileiros.
+- [x] Criar seed das categorias iniciais.
+- [x] Criar primeiros testes unitarios para helpers de dinheiro e datas.
 
 ## Primeiros Modulos
 
@@ -74,10 +74,10 @@ Lista inicial para comecar o codigo do projeto.
 
 ## Qualidade
 
-- [ ] Configurar testes unitarios.
+- [x] Configurar testes unitarios.
 - [ ] Configurar testes de API.
-- [ ] Configurar verificacao de build.
-- [ ] Documentar no README os comandos de desenvolvimento e verificacao.
+- [x] Configurar verificacao de build.
+- [x] Documentar no README os comandos de desenvolvimento e verificacao.
 - [ ] Testar regra de cartao por vencimento da fatura.
 - [ ] Testar que pagamento de fatura nao duplica despesa.
 - [ ] Testar que transferencia nao entra como gasto.

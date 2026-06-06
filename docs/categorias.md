@@ -55,18 +55,18 @@ Exemplos:
 
 Grupo: Entradas.
 
-| Macro tipo | Micro tipo |
-| --- | --- |
-| Trabalho | Salario |
-| Trabalho | Bonus |
-| Trabalho | Hora extra |
-| Trabalho | 13o salario |
-| Beneficios | Flash alimentacao |
-| Beneficios | Flash convenio |
-| Ajustes | Saldo anterior |
-| Ajustes | Reembolso |
-| Ajustes | Estorno |
-| Investimentos | Resgate |
+| Macro tipo    | Micro tipo        |
+| ------------- | ----------------- |
+| Trabalho      | Salario           |
+| Trabalho      | Bonus             |
+| Trabalho      | Hora extra        |
+| Trabalho      | 13o salario       |
+| Beneficios    | Flash alimentacao |
+| Beneficios    | Flash convenio    |
+| Ajustes       | Saldo anterior    |
+| Ajustes       | Reembolso         |
+| Ajustes       | Estorno           |
+| Investimentos | Resgate           |
 
 Observacao: resgate tambem pode aparecer como transferencia quando for apenas movimento entre uma conta de investimento e uma conta corrente. Deve entrar como receita apenas se o objetivo da tela for recompor disponibilidade mensal.
 
@@ -74,11 +74,11 @@ Observacao: resgate tambem pode aparecer como transferencia quando for apenas mo
 
 Grupo: Objetivos e caixinhas.
 
-| Macro tipo | Micro tipo |
-| --- | --- |
-| Objetivos | Reserva de emergencia |
-| Objetivos | Poupanca da Shuri |
-| Objetivos | Poupanca da casa |
+| Macro tipo | Micro tipo            |
+| ---------- | --------------------- |
+| Objetivos  | Reserva de emergencia |
+| Objetivos  | Poupanca da Shuri     |
+| Objetivos  | Poupanca da casa      |
 
 O modulo de investimentos simples deve detalhar os objetivos em aportes, resgates, rendimentos e ajustes.
 
@@ -90,81 +90,81 @@ Despesas recorrentes ou obrigacoes mensais. Mesmo quando variam um pouco, tendem
 
 Uso esperado: valores pagos por debito em conta, Pix, boleto ou transferencia.
 
-| Macro tipo | Micro tipo |
-| --- | --- |
-| Moradia | Aluguel |
-| Moradia | Condominio |
-| Moradia | Luz |
-| Moradia | Internet e celular |
-| Moradia | Gas |
-| Cuidados | Terapia |
-| Cuidados | Personal |
-| Cuidados | Nutricionista |
-| Outros | Contabilidade |
-| Outros | Emprestimos Caixa |
-| Outros | Apoio Uel |
-| Outros | Seguro Nu |
-| Impostos | IRPF |
+| Macro tipo | Micro tipo         |
+| ---------- | ------------------ |
+| Moradia    | Aluguel            |
+| Moradia    | Condominio         |
+| Moradia    | Luz                |
+| Moradia    | Internet e celular |
+| Moradia    | Gas                |
+| Cuidados   | Terapia            |
+| Cuidados   | Personal           |
+| Cuidados   | Nutricionista      |
+| Outros     | Contabilidade      |
+| Outros     | Emprestimos Caixa  |
+| Outros     | Apoio Uel          |
+| Outros     | Seguro Nu          |
+| Impostos   | IRPF               |
 
 ### Obrigacoes Mensais - Cartao De Credito
 
 Uso esperado: valores recorrentes que entram pela fatura do cartao.
 
-| Macro tipo | Micro tipo |
-| --- | --- |
-| Outros recorrentes | Assinaturas |
-| Outros recorrentes | Academia |
+| Macro tipo         | Micro tipo      |
+| ------------------ | --------------- |
+| Outros recorrentes | Assinaturas     |
+| Outros recorrentes | Academia        |
 | Outros recorrentes | Anuidade cartao |
 
 ## Despesas Variaveis
 
 Despesas que mudam conforme comportamento, consumo e escolhas do mes.
 
-| Macro tipo | Micro tipo |
-| --- | --- |
-| Alimentacao | Supermercado |
-| Alimentacao | Feira/frutas |
-| Alimentacao | Restaurantes |
-| Alimentacao | Bares |
-| Alimentacao | Delivery |
-| Alimentacao | Cafeteria |
-| Manutencao da casa | Compras para casa |
-| Manutencao da casa | Material de limpeza |
-| Transporte | Metro/onibus |
-| Transporte | Uber e taxi |
-| Cuidados pessoais | Farmacia |
-| Cuidados pessoais | Estetica |
-| Cuidados pessoais | Cosmeticos |
-| Lazer | Viagens |
-| Lazer | Cinema/teatro/show |
-| Lazer | Livros |
-| Lazer | Artesanato/papelaria |
-| Lazer | Outros lazer |
-| Compras gerais | Roupas |
-| Compras gerais | Calcados/acessorios |
-| Compras gerais | Presentes |
-| Compras gerais | Outros compras |
-| Gastos Shuri | Shuri - racao |
-| Gastos Shuri | Shuri - petiscos |
-| Gastos Shuri | Shuri - higiene |
-| Gastos Shuri | Shuri - brinquedos |
-| Gastos Shuri | Shuri - saude |
-| Educacao | Faculdade |
-| Educacao | Curso |
-| Outros gastos variaveis | Doacao |
-| Outros gastos variaveis | Impostos/taxas |
-| Outros gastos variaveis | Tarifas e juros |
+| Macro tipo              | Micro tipo           |
+| ----------------------- | -------------------- |
+| Alimentacao             | Supermercado         |
+| Alimentacao             | Feira/frutas         |
+| Alimentacao             | Restaurantes         |
+| Alimentacao             | Bares                |
+| Alimentacao             | Delivery             |
+| Alimentacao             | Cafeteria            |
+| Manutencao da casa      | Compras para casa    |
+| Manutencao da casa      | Material de limpeza  |
+| Transporte              | Metro/onibus         |
+| Transporte              | Uber e taxi          |
+| Cuidados pessoais       | Farmacia             |
+| Cuidados pessoais       | Estetica             |
+| Cuidados pessoais       | Cosmeticos           |
+| Lazer                   | Viagens              |
+| Lazer                   | Cinema/teatro/show   |
+| Lazer                   | Livros               |
+| Lazer                   | Artesanato/papelaria |
+| Lazer                   | Outros lazer         |
+| Compras gerais          | Roupas               |
+| Compras gerais          | Calcados/acessorios  |
+| Compras gerais          | Presentes            |
+| Compras gerais          | Outros compras       |
+| Gastos Shuri            | Shuri - racao        |
+| Gastos Shuri            | Shuri - petiscos     |
+| Gastos Shuri            | Shuri - higiene      |
+| Gastos Shuri            | Shuri - brinquedos   |
+| Gastos Shuri            | Shuri - saude        |
+| Educacao                | Faculdade            |
+| Educacao                | Curso                |
+| Outros gastos variaveis | Doacao               |
+| Outros gastos variaveis | Impostos/taxas       |
+| Outros gastos variaveis | Tarifas e juros      |
 
 ## Despesas Extras
 
 Despesas emergenciais, excepcionais ou de baixa previsibilidade.
 
-| Macro tipo | Micro tipo |
-| --- | --- |
-| Saude | Medico/dentista |
-| Saude | Hospital |
+| Macro tipo         | Micro tipo      |
+| ------------------ | --------------- |
+| Saude              | Medico/dentista |
+| Saude              | Hospital        |
 | Outras emergencias | Manutencao casa |
-| Outras emergencias | Outros extras |
+| Outras emergencias | Outros extras   |
 
 ## Observacoes De Modelagem
 

@@ -85,3 +85,15 @@ Manter separacao entre UI, API, banco e dominio.
 - Preferir commits pequenos por etapa funcional.
 - Nao apagar historico ou conteudo sem confirmacao explicita.
 - Nao commitar banco SQLite local, backups, `.env` ou artefatos de build.
+
+## Encerramento De Tarefas
+
+Ao terminar uma etapa de desenvolvimento, sempre responder com:
+
+- Features que precisam ser testadas visualmente.
+- O que o app ja e capaz de fazer.
+- Quais testes unitarios foram implementados/executados.
+- Quais comandos de verificacao foram rodados.
+- URL local para revisao.
+
+Quando houver app visual para revisar, deixar `pnpm dev` rodando em segundo plano para a usuaria abrir o app.

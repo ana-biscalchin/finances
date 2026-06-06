@@ -42,4 +42,49 @@ Criar um app local, inicialmente como web app em `localhost`, com banco SQLite e
 
 Projeto em fase de planejamento tecnico e funcional.
 
-Proximo passo recomendado: definir gerenciador de pacotes e estrutura do workspace para iniciar o scaffold do codigo.
+Scaffold inicial em andamento com workspace `pnpm`.
+
+Banco e dominio iniciais configurados com SQLite, Drizzle, migration e seed.
+
+## Desenvolvimento
+
+Requisitos:
+
+- Node.js `>=24.16.0`
+- pnpm `>=11.5.2`
+
+Comandos:
+
+```bash
+pnpm install
+pnpm dev
+pnpm check
+```
+
+Comandos especificos:
+
+```bash
+pnpm dev:web
+pnpm dev:api
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+```
+
+Banco local:
+
+```bash
+pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
+pnpm db:setup
+```
+
+O banco local fica em:
+
+```text
+data/financas.sqlite
+```
+
+Esse arquivo nao deve ser versionado.

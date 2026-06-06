@@ -1,0 +1,37 @@
+{
+  "name": "finances",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.2",
+  "engines": {
+    "node": ">=24.16.0",
+    "pnpm": ">=11.5.2"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @finances/web --filter @finances/api dev",
+    "dev:web": "pnpm --filter @finances/web dev",
+    "dev:api": "pnpm --filter @finances/api dev",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "db:generate": "pnpm --filter @finances/database db:generate",
+    "db:migrate": "pnpm --filter @finances/database db:migrate",
+    "db:seed": "pnpm --filter @finances/database db:seed",
+    "db:setup": "pnpm db:migrate && pnpm db:seed",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.5.0",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.50.0",
+    "vitest": "^4.0.16"
+  }
+}
