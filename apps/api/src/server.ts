@@ -1,16 +1,31 @@
 import cors from "@fastify/cors";
+import { createDatabaseConnection } from "@finances/database";
 import Fastify from "fastify";
+import { pathToFileURL } from "node:url";
+
+import { registerAccountRoutes } from "./modules/accounts.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
 
-export function buildServer() {
+type BuildServerOptions = {
+  databasePath?: string;
+  logger?: boolean;
+};
+
+export function buildServer(options: BuildServerOptions = {}) {
   const app = Fastify({
-    logger: true
+    logger: options.logger ?? true
+  });
+  const connection = createDatabaseConnection(options.databasePath);
+
+  app.addHook("onClose", async () => {
+    connection.sqlite.close();
   });
 
   app.register(cors, {
-    origin: ["http://localhost:5173", "http://127.0.0.1:5173"]
+    origin: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
   });
 
   app.get("/health", async () => ({
@@ -24,14 +39,18 @@ export function buildServer() {
     storage: "local-sqlite"
   }));
 
+  registerAccountRoutes(app, connection);
+
   return app;
 }
 
-const app = buildServer();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  const app = buildServer();
 
-try {
-  await app.listen({ port, host });
-} catch (error) {
-  app.log.error(error);
-  process.exit(1);
+  try {
+    await app.listen({ port, host });
+  } catch (error) {
+    app.log.error(error);
+    process.exit(1);
+  }
 }

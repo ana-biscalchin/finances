@@ -163,13 +163,15 @@ Objetivo: implementar os cadastros que sustentam todo o app.
 Modulos:
 
 - Contas.
-- Meios de pagamento.
+- Meios de pagamento hardcoded/semeados.
 - Categorias.
 
 Tarefas:
 
 - CRUD de contas.
-- CRUD de meios de pagamento.
+- Arquivamento e restauracao de contas sem apagar historico.
+- Confirmar lista final de meios de pagamento brasileiros.
+- Expor meios de pagamento como lista fixa para lancamentos e orcamento.
 - CRUD completo de grupos, macros e micros.
 - Arquivamento/inativacao de categorias.
 - Renomeacao preservando historico por ID.
@@ -181,7 +183,7 @@ UI:
 - Tabelas com busca e filtros.
 - Formularios em drawer/modal.
 - Estado arquivado/ativo.
-- Confirmacao para arquivar itens em uso.
+- Confirmacao para arquivar itens em uso e acao clara para restaurar.
 
 ## Etapa 6: Lancamentos E Transferencias
 
@@ -384,7 +386,7 @@ Tarefas:
 O MVP fica aceitavel quando for possivel:
 
 - Cadastrar contas.
-- Gerenciar categorias e meios de pagamento.
+- Gerenciar categorias e selecionar meios de pagamento fixos.
 - Registrar receitas, despesas e transferencias.
 - Registrar compras de cartao por fatura.
 - Registrar parcelas.

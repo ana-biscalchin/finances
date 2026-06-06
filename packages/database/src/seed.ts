@@ -3,6 +3,7 @@ import { categoryGroups, categoryMacros, categoryMicros, paymentMethods } from "
 import { categorySeeds, paymentMethodSeeds } from "./seed-data.js";
 
 const { db, sqlite } = createDatabaseConnection();
+const now = new Date().toISOString();
 
 for (const [sortOrder, paymentMethod] of paymentMethodSeeds.entries()) {
   db.insert(paymentMethods)
@@ -11,7 +12,17 @@ for (const [sortOrder, paymentMethod] of paymentMethodSeeds.entries()) {
       sortOrder,
       isDefault: true
     })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: paymentMethods.id,
+      set: {
+        name: paymentMethod.name,
+        kind: paymentMethod.kind,
+        sortOrder,
+        isDefault: true,
+        isActive: true,
+        updatedAt: now
+      }
+    })
     .run();
 }
 

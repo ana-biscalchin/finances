@@ -23,6 +23,8 @@ import {
 } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { AccountsPage } from "./accounts/AccountsPage";
+
 type PageKey =
   | "dashboard"
   | "monthly-control"
@@ -43,19 +45,19 @@ const pages: Array<{
   {
     key: "dashboard",
     label: "Dashboard",
-    description: "Leitura rapida do mes, saldos e proximos vencimentos.",
+    description: "Leitura rápida do mês, saldos e próximos vencimentos.",
     icon: IconLayoutDashboard
   },
   {
     key: "monthly-control",
     label: "Controle mensal",
-    description: "Orcado, comprometido, realizado e disponivel por mes.",
+    description: "Orçado, comprometido, realizado e disponível por mês.",
     icon: IconCalendarStats
   },
   {
     key: "transactions",
-    label: "Lancamentos",
-    description: "Receitas, despesas, ajustes e historico financeiro.",
+    label: "Lançamentos",
+    description: "Receitas, despesas, ajustes e histórico financeiro.",
     icon: IconListDetails
   },
   {
@@ -84,14 +86,14 @@ const pages: Array<{
   },
   {
     key: "reports",
-    label: "Relatorios",
-    description: "Graficos explicativos sobre gastos, faturas e reservas.",
+    label: "Relatórios",
+    description: "Gráficos explicativos sobre gastos, faturas e reservas.",
     icon: IconChartBar
   },
   {
     key: "settings",
-    label: "Configuracoes",
-    description: "Preferencias, backups, importacao e exportacao.",
+    label: "Configurações",
+    description: "Preferências, backups, importação e exportação.",
     icon: IconSettings
   }
 ];
@@ -100,6 +102,7 @@ export function App() {
   const [activePage, setActivePage] = useState<PageKey>("dashboard");
   const currentPage = pages.find((page) => page.key === activePage) ?? pages[0];
   const CurrentIcon = currentPage.icon;
+  const isAccountsPage = activePage === "accounts";
 
   return (
     <AppShell header={{ height: 64 }} navbar={{ width: 280, breakpoint: "sm" }} padding="lg">
@@ -136,19 +139,23 @@ export function App() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Paper withBorder p="xl" radius="md">
-          <Group align="flex-start" gap="md">
-            <ThemeIcon size={44} radius="md" variant="light" color="teal">
-              <CurrentIcon size={24} />
-            </ThemeIcon>
-            <Box>
-              <Title order={2}>{currentPage.label}</Title>
-              <Text c="dimmed" mt={6}>
-                {currentPage.description}
-              </Text>
-            </Box>
-          </Group>
-        </Paper>
+        {isAccountsPage ? (
+          <AccountsPage />
+        ) : (
+          <Paper withBorder p="xl" radius="md">
+            <Group align="flex-start" gap="md">
+              <ThemeIcon size={44} radius="md" variant="light" color="teal">
+                <CurrentIcon size={24} />
+              </ThemeIcon>
+              <Box>
+                <Title order={2}>{currentPage.label}</Title>
+                <Text c="dimmed" mt={6}>
+                  {currentPage.description}
+                </Text>
+              </Box>
+            </Group>
+          </Paper>
+        )}
       </AppShell.Main>
     </AppShell>
   );

@@ -39,19 +39,30 @@ Campos esperados:
 - Saldo inicial.
 - Status ativa/inativa.
 
+Regras esperadas:
+
+- Contas podem ser renomeadas e ter tipo/instituicao alterados.
+- Arquivar conta apenas remove das listas padrao; nao apaga historico.
+- Contas arquivadas podem ser restauradas.
+- Exclusao definitiva deve ser acao separada, com confirmacao e validacoes.
+
 ### Meios De Pagamento
 
-Gerencia as formas usadas para pagar ou receber.
+Lista fixa das formas usadas para pagar ou receber. Nao precisa de CRUD no app.
 
-Deve vir com padroes comuns no Brasil:
+Lista base confirmada:
 
 - Pix.
 - Dinheiro.
 - Cartao de debito.
 - Cartao de credito.
+- Cartao pre-pago.
 - Boleto.
+
+Sugestoes para validar:
+
 - Debito automatico.
-- TED/transferencia bancaria.
+- Transferencia bancaria/TED.
 - Carteira digital.
 - Vale alimentacao.
 - Vale refeicao.
@@ -59,7 +70,7 @@ Deve vir com padroes comuns no Brasil:
 - Financiamento/crediario.
 - Outro.
 
-O meio de pagamento deve ser uma dimensao central no controle mensal.
+O meio de pagamento deve ser uma dimensao central no controle mensal, mas sua lista deve ser mantida como seed/configuracao interna versionada.
 
 ### Categorias
 

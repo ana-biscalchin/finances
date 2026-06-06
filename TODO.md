@@ -35,9 +35,13 @@ Lista inicial para comecar o codigo do projeto.
 
 ## Primeiros Modulos
 
-- [ ] Implementar CRUD de contas.
-- [ ] Testar CRUD de contas na API.
-- [ ] Implementar CRUD de meios de pagamento.
+- [x] Implementar CRUD de contas.
+- [x] Testar CRUD de contas na API.
+- [x] Implementar restauracao de contas arquivadas.
+- [x] Padronizar validacao de contas na API com erro 400.
+- [ ] Planejar exclusao definitiva de contas como acao separada do arquivamento.
+- [ ] Confirmar lista final hardcoded de meios de pagamento.
+- [ ] Expor meios de pagamento hardcoded para uso em lancamentos e orcamento.
 - [ ] Implementar CRUD completo de categorias, grupos, macros e micros.
 - [ ] Implementar arquivamento de categorias.
 - [ ] Implementar renomeacao preservando historico por ID.

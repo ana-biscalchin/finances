@@ -29,6 +29,8 @@ Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 - Controle mensal e a tela central do app.
 - Relatorios devem ser bonitos, claros e explicativos.
 - Categorias, grupos, macros e micros devem ser gerenciaveis e renomeaveis.
+- Meios de pagamento sao hardcoded/semeados e nao precisam de CRUD.
+- Arquivar registros nao e excluir; quando aplicavel, deve existir caminho de restauracao.
 - Historico de categorias deve usar IDs internos, nao nomes textuais.
 - Transferencias entre contas nao entram como despesa.
 - Pagamento de fatura de cartao nao duplica despesa.

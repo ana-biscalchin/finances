@@ -1,16 +1,17 @@
 export const paymentMethodSeeds = [
   { id: "pm-pix", name: "Pix", kind: "instant_transfer" },
   { id: "pm-cash", name: "Dinheiro", kind: "cash" },
-  { id: "pm-debit-card", name: "Cartao de debito", kind: "debit_card" },
-  { id: "pm-credit-card", name: "Cartao de credito", kind: "credit_card" },
+  { id: "pm-debit-card", name: "Cartão de débito", kind: "debit_card" },
+  { id: "pm-credit-card", name: "Cartão de crédito", kind: "credit_card" },
+  { id: "pm-prepaid-card", name: "Cartão pré-pago", kind: "prepaid_card" },
   { id: "pm-bank-slip", name: "Boleto", kind: "bank_slip" },
-  { id: "pm-auto-debit", name: "Debito automatico", kind: "auto_debit" },
-  { id: "pm-bank-transfer", name: "TED/transferencia bancaria", kind: "bank_transfer" },
+  { id: "pm-auto-debit", name: "Débito automático", kind: "auto_debit" },
+  { id: "pm-bank-transfer", name: "Transferência bancária/TED", kind: "bank_transfer" },
   { id: "pm-digital-wallet", name: "Carteira digital", kind: "digital_wallet" },
-  { id: "pm-food-benefit", name: "Vale alimentacao", kind: "benefit" },
-  { id: "pm-meal-benefit", name: "Vale refeicao", kind: "benefit" },
+  { id: "pm-food-benefit", name: "Vale alimentação", kind: "benefit" },
+  { id: "pm-meal-benefit", name: "Vale refeição", kind: "benefit" },
   { id: "pm-check", name: "Cheque", kind: "check" },
-  { id: "pm-financing", name: "Financiamento/crediario", kind: "financing" },
+  { id: "pm-financing", name: "Financiamento/crediário", kind: "financing" },
   { id: "pm-other", name: "Outro", kind: "other" }
 ] as const;
 
