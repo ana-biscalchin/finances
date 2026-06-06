@@ -1,9 +1,11 @@
 import { createDatabaseConnection } from "./connection.js";
 import { categoryGroups, categoryMacros, categoryMicros, paymentMethods } from "./schema.js";
 import { categorySeeds, paymentMethodSeeds } from "./seed-data.js";
+import { notInArray } from "drizzle-orm";
 
 const { db, sqlite } = createDatabaseConnection();
 const now = new Date().toISOString();
+const activePaymentMethodIds = paymentMethodSeeds.map((paymentMethod) => paymentMethod.id);
 
 for (const [sortOrder, paymentMethod] of paymentMethodSeeds.entries()) {
   db.insert(paymentMethods)
@@ -25,6 +27,15 @@ for (const [sortOrder, paymentMethod] of paymentMethodSeeds.entries()) {
     })
     .run();
 }
+
+db.update(paymentMethods)
+  .set({
+    isActive: false,
+    isDefault: false,
+    updatedAt: now
+  })
+  .where(notInArray(paymentMethods.id, activePaymentMethodIds))
+  .run();
 
 for (const [groupSortOrder, group] of categorySeeds.entries()) {
   db.insert(categoryGroups)

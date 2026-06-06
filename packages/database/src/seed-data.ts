@@ -6,13 +6,7 @@ export const paymentMethodSeeds = [
   { id: "pm-prepaid-card", name: "Cartão pré-pago", kind: "prepaid_card" },
   { id: "pm-bank-slip", name: "Boleto", kind: "bank_slip" },
   { id: "pm-auto-debit", name: "Débito automático", kind: "auto_debit" },
-  { id: "pm-bank-transfer", name: "Transferência bancária/TED", kind: "bank_transfer" },
-  { id: "pm-digital-wallet", name: "Carteira digital", kind: "digital_wallet" },
-  { id: "pm-food-benefit", name: "Vale alimentação", kind: "benefit" },
-  { id: "pm-meal-benefit", name: "Vale refeição", kind: "benefit" },
-  { id: "pm-check", name: "Cheque", kind: "check" },
-  { id: "pm-financing", name: "Financiamento/crediário", kind: "financing" },
-  { id: "pm-other", name: "Outro", kind: "other" }
+  { id: "pm-bank-transfer", name: "Transferência bancária/TED", kind: "bank_transfer" }
 ] as const;
 
 export const categorySeeds = [

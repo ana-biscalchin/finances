@@ -50,7 +50,7 @@ Regras esperadas:
 
 Lista fixa das formas usadas para pagar ou receber. Nao precisa de CRUD no app.
 
-Lista base confirmada:
+Lista confirmada:
 
 - Pix.
 - Dinheiro.
@@ -58,17 +58,8 @@ Lista base confirmada:
 - Cartao de credito.
 - Cartao pre-pago.
 - Boleto.
-
-Sugestoes para validar:
-
 - Debito automatico.
 - Transferencia bancaria/TED.
-- Carteira digital.
-- Vale alimentacao.
-- Vale refeicao.
-- Cheque.
-- Financiamento/crediario.
-- Outro.
 
 O meio de pagamento deve ser uma dimensao central no controle mensal, mas sua lista deve ser mantida como seed/configuracao interna versionada.
 
