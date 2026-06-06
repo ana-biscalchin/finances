@@ -29,6 +29,8 @@ Criar um app local, inicialmente como web app em `localhost`, com banco SQLite e
 
 ## Documentacao
 
+- [Memoria do projeto para agentes](AGENTS.md)
+- [TODO inicial](TODO.md)
 - [Decisoes tecnicas](docs/decisoes-tecnicas.md)
 - [Modulos do projeto](docs/modulos.md)
 - [Categorias financeiras](docs/categorias.md)
