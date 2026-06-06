@@ -36,6 +36,7 @@ Criar um app local, inicialmente como web app em `localhost`, com banco SQLite e
 - [Categorias financeiras](docs/categorias.md)
 - [Visual e usabilidade](docs/visual-usabilidade.md)
 - [Plano de implementacao](docs/plano-implementacao.md)
+- [Criterios de qualidade](docs/criterios-qualidade.md)
 
 ## Status
 

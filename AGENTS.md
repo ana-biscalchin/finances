@@ -44,6 +44,7 @@ Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 - `docs/categorias.md`: taxonomia inicial de categorias.
 - `docs/visual-usabilidade.md`: direcao visual e UX.
 - `docs/plano-implementacao.md`: etapas de implementacao.
+- `docs/criterios-qualidade.md`: regras para avaliar codigo, especialmente codigo gerado por IA.
 - `TODO.md`: lista de tarefas inicial.
 
 ## Estrutura Planejada
@@ -78,6 +79,7 @@ Manter separacao entre UI, API, banco e dominio.
 ## Como Trabalhar Neste Repo
 
 - Antes de implementar, consultar `docs/plano-implementacao.md`.
+- Antes de aceitar codigo gerado por IA, consultar `docs/criterios-qualidade.md`.
 - Registrar decisoes novas em `docs/`.
 - Manter `TODO.md` atualizado conforme as tarefas forem concluidas.
 - Preferir commits pequenos por etapa funcional.
