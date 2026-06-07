@@ -45,7 +45,15 @@ for (const [groupSortOrder, group] of categorySeeds.entries()) {
       name: group.name,
       sortOrder: groupSortOrder
     })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: categoryGroups.id,
+      set: {
+        nature: group.nature,
+        name: group.name,
+        sortOrder: groupSortOrder,
+        updatedAt: now
+      }
+    })
     .run();
 
   for (const [macroSortOrder, macro] of group.macros.entries()) {
@@ -58,18 +66,36 @@ for (const [groupSortOrder, group] of categorySeeds.entries()) {
         name: macro.name,
         sortOrder: macroSortOrder
       })
-      .onConflictDoNothing()
+      .onConflictDoUpdate({
+        target: categoryMacros.id,
+        set: {
+          groupId: group.id,
+          name: macro.name,
+          sortOrder: macroSortOrder,
+          updatedAt: now
+        }
+      })
       .run();
 
     for (const [microSortOrder, microName] of macro.micros.entries()) {
+      const micro = typeof microName === "string" ? { name: microName } : microName;
+
       db.insert(categoryMicros)
         .values({
-          id: `${macroId}-micro-${slugify(microName)}`,
+          id: "id" in micro ? micro.id : `${macroId}-micro-${slugify(micro.name)}`,
           macroId,
-          name: microName,
+          name: micro.name,
           sortOrder: microSortOrder
         })
-        .onConflictDoNothing()
+        .onConflictDoUpdate({
+          target: categoryMicros.id,
+          set: {
+            macroId,
+            name: micro.name,
+            sortOrder: microSortOrder,
+            updatedAt: now
+          }
+        })
         .run();
     }
   }

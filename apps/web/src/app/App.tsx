@@ -24,6 +24,7 @@ import {
 import { useState } from "react";
 
 import { AccountsPage } from "./accounts/AccountsPage";
+import { CategoriesPage } from "./categories/CategoriesPage";
 
 type PageKey =
   | "dashboard"
@@ -103,6 +104,7 @@ export function App() {
   const currentPage = pages.find((page) => page.key === activePage) ?? pages[0];
   const CurrentIcon = currentPage.icon;
   const isAccountsPage = activePage === "accounts";
+  const isCategoriesPage = activePage === "categories";
 
   return (
     <AppShell header={{ height: 64 }} navbar={{ width: 280, breakpoint: "sm" }} padding="lg">
@@ -141,6 +143,8 @@ export function App() {
       <AppShell.Main>
         {isAccountsPage ? (
           <AccountsPage />
+        ) : isCategoriesPage ? (
+          <CategoriesPage />
         ) : (
           <Paper withBorder p="xl" radius="md">
             <Group align="flex-start" gap="md">

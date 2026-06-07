@@ -15,8 +15,8 @@ export const categorySeeds = [
     nature: "income",
     name: "Entradas",
     macros: [
-      { name: "Trabalho", micros: ["Salario", "Bonus", "Hora extra", "13o salario"] },
-      { name: "Beneficios", micros: ["Flash alimentacao", "Flash convenio"] },
+      { name: "Trabalho", micros: ["Salário", "Bônus", "Hora extra", "13º salário"] },
+      { name: "Benefícios", micros: ["Flash alimentação", "Flash convênio"] },
       { name: "Ajustes", micros: ["Saldo anterior", "Reembolso", "Estorno"] },
       { name: "Investimentos", micros: ["Resgate"] }
     ]
@@ -28,62 +28,62 @@ export const categorySeeds = [
     macros: [
       {
         name: "Objetivos",
-        micros: ["Reserva de emergencia", "Poupanca da Shuri", "Poupanca da casa"]
+        micros: ["Reserva de emergência", "Poupança da Shuri", "Poupança da casa"]
       }
     ]
   },
   {
     id: "cg-fixed-checking",
     nature: "expense",
-    name: "Obrigacoes mensais - Conta corrente",
+    name: "Obrigações mensais - Conta corrente",
     macros: [
       {
         name: "Moradia",
-        micros: ["Aluguel", "Condominio", "Luz", "Internet e celular", "Gas"]
+        micros: ["Aluguel", "Condomínio", "Luz", "Internet e celular", "Gás"]
       },
       { name: "Cuidados", micros: ["Terapia", "Personal", "Nutricionista"] },
-      { name: "Outros", micros: ["Contabilidade", "Emprestimos Caixa", "Apoio Uel", "Seguro Nu"] },
+      { name: "Outros", micros: ["Contabilidade", "Empréstimos Caixa", "Apoio Uel", "Seguro Nu"] },
       { name: "Impostos", micros: ["IRPF"] }
     ]
   },
   {
     id: "cg-fixed-credit-card",
     nature: "expense",
-    name: "Obrigacoes mensais - Cartao de credito",
-    macros: [{ name: "Outros recorrentes", micros: ["Assinaturas", "Academia", "Anuidade cartao"] }]
+    name: "Obrigações mensais - Cartão de crédito",
+    macros: [{ name: "Outros recorrentes", micros: ["Assinaturas", "Academia", "Anuidade cartão"] }]
   },
   {
     id: "cg-variable",
     nature: "expense",
-    name: "Variaveis",
+    name: "Variáveis",
     macros: [
       {
-        name: "Alimentacao",
+        name: "Alimentação",
         micros: ["Supermercado", "Feira/frutas", "Restaurantes", "Bares", "Delivery", "Cafeteria"]
       },
-      { name: "Manutencao da casa", micros: ["Compras para casa", "Material de limpeza"] },
-      { name: "Transporte", micros: ["Metro/onibus", "Uber e taxi"] },
-      { name: "Cuidados pessoais", micros: ["Farmacia", "Estetica", "Cosmeticos"] },
+      { name: "Manutenção da casa", micros: ["Compras para casa", "Material de limpeza"] },
+      { name: "Transporte", micros: ["Metrô/ônibus", "Uber e táxi"] },
+      { name: "Cuidados pessoais", micros: ["Farmácia", "Estética", "Cosméticos"] },
       {
         name: "Lazer",
         micros: ["Viagens", "Cinema/teatro/show", "Livros", "Artesanato/papelaria", "Outros lazer"]
       },
       {
         name: "Compras gerais",
-        micros: ["Roupas", "Calcados/acessorios", "Presentes", "Outros compras"]
+        micros: ["Roupas", "Calçados/acessórios", "Presentes", "Outros compras"]
       },
       {
         name: "Gastos Shuri",
         micros: [
-          "Shuri - racao",
-          "Shuri - petiscos",
-          "Shuri - higiene",
-          "Shuri - brinquedos",
-          "Shuri - saude"
+          { id: "cg-variable-macro-gastos-shuri-micro-shuri-racao", name: "Ração" },
+          { id: "cg-variable-macro-gastos-shuri-micro-shuri-petiscos", name: "Petiscos" },
+          { id: "cg-variable-macro-gastos-shuri-micro-shuri-higiene", name: "Higiene" },
+          { id: "cg-variable-macro-gastos-shuri-micro-shuri-brinquedos", name: "Brinquedos" },
+          { id: "cg-variable-macro-gastos-shuri-micro-shuri-saude", name: "Saúde" }
         ]
       },
-      { name: "Educacao", micros: ["Faculdade", "Curso"] },
-      { name: "Outros gastos variaveis", micros: ["Doacao", "Impostos/taxas", "Tarifas e juros"] }
+      { name: "Educação", micros: ["Faculdade", "Curso"] },
+      { name: "Outros gastos variáveis", micros: ["Doação", "Impostos/taxas", "Tarifas e juros"] }
     ]
   },
   {
@@ -91,8 +91,8 @@ export const categorySeeds = [
     nature: "expense",
     name: "Extras",
     macros: [
-      { name: "Saude", micros: ["Medico/dentista", "Hospital"] },
-      { name: "Outras emergencias", micros: ["Manutencao casa", "Outros extras"] }
+      { name: "Saúde", micros: ["Médico/dentista", "Hospital"] },
+      { name: "Outras emergências", micros: ["Manutenção casa", "Outros extras"] }
     ]
   }
 ] as const;

@@ -187,7 +187,7 @@ export function AccountsPage() {
           <div>
             <Title order={2}>Contas</Title>
             <Text c="dimmed" mt={6}>
-              Cadastre contas correntes, carteiras, benefícios e contas de investimento.
+              Cadastre contas correntes, carteiras, Flash Alim, Flash Conv e contas de investimento.
             </Text>
           </div>
           <Button leftSection={<IconPlus size={18} />} onClick={openCreateModal}>

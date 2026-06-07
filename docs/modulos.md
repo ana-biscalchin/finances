@@ -28,7 +28,8 @@ Exemplos:
 - Poupanca.
 - Carteira/dinheiro.
 - Conta de investimento.
-- Vale alimentacao/refeicao.
+- Flash Alim.
+- Flash Conv.
 - Carteira digital.
 
 Campos esperados:
@@ -42,6 +43,10 @@ Campos esperados:
 Regras esperadas:
 
 - Contas podem ser renomeadas e ter tipo/instituicao alterados.
+- Flash Alim e Flash Conv devem ser contas separadas, pois representam saldos distintos.
+- Flash nao deve ser meio de pagamento nem categoria.
+- Entradas mensais de beneficio devem ser receitas na conta correspondente.
+- Gastos pagos com saldo Flash devem usar a conta Flash correta e o meio de pagamento Cartao de credito.
 - Arquivar conta apenas remove das listas padrao; nao apaga historico.
 - Contas arquivadas podem ser restauradas.
 - Exclusao definitiva deve ser acao separada, com confirmacao e validacoes.
@@ -62,6 +67,8 @@ Lista confirmada:
 - Transferencia bancaria/TED.
 
 O meio de pagamento deve ser uma dimensao central no controle mensal, mas sua lista deve ser mantida como seed/configuracao interna versionada.
+
+Flash, vale alimentacao, vale refeicao e carteira digital nao entram nesta lista quando representam saldo; devem ser tratados como contas.
 
 ### Categorias
 
@@ -95,7 +102,8 @@ Regras esperadas:
 - Deve haver fluxo de fusao de categorias para corrigir duplicidades.
 - Deve haver aviso antes de arquivar categorias em uso.
 - Categorias arquivadas nao devem aparecer como padrao em novos lancamentos, mas devem continuar visiveis em historico e relatorios antigos.
-- O app deve evitar micro tipos duplicados dentro do mesmo macro tipo.
+- O app deve evitar nomes duplicados em cada nivel da hierarquia.
+- A comparacao de duplicidade deve ignorar acentos e diferencas de caixa.
 
 ### Lancamentos
 

@@ -42,11 +42,12 @@ Lista inicial para comecar o codigo do projeto.
 - [ ] Planejar exclusao definitiva de contas como acao separada do arquivamento.
 - [x] Confirmar lista final hardcoded de meios de pagamento.
 - [ ] Expor meios de pagamento hardcoded para uso em lancamentos e orcamento.
-- [ ] Implementar CRUD completo de categorias, grupos, macros e micros.
-- [ ] Implementar arquivamento de categorias.
-- [ ] Implementar renomeacao preservando historico por ID.
+- [x] Implementar CRUD completo de categorias, grupos, macros e micros.
+- [x] Implementar arquivamento de categorias.
+- [x] Implementar renomeacao preservando historico por ID.
 - [ ] Implementar fusao de categorias duplicadas.
-- [ ] Testar regras de arquivamento, renomeacao e fusao de categorias.
+- [x] Testar regras de arquivamento e renomeacao de categorias.
+- [ ] Testar regra de fusao de categorias.
 - [ ] Implementar CRUD de lancamentos.
 - [ ] Implementar transferencias entre contas.
 - [ ] Testar que transferencias nao entram como gasto.

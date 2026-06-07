@@ -4,6 +4,7 @@ import Fastify from "fastify";
 import { pathToFileURL } from "node:url";
 
 import { registerAccountRoutes } from "./modules/accounts.js";
+import { registerCategoryRoutes } from "./modules/categories.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -40,6 +41,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   }));
 
   registerAccountRoutes(app, connection);
+  registerCategoryRoutes(app, connection);
 
   return app;
 }

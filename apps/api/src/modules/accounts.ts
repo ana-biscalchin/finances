@@ -3,6 +3,15 @@ import { assertAccountType } from "@finances/domain";
 import { asc, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
+import {
+  getBooleanQueryValue,
+  isRecord,
+  parseOptionalString,
+  parseRequiredString,
+  sendPayloadError,
+  ValidationError
+} from "../http.js";
+
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 
 type AccountPayload = {
@@ -131,7 +140,7 @@ function parseAccountPayload(body: unknown) {
   const payload = body as AccountPayload;
   const name = parseRequiredString(payload.name, "name");
   const type = assertAccountType(parseRequiredString(payload.type, "type"));
-  const institution = parseOptionalString(payload.institution);
+  const institution = parseOptionalString(payload.institution, "institution");
   const initialBalanceCents = parseInitialBalance(payload.initialBalanceCents);
 
   return {
@@ -146,34 +155,8 @@ function parseAccountPayloadOrReply(body: unknown, reply: FastifyReply) {
   try {
     return parseAccountPayload(body);
   } catch (error) {
-    const message =
-      error instanceof ValidationError || error instanceof Error
-        ? error.message
-        : "Payload da conta inválido.";
-
-    reply.code(400).send({ message });
-    return null;
+    return sendPayloadError(error, reply, "Payload da conta inválido.");
   }
-}
-
-function parseRequiredString(value: unknown, fieldName: string) {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new ValidationError(`${fieldName} é obrigatório.`);
-  }
-
-  return value.trim();
-}
-
-function parseOptionalString(value: unknown) {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-
-  if (typeof value !== "string") {
-    throw new ValidationError("institution deve ser um texto.");
-  }
-
-  return value.trim();
 }
 
 function parseInitialBalance(value: unknown) {
@@ -186,16 +169,4 @@ function parseInitialBalance(value: unknown) {
   }
 
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-class ValidationError extends Error {}
-
-function getBooleanQueryValue(query: unknown, key: string) {
-  const value = (query as Record<string, unknown>)[key];
-
-  return value === "true" || value === true;
 }
