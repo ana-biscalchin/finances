@@ -38,6 +38,8 @@ Campos esperados:
 - Tipo.
 - Instituicao.
 - Saldo inicial.
+- Conta principal.
+- Meio de pagamento principal.
 - Status ativa/inativa.
 
 Regras esperadas:
@@ -47,6 +49,8 @@ Regras esperadas:
 - Flash nao deve ser meio de pagamento nem categoria.
 - Entradas mensais de beneficio devem ser receitas na conta correspondente.
 - Gastos pagos com saldo Flash devem usar a conta Flash correta e o meio de pagamento Cartao de credito.
+- Deve haver no maximo uma conta principal; novos lancamentos usam essa conta como padrao.
+- Cada conta pode definir um meio de pagamento principal para acelerar novos lancamentos.
 - Arquivar conta apenas remove das listas padrao; nao apaga historico.
 - Contas arquivadas podem ser restauradas.
 - Exclusao definitiva deve ser acao separada, com confirmacao e validacoes.
@@ -74,40 +78,49 @@ Flash, vale alimentacao, vale refeicao e carteira digital nao entram nesta lista
 
 Organiza receitas e despesas.
 
-Deve permitir criar, editar, arquivar e gerenciar a estrutura de classificacao financeira.
+Deve permitir criar, editar, arquivar e gerenciar a estrutura de classificação financeira.
 
-A estrutura gerenciavel deve incluir:
+A estrutura gerenciável deve incluir:
 
-- Natureza: receita, despesa, investimento/reserva ou transferencia.
-- Grupo: fixa, variavel, extra, entrada, objetivo/caixinha etc.
-- Macro tipo.
-- Micro tipo.
+- Natureza: receita, despesa, investimento/reserva ou transferência.
+- Categoria (Pai): Agrupador principal.
+- Subcategoria (Filha): Destino final exato.
+- Comportamento (Tag na Subcategoria): Fixo, Variável, Extra, etc.
 
 Exemplos:
 
-- Alimentacao > Mercado.
-- Alimentacao > Restaurante.
-- Casa > Aluguel.
-- Casa > Luz.
-- Transporte > Combustivel.
+- Alimentação > Supermercado (Variável).
+- Alimentação > Restaurante (Variável).
+- Moradia > Aluguel (Fixo).
+- Moradia > Luz (Fixo).
+- Transporte > Combustível (Variável).
 
 Regras esperadas:
 
-- Macros e micros devem ser editaveis pela usuaria.
-- A lista inicial deve vir com sugestoes baseadas na taxonomia do projeto.
-- Categorias ja usadas em lancamentos nao devem ser apagadas fisicamente; devem ser arquivadas/inativadas.
-- Deve ser possivel renomear grupos, macros e micros sem perder historico.
-- O historico deve se vincular por ID interno, nao pelo nome textual da categoria.
-- Deve ser possivel reordenar grupos, macros e micros.
-- Deve haver fluxo de fusao de categorias para corrigir duplicidades.
+- Categorias e subcategorias devem ser editáveis pela usuária.
+- A lista inicial deve vir com sugestões baseadas na taxonomia do projeto.
+- Categorias já usadas em lançamentos não devem ser apagadas fisicamente; devem ser arquivadas/inativadas.
+- Deve ser possível renomear categorias e subcategorias sem perder histórico.
+- O histórico deve se vincular por ID interno, não pelo nome textual.
+- Deve ser possível reordenar categorias e subcategorias.
+- Deve haver fluxo de fusão de subcategorias para corrigir duplicidades.
 - Deve haver aviso antes de arquivar categorias em uso.
-- Categorias arquivadas nao devem aparecer como padrao em novos lancamentos, mas devem continuar visiveis em historico e relatorios antigos.
-- O app deve evitar nomes duplicados em cada nivel da hierarquia.
-- A comparacao de duplicidade deve ignorar acentos e diferencas de caixa.
+- Categorias arquivadas não devem aparecer como padrão em novos lançamentos, mas devem continuar visíveis em histórico e relatórios antigos.
+- O app deve evitar nomes duplicados em cada nível da hierarquia.
+- A comparação de duplicidade deve ignorar acentos e diferenças de caixa.
 
 ### Lancamentos
 
 Registra receitas, despesas e ajustes.
+
+Regras conceituais:
+
+- Conta e onde o saldo muda.
+- Meio de pagamento e a trilha usada no pagamento ou recebimento.
+- Categoria e o motivo economico do lancamento.
+- Entrada de saldo em beneficio, como Flash Alim ou Flash Conv, deve ser registrada como receita na conta correspondente.
+- Receitas e ajustes podem ficar sem meio de pagamento quando nao houver uma trilha de pagamento clara.
+- Despesas pagas com Flash continuam usando conta Flash Alim ou Flash Conv, meio de pagamento Cartao de credito e categoria de consumo correspondente.
 
 Campos esperados:
 
@@ -194,15 +207,16 @@ Campos esperados:
 
 ### Controle Mensal
 
-Tela principal para acompanhar o orcamento do mes.
+Tela principal para acompanhar o orçamento do mês.
 
 Deve agrupar os dados por:
 
 ```text
-Mes
-└─ Meio de pagamento
-   └─ Tipo
+Mês
+└─ Natureza
+   └─ Comportamento (Fixo/Variável/Extra)
       └─ Categoria
+         └─ Subcategoria
 ```
 
 Indicadores por linha:

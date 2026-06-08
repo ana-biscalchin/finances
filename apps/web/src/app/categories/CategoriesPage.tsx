@@ -17,89 +17,73 @@ import {
   TextInput,
   Title
 } from "@mantine/core";
-import { categoryNatures } from "@finances/domain";
-import { IconArchive, IconArchiveOff, IconEdit, IconPlus } from "@tabler/icons-react";
+import { categoryNatures, getCategoryColor } from "@finances/domain";
+import { IconArchive, IconArchiveOff, IconEdit, IconPlus, IconArrowsJoin } from "@tabler/icons-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-type CategoryMicro = {
+type Subcategory = {
   id: string;
-  macroId: string;
+  categoryId: string;
   name: string;
+  behavior: string;
   sortOrder: number;
   isActive: boolean;
 };
 
-type CategoryMacro = {
-  id: string;
-  groupId: string;
-  name: string;
-  sortOrder: number;
-  isActive: boolean;
-  micros: CategoryMicro[];
-};
-
-type CategoryGroup = {
+type Category = {
   id: string;
   nature: string;
   name: string;
   sortOrder: number;
   isActive: boolean;
-  macros: CategoryMacro[];
+  subcategories: Subcategory[];
 };
 
 type ModalState =
-  | { type: "group"; mode: "create"; value: GroupFormState }
-  | { type: "group"; mode: "edit"; id: string; value: GroupFormState }
-  | { type: "macro"; mode: "create"; value: MacroFormState }
-  | { type: "macro"; mode: "edit"; id: string; value: MacroFormState }
-  | { type: "micro"; mode: "create"; value: MicroFormState }
-  | { type: "micro"; mode: "edit"; id: string; value: MicroFormState };
+  | { type: "category"; mode: "create"; value: CategoryFormState }
+  | { type: "category"; mode: "edit"; id: string; value: CategoryFormState }
+  | { type: "subcategory"; mode: "create"; value: SubcategoryFormState }
+  | { type: "subcategory"; mode: "edit"; id: string; value: SubcategoryFormState }
+  | { type: "subcategory"; mode: "merge"; id: string; targetSubcategoryId: string };
 
-type GroupFormState = {
+type CategoryFormState = {
   name: string;
   nature: string;
   sortOrder: number | string;
 };
 
-type MacroFormState = {
-  groupId: string;
+type SubcategoryFormState = {
+  categoryId: string;
   name: string;
+  behavior: string;
   sortOrder: number | string;
 };
 
-type MicroFormState = {
-  macroId: string;
-  name: string;
-  sortOrder: number | string;
-};
+const behaviors = [
+  { value: "fixed", label: "Fixo" },
+  { value: "variable", label: "Variável" },
+  { value: "extra", label: "Extra" }
+];
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-const macroColors = ["teal", "blue", "violet", "grape", "pink", "red", "orange", "yellow", "lime"];
 
 export function CategoriesPage() {
-  const [groups, setGroups] = useState<CategoryGroup[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [selectedMacroId, setSelectedMacroId] = useState<string | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [includeInactive, setIncludeInactive] = useState(false);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedGroup = groups.find((group) => group.id === selectedGroupId) ?? null;
-  const visibleMacros = selectedGroup?.macros ?? [];
-  const selectedMacro =
-    visibleMacros.find((macro) => macro.id === selectedMacroId) ??
-    groups.flatMap((group) => group.macros).find((macro) => macro.id === selectedMacroId) ??
-    null;
-  const visibleMicros = selectedMacro?.micros ?? [];
-  const allMacros = useMemo(() => groups.flatMap((group) => group.macros), [groups]);
+  const [activeTab, setActiveTab] = useState<string>("all");
 
-  async function loadCategories(preferredSelection?: {
-    groupId?: string | null;
-    macroId?: string | null;
-  }) {
+  const filteredCategories = activeTab === "all" ? categories : categories.filter((c) => c.nature === activeTab);
+  const selectedCategory = filteredCategories.find((c) => c.id === selectedCategoryId) ?? null;
+  const visibleSubcategories = selectedCategory?.subcategories ?? [];
+
+  async function loadCategories(preferredSelection?: { categoryId?: string | null }) {
     setIsLoading(true);
     setError(null);
 
@@ -110,22 +94,15 @@ export function CategoriesPage() {
         throw new Error("Não foi possível carregar as categorias.");
       }
 
-      const nextGroups = (await response.json()) as CategoryGroup[];
-      setGroups(nextGroups);
+      const nextCategories = (await response.json()) as Category[];
+      setCategories(nextCategories);
 
-      const nextSelectedGroup =
-        nextGroups.find((group) => group.id === preferredSelection?.groupId) ??
-        nextGroups.find((group) => group.id === selectedGroupId) ??
-        nextGroups[0] ??
+      const nextSelectedCategory =
+        nextCategories.find((c) => c.id === preferredSelection?.categoryId) ??
+        nextCategories.find((c) => c.id === selectedCategoryId) ??
+        nextCategories[0] ??
         null;
-      setSelectedGroupId(nextSelectedGroup?.id ?? null);
-
-      const nextSelectedMacro =
-        nextSelectedGroup?.macros.find((macro) => macro.id === preferredSelection?.macroId) ??
-        nextSelectedGroup?.macros.find((macro) => macro.id === selectedMacroId) ??
-        nextSelectedGroup?.macros[0] ??
-        null;
-      setSelectedMacroId(nextSelectedMacro?.id ?? null);
+      setSelectedCategoryId(nextSelectedCategory?.id ?? null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
     } finally {
@@ -137,35 +114,23 @@ export function CategoriesPage() {
     void loadCategories();
   }, [includeInactive]);
 
-  function openCreateGroupModal() {
+  function openCreateCategoryModal() {
     setModal({
-      type: "group",
+      type: "category",
       mode: "create",
-      value: { name: "", nature: "expense", sortOrder: groups.length }
+      value: { name: "", nature: "expense", sortOrder: categories.length }
     });
   }
 
-  function openCreateMacroModal() {
-    if (!selectedGroup) {
+  function openCreateSubcategoryModal() {
+    if (!selectedCategory) {
       return;
     }
 
     setModal({
-      type: "macro",
+      type: "subcategory",
       mode: "create",
-      value: { groupId: selectedGroup.id, name: "", sortOrder: visibleMacros.length }
-    });
-  }
-
-  function openCreateMicroModal() {
-    if (!selectedMacro) {
-      return;
-    }
-
-    setModal({
-      type: "micro",
-      mode: "create",
-      value: { macroId: selectedMacro.id, name: "", sortOrder: visibleMicros.length }
+      value: { categoryId: selectedCategory.id, name: "", behavior: "variable", sortOrder: visibleSubcategories.length }
     });
   }
 
@@ -177,7 +142,7 @@ export function CategoriesPage() {
     setError(null);
 
     try {
-      const duplicateMessage = getDuplicateMessage(modal, groups);
+      const duplicateMessage = getDuplicateMessage(modal, categories);
 
       if (duplicateMessage) {
         setError(duplicateMessage);
@@ -186,23 +151,29 @@ export function CategoriesPage() {
 
       setIsSaving(true);
 
-      const response = await fetch(getSaveUrl(modal), {
-        method: modal.mode === "create" ? "POST" : "PUT",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(buildPayload(modal))
-      });
+      let response: Response;
+
+      if (modal.mode === "merge") {
+        response = await fetch(`${apiBaseUrl}/subcategories/${modal.id}/merge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetSubcategoryId: modal.targetSubcategoryId })
+        });
+      } else {
+        response = await fetch(getSaveUrl(modal), {
+          method: modal.mode === "create" ? "POST" : "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildPayload(modal))
+        });
+      }
 
       if (!response.ok) {
         throw new Error(await getResponseError(response, "Não foi possível salvar a categoria."));
       }
 
-      const saved = (await response.json()) as Partial<
-        CategoryGroup & CategoryMacro & CategoryMicro
-      >;
+      const saved = modal.mode === "merge" ? {} : (await response.json()) as Partial<Category & Subcategory>;
       setModal(null);
-      await loadCategories(getPreferredSelection(modal, saved));
+      await loadCategories(modal.mode === "merge" ? undefined : getPreferredSelection(modal, saved));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Erro inesperado.");
     } finally {
@@ -210,7 +181,7 @@ export function CategoriesPage() {
     }
   }
 
-  async function archiveResource(resource: "group" | "macro" | "micro", id: string) {
+  async function archiveResource(resource: "category" | "subcategory", id: string) {
     const confirmed = window.confirm("Arquivar este item de categoria?");
 
     if (!confirmed) {
@@ -220,19 +191,19 @@ export function CategoriesPage() {
     await updateResourceStatus(resource, id, "archive");
   }
 
-  async function restoreResource(resource: "group" | "macro" | "micro", id: string) {
+  async function restoreResource(resource: "category" | "subcategory", id: string) {
     await updateResourceStatus(resource, id, "restore");
   }
 
   async function updateResourceStatus(
-    resource: "group" | "macro" | "micro",
+    resource: "category" | "subcategory",
     id: string,
     action: "archive" | "restore"
   ) {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/${getResourcePath(resource)}s/${id}/${action}`, {
+      const response = await fetch(`${apiBaseUrl}/${resource === "category" ? "categories" : "subcategories"}/${id}/${action}`, {
         method: "PATCH"
       });
 
@@ -255,7 +226,7 @@ export function CategoriesPage() {
           <div>
             <Title order={2}>Categorias</Title>
             <Text c="dimmed" mt={6}>
-              Gerencie grupos, macros e micros sem perder histórico dos lançamentos.
+              Gerencie categorias e subcategorias sem perder histórico dos lançamentos.
             </Text>
           </div>
           <Checkbox
@@ -263,6 +234,32 @@ export function CategoriesPage() {
             label="Mostrar arquivadas"
             onChange={(event) => setIncludeInactive(event.currentTarget.checked)}
           />
+        </Group>
+        
+        <Group gap="sm" mt="xl">
+          <Button
+            variant={activeTab === "all" ? "filled" : "light"}
+            onClick={() => setActiveTab("all")}
+            radius="xl"
+            color="blue"
+          >
+            Todos
+          </Button>
+          {categoryNatures.map((n) => {
+            const isActive = activeTab === n.value;
+            const color = n.value === "income" ? "teal" : n.value === "expense" ? "red" : "gray";
+            return (
+              <Button
+                key={n.value}
+                variant={isActive ? "filled" : "light"}
+                color={isActive ? color : "gray"}
+                onClick={() => setActiveTab(n.value)}
+                radius="xl"
+              >
+                {n.label}
+              </Button>
+            );
+          })}
         </Group>
       </Paper>
 
@@ -277,48 +274,53 @@ export function CategoriesPage() {
           <Loader />
         </Group>
       ) : (
-        <SimpleGrid cols={{ base: 1, md: 3 }} spacing="lg">
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
           <CategoryPanel
-            title="Grupos"
-            actionLabel="Novo grupo"
-            onCreate={openCreateGroupModal}
+            title="Categorias Pai"
+            actionLabel="Nova categoria"
+            onCreate={openCreateCategoryModal}
             isCreateDisabled={false}
           >
             <Table verticalSpacing="sm" highlightOnHover>
               <Table.Tbody>
-                {groups.map((group) => (
+                {filteredCategories.map((category) => (
                   <Table.Tr
-                    key={group.id}
-                    bg={group.id === selectedGroupId ? "teal.0" : undefined}
+                    key={category.id}
+                    bg={category.id === selectedCategoryId ? "teal.0" : undefined}
                     onClick={() => {
-                      setSelectedGroupId(group.id);
-                      setSelectedMacroId(group.macros[0]?.id ?? null);
+                      setSelectedCategoryId(category.id);
                     }}
+                    style={{ cursor: "pointer" }}
                   >
                     <Table.Td>
-                      <Text fw={600}>{group.name}</Text>
-                      <Text size="xs" c="dimmed">
-                        {getNatureLabel(group.nature)}
-                      </Text>
+                      <Group gap="xs" wrap="nowrap">
+                        <Badge size="xs" circle color={getCategoryColor(category.id)} />
+                        <div>
+                          <Text fw={600}>{category.name}</Text>
+                          <Text size="xs" c="dimmed">
+                            {getNatureLabel(category.nature)}
+                          </Text>
+                        </div>
+                      </Group>
                     </Table.Td>
-                    <Table.Td>{renderStatusBadge(group.isActive)}</Table.Td>
+                    <Table.Td>{renderStatusBadge(category.isActive)}</Table.Td>
                     <Table.Td>
                       <ActionGroup
-                        isActive={group.isActive}
+                        isActive={category.isActive}
                         onEdit={() =>
                           setModal({
-                            type: "group",
+                            type: "category",
                             mode: "edit",
-                            id: group.id,
+                            id: category.id,
                             value: {
-                              name: group.name,
-                              nature: group.nature,
-                              sortOrder: group.sortOrder
+                              name: category.name,
+                              nature: category.nature,
+                              sortOrder: category.sortOrder
                             }
                           })
                         }
-                        onArchive={() => void archiveResource("group", group.id)}
-                        onRestore={() => void restoreResource("group", group.id)}
+                        onArchive={() => void archiveResource("category", category.id)}
+                        onRestore={() => void restoreResource("category", category.id)}
                       />
                     </Table.Td>
                   </Table.Tr>
@@ -328,52 +330,53 @@ export function CategoriesPage() {
           </CategoryPanel>
 
           <CategoryPanel
-            title={selectedGroup ? `Macros de ${selectedGroup.name}` : "Macros"}
-            actionLabel="Nova macro"
-            onCreate={openCreateMacroModal}
-            isCreateDisabled={!selectedGroup}
+            title={selectedCategory ? `Subcategorias de ${selectedCategory.name}` : "Subcategorias"}
+            actionLabel="Nova subcategoria"
+            onCreate={openCreateSubcategoryModal}
+            isCreateDisabled={!selectedCategory}
           >
-            {selectedGroup ? (
+            {selectedCategory ? (
               <Table verticalSpacing="sm" highlightOnHover>
                 <Table.Tbody>
-                  {visibleMacros.map((macro, macroIndex) => (
-                    <Table.Tr
-                      key={macro.id}
-                      bg={
-                        macro.id === selectedMacroId ? `${getMacroColor(macroIndex)}.0` : undefined
-                      }
-                      onClick={() => setSelectedMacroId(macro.id)}
-                    >
+                  {visibleSubcategories.map((sub) => (
+                    <Table.Tr key={sub.id}>
                       <Table.Td>
                         <Group gap="xs" wrap="nowrap">
-                          <Badge
-                            color={getMacroColor(macroIndex)}
-                            variant="filled"
-                            w={12}
-                            h={12}
-                            p={0}
-                          />
-                          <Text fw={600}>{macro.name}</Text>
+                          <Badge color={getCategoryColor(selectedCategory.id)} variant="light" size="md" fw={600} style={{ textTransform: 'none' }}>
+                            {sub.name}
+                          </Badge>
+                          <Badge size="xs" color={getBehaviorColor(sub.behavior)} variant="outline">
+                            {getBehaviorLabel(sub.behavior)}
+                          </Badge>
                         </Group>
                       </Table.Td>
-                      <Table.Td>{renderStatusBadge(macro.isActive)}</Table.Td>
+                      <Table.Td>{renderStatusBadge(sub.isActive)}</Table.Td>
                       <Table.Td>
                         <ActionGroup
-                          isActive={macro.isActive}
+                          isActive={sub.isActive}
                           onEdit={() =>
                             setModal({
-                              type: "macro",
+                              type: "subcategory",
                               mode: "edit",
-                              id: macro.id,
+                              id: sub.id,
                               value: {
-                                groupId: macro.groupId,
-                                name: macro.name,
-                                sortOrder: macro.sortOrder
+                                categoryId: sub.categoryId,
+                                name: sub.name,
+                                behavior: sub.behavior,
+                                sortOrder: sub.sortOrder
                               }
                             })
                           }
-                          onArchive={() => void archiveResource("macro", macro.id)}
-                          onRestore={() => void restoreResource("macro", macro.id)}
+                          onArchive={() => void archiveResource("subcategory", sub.id)}
+                          onRestore={() => void restoreResource("subcategory", sub.id)}
+                          onMerge={() =>
+                            setModal({
+                              type: "subcategory",
+                              mode: "merge",
+                              id: sub.id,
+                              targetSubcategoryId: ""
+                            })
+                          }
                         />
                       </Table.Td>
                     </Table.Tr>
@@ -381,58 +384,7 @@ export function CategoriesPage() {
                 </Table.Tbody>
               </Table>
             ) : (
-              <EmptyMessage text="Selecione um grupo para ver as macros." />
-            )}
-          </CategoryPanel>
-
-          <CategoryPanel
-            title={selectedMacro ? `Micros de ${selectedMacro.name}` : "Micros"}
-            actionLabel="Nova micro"
-            onCreate={openCreateMicroModal}
-            isCreateDisabled={!selectedMacro}
-          >
-            {selectedMacro ? (
-              <Table verticalSpacing="sm" highlightOnHover>
-                <Table.Tbody>
-                  {visibleMicros.map((micro) => (
-                    <Table.Tr
-                      key={micro.id}
-                      bg={`${getSelectedMacroColor(selectedMacro, visibleMacros)}.0`}
-                    >
-                      <Table.Td>
-                        <Badge
-                          color={getSelectedMacroColor(selectedMacro, visibleMacros)}
-                          variant="light"
-                        >
-                          {micro.name}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>{renderStatusBadge(micro.isActive)}</Table.Td>
-                      <Table.Td>
-                        <ActionGroup
-                          isActive={micro.isActive}
-                          onEdit={() =>
-                            setModal({
-                              type: "micro",
-                              mode: "edit",
-                              id: micro.id,
-                              value: {
-                                macroId: micro.macroId,
-                                name: micro.name,
-                                sortOrder: micro.sortOrder
-                              }
-                            })
-                          }
-                          onArchive={() => void archiveResource("micro", micro.id)}
-                          onRestore={() => void restoreResource("micro", micro.id)}
-                        />
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            ) : (
-              <EmptyMessage text="Selecione uma macro para ver as micros." />
+              <EmptyMessage text="Selecione uma categoria para ver as subcategorias." />
             )}
           </CategoryPanel>
         </SimpleGrid>
@@ -440,8 +392,7 @@ export function CategoriesPage() {
 
       <CategoryModal
         modal={modal}
-        groups={groups}
-        macros={allMacros}
+        categories={categories}
         onChange={setModal}
         onClose={() => setModal(null)}
         onSave={() => void saveCategory()}
@@ -488,18 +439,25 @@ function ActionGroup({
   isActive,
   onEdit,
   onArchive,
-  onRestore
+  onRestore,
+  onMerge
 }: {
   isActive: boolean;
   onEdit: () => void;
   onArchive: () => void;
   onRestore: () => void;
+  onMerge?: () => void;
 }) {
   return (
     <Group gap={4} justify="flex-end" onClick={(event) => event.stopPropagation()}>
       <ActionIcon variant="subtle" aria-label="Editar" title="Editar" onClick={onEdit}>
         <IconEdit size={17} />
       </ActionIcon>
+      {onMerge ? (
+        <ActionIcon variant="subtle" aria-label="Fundir com outra" title="Fundir" onClick={onMerge}>
+          <IconArrowsJoin size={17} />
+        </ActionIcon>
+      ) : null}
       {isActive ? (
         <ActionIcon
           variant="subtle"
@@ -527,16 +485,14 @@ function ActionGroup({
 
 function CategoryModal({
   modal,
-  groups,
-  macros,
+  categories,
   onChange,
   onClose,
   onSave,
   isSaving
 }: {
   modal: ModalState | null;
-  groups: CategoryGroup[];
-  macros: CategoryMacro[];
+  categories: Category[];
   onChange: (modal: ModalState | null) => void;
   onClose: () => void;
   onSave: () => void;
@@ -548,14 +504,15 @@ function CategoryModal({
     <Modal opened={modal !== null} onClose={onClose} title={title}>
       {modal ? (
         <Stack>
-          {modal.type === "group" ? (
+          {modal.type === "category" ? (
             <>
               <TextInput
                 label="Nome"
                 value={modal.value.name}
-                onChange={(event) =>
-                  onChange({ ...modal, value: { ...modal.value, name: event.target.value } })
-                }
+                onChange={(event) => {
+                  const { value } = event.currentTarget;
+                  onChange({ ...modal, value: { ...modal.value, name: value } });
+                }}
                 required
               />
               <Select
@@ -571,22 +528,32 @@ function CategoryModal({
             </>
           ) : null}
 
-          {modal.type === "macro" ? (
+          {modal.type === "subcategory" && modal.mode !== "merge" ? (
             <>
               <Select
-                label="Grupo"
-                data={groups.map((group) => ({ value: group.id, label: group.name }))}
-                value={modal.value.groupId}
+                label="Categoria Pai"
+                data={categories.map((c) => ({ value: c.id, label: c.name }))}
+                value={modal.value.categoryId}
                 onChange={(value) =>
-                  onChange({ ...modal, value: { ...modal.value, groupId: value ?? "" } })
+                  onChange({ ...modal, value: { ...modal.value, categoryId: value ?? "" } })
                 }
                 required
               />
               <TextInput
                 label="Nome"
                 value={modal.value.name}
-                onChange={(event) =>
-                  onChange({ ...modal, value: { ...modal.value, name: event.target.value } })
+                onChange={(event) => {
+                  const { value } = event.currentTarget;
+                  onChange({ ...modal, value: { ...modal.value, name: value } });
+                }}
+                required
+              />
+              <Select
+                label="Comportamento (Tag)"
+                data={behaviors}
+                value={modal.value.behavior}
+                onChange={(value) =>
+                  onChange({ ...modal, value: { ...modal.value, behavior: value ?? "variable" } })
                 }
                 required
               />
@@ -594,27 +561,28 @@ function CategoryModal({
             </>
           ) : null}
 
-          {modal.type === "micro" ? (
-            <>
+          {modal.type === "subcategory" && modal.mode === "merge" ? (
+            <Stack gap="md">
+              <Alert color="orange" title="Atenção">
+                Todos os lançamentos desta subcategoria serão transferidos para o destino escolhido. A atual será arquivada.
+              </Alert>
               <Select
-                label="Macro"
-                data={macros.map((macro) => ({ value: macro.id, label: macro.name }))}
-                value={modal.value.macroId}
+                label="Subcategoria Destino"
+                placeholder="Selecione o destino"
+                searchable
+                data={categories.flatMap(c => ({
+                  group: c.name,
+                  items: c.subcategories
+                    .filter(sub => sub.id !== modal.id)
+                    .map(sub => ({ value: sub.id, label: sub.name }))
+                })).filter(group => group.items.length > 0)}
+                value={modal.targetSubcategoryId}
                 onChange={(value) =>
-                  onChange({ ...modal, value: { ...modal.value, macroId: value ?? "" } })
+                  onChange({ ...modal, targetSubcategoryId: value ?? "" })
                 }
                 required
               />
-              <TextInput
-                label="Nome"
-                value={modal.value.name}
-                onChange={(event) =>
-                  onChange({ ...modal, value: { ...modal.value, name: event.target.value } })
-                }
-                required
-              />
-              <SortOrderInput modal={modal} onChange={onChange} />
-            </>
+            </Stack>
           ) : null}
 
           <Group justify="flex-end">
@@ -638,6 +606,8 @@ function SortOrderInput({
   modal: ModalState;
   onChange: (modal: ModalState | null) => void;
 }) {
+  if (modal.mode === "merge") return null;
+
   return (
     <NumberInput
       label="Ordem"
@@ -649,15 +619,9 @@ function SortOrderInput({
 }
 
 function updateModalSortOrder(modal: ModalState, sortOrder: number | string): ModalState {
-  if (modal.type === "group") {
-    return { ...modal, value: { ...modal.value, sortOrder } };
-  }
+  if (modal.mode === "merge") return modal;
 
-  if (modal.type === "macro") {
-    return { ...modal, value: { ...modal.value, sortOrder } };
-  }
-
-  return { ...modal, value: { ...modal.value, sortOrder } };
+  return { ...modal, value: { ...modal.value, sortOrder } } as ModalState;
 }
 
 function EmptyMessage({ text }: { text: string }) {
@@ -670,117 +634,71 @@ function EmptyMessage({ text }: { text: string }) {
 
 function renderStatusBadge(isActive: boolean) {
   return (
-    <Badge color={isActive ? "teal" : "gray"} variant="light">
+    <Badge color={isActive ? "teal" : "gray"} variant="light" size="sm">
       {isActive ? "Ativa" : "Arquivada"}
     </Badge>
   );
 }
 
-function getMacroColor(index: number) {
-  return macroColors[index % macroColors.length];
+function getBehaviorLabel(behavior: string) {
+  return behaviors.find((b) => b.value === behavior)?.label ?? behavior;
 }
 
-function getSelectedMacroColor(selectedMacro: CategoryMacro | null, macros: CategoryMacro[]) {
-  if (!selectedMacro) {
-    return "gray";
-  }
-
-  const index = macros.findIndex((macro) => macro.id === selectedMacro.id);
-
-  return getMacroColor(Math.max(index, 0));
+function getBehaviorColor(behavior: string) {
+  if (behavior === "fixed") return "blue";
+  if (behavior === "extra") return "orange";
+  return "grape";
 }
 
 function getModalTitle(modal: ModalState) {
+  if (modal.mode === "merge") return "Fundir subcategoria";
+
   const action = modal.mode === "create" ? "Nova" : "Editar";
-
-  if (modal.type === "group") {
-    return `${action} grupo`;
-  }
-
-  if (modal.type === "macro") {
-    return `${action} macro`;
-  }
-
-  return `${action} micro`;
+  return modal.type === "category" ? `${action} categoria pai` : `${action} subcategoria`;
 }
 
 function getSaveUrl(modal: ModalState) {
-  const resourcePath = getResourcePath(modal.type);
-
-  if (modal.mode === "create") {
-    return `${apiBaseUrl}/${resourcePath}s`;
-  }
-
-  return `${apiBaseUrl}/${resourcePath}s/${modal.id}`;
-}
-
-function getResourcePath(resource: "group" | "macro" | "micro") {
-  if (resource === "group") {
-    return "category-group";
-  }
-
-  if (resource === "macro") {
-    return "category-macro";
-  }
-
-  return "category-micro";
+  const resourcePath = modal.type === "category" ? "categories" : "subcategories";
+  if (modal.mode === "create") return `${apiBaseUrl}/${resourcePath}`;
+  return `${apiBaseUrl}/${resourcePath}/${modal.id}`;
 }
 
 function buildPayload(modal: ModalState) {
-  return {
-    ...modal.value,
-    sortOrder: parseSortOrder(modal.value.sortOrder)
-  };
+  if (modal.mode === "merge") return { targetSubcategoryId: modal.targetSubcategoryId };
+  return { ...modal.value, sortOrder: parseSortOrder(modal.value.sortOrder) };
 }
 
 function getPreferredSelection(
   modal: ModalState,
-  saved: Partial<CategoryGroup & CategoryMacro & CategoryMicro>
+  saved: Partial<Category & Subcategory>
 ) {
-  if (modal.type === "group") {
-    return { groupId: saved.id ?? null, macroId: null };
-  }
-
-  if (modal.type === "macro") {
-    return { groupId: saved.groupId ?? null, macroId: saved.id ?? null };
-  }
-
-  return { groupId: null, macroId: saved.macroId ?? null };
+  if (modal.type === "category") return { categoryId: saved.id ?? null };
+  return { categoryId: saved.categoryId ?? null };
 }
 
-function getDuplicateMessage(modal: ModalState, groups: CategoryGroup[]) {
-  if (modal.type === "group") {
-    const duplicate = groups.find(
-      (group) =>
-        group.id !== getModalId(modal) &&
-        group.nature === modal.value.nature &&
-        normalizeCategoryName(group.name) === normalizeCategoryName(modal.value.name)
-    );
-
-    return duplicate ? "Já existe um grupo com essa natureza e nome." : null;
+function getDuplicateMessage(modal: ModalState, categories: Category[]) {
+  if (modal.mode === "merge") {
+    return !modal.targetSubcategoryId ? "Selecione o destino." : null;
   }
 
-  if (modal.type === "macro") {
-    const group = groups.find((candidate) => candidate.id === modal.value.groupId);
-    const duplicate = group?.macros.find(
-      (macro) =>
-        macro.id !== getModalId(modal) &&
-        normalizeCategoryName(macro.name) === normalizeCategoryName(modal.value.name)
+  if (modal.type === "category") {
+    const duplicate = categories.find(
+      (c) =>
+        c.id !== getModalId(modal) &&
+        c.nature === modal.value.nature &&
+        normalizeCategoryName(c.name) === normalizeCategoryName(modal.value.name)
     );
-
-    return duplicate ? "Já existe uma macro com esse nome nesse grupo." : null;
+    return duplicate ? "Já existe uma categoria com essa natureza e nome." : null;
   }
 
-  const macro = groups
-    .flatMap((group) => group.macros)
-    .find((candidate) => candidate.id === modal.value.macroId);
-  const duplicate = macro?.micros.find(
-    (micro) =>
-      micro.id !== getModalId(modal) &&
-      normalizeCategoryName(micro.name) === normalizeCategoryName(modal.value.name)
+  const category = categories.find((c) => c.id === modal.value.categoryId);
+  const duplicate = category?.subcategories.find(
+    (sub) =>
+      sub.id !== getModalId(modal) &&
+      normalizeCategoryName(sub.name) === normalizeCategoryName(modal.value.name)
   );
 
-  return duplicate ? "Já existe uma micro com esse nome nessa macro." : null;
+  return duplicate ? "Já existe uma subcategoria com esse nome nesta categoria." : null;
 }
 
 function getModalId(modal: ModalState) {
@@ -788,45 +706,27 @@ function getModalId(modal: ModalState) {
 }
 
 function normalizeCategoryName(name: string) {
-  return name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
+  return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 }
 
 function parseSortOrder(value: number | string) {
-  if (typeof value === "number") {
-    return Number.isInteger(value) ? value : Math.round(value);
-  }
-
-  if (!value.trim()) {
-    return undefined;
-  }
-
+  if (typeof value === "number") return Number.isInteger(value) ? value : Math.round(value);
+  if (!value.trim()) return undefined;
   const parsed = Number(value);
-
-  if (!Number.isInteger(parsed)) {
-    throw new Error("Ordem inválida.");
-  }
-
+  if (!Number.isInteger(parsed)) throw new Error("Ordem inválida.");
   return parsed;
 }
 
 function getNatureLabel(nature: string) {
-  return categoryNatures.find((categoryNature) => categoryNature.value === nature)?.label ?? nature;
+  return categoryNatures.find((n) => n.value === nature)?.label ?? nature;
 }
 
 async function getResponseError(response: Response, fallback: string) {
   try {
     const body = (await response.json()) as { message?: unknown };
-
-    if (typeof body.message === "string") {
-      return body.message;
-    }
+    if (typeof body.message === "string") return body.message;
   } catch {
     return fallback;
   }
-
   return fallback;
 }

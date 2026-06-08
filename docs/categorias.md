@@ -1,211 +1,126 @@
 # Categorias Financeiras
 
-Este documento registra a taxonomia inicial de receitas, investimentos e despesas usada no app.
-
-A taxonomia abaixo e uma sugestao inicial. O app deve permitir criar, editar, arquivar e gerenciar grupos, macro tipos e micro tipos.
+Este documento registra a taxonomia de receitas, despesas e movimentações usada no app. A taxonomia baseia-se em princípios de Fluxo de Caixa (Cash Flow), separando entradas, saídas e movimentações neutras.
 
 ## Estrutura
 
-As categorias devem ser organizadas em quatro niveis conceituais:
+As categorias são organizadas em dois níveis principais:
 
 ```text
-Natureza
-└─ Grupo
-   └─ Macro tipo
-      └─ Micro tipo
+Natureza (Receita, Despesa, Transferência)
+└─ Categoria Pai
+   └─ Subcategoria (Tag: Fixo/Variável/Extra)
 ```
 
-Essa estrutura deve ser configuravel pela usuaria. A lista deste documento serve como ponto de partida, nao como uma lista fixa.
+## Naturezas do Fluxo de Caixa
 
-Exemplo:
+### 1. Receita (Income)
+Dinheiro novo entrando nas suas contas. Impacta positivamente o saldo e aumenta o patrimônio.
+- Salário, bônus, resgates de investimentos, dividendos, reembolsos.
 
-```text
-Despesa
-└─ Variavel
-   └─ Alimentacao
-      └─ Supermercado
-```
+### 2. Despesa (Expense)
+Dinheiro saindo das suas contas para o "mundo exterior" ou para poupanças futuras. Impacta negativamente o saldo.
+- Moradia, alimentação, compras, boletos e **aportes em investimentos**. (Nota de engenharia financeira: aportes são vistos como "saída" do caixa do dia a dia para construir patrimônio em outra conta não-caixa).
 
-## Naturezas
+### 3. Transferência (Transfer)
+Dinheiro mudando de bolso. Não deixa mais rico nem mais pobre.
+- Pagamento de fatura de cartão (pagar o cartão já gasto não é despesa nova), transferência entre bancos próprios.
 
-### Receita
+---
 
-Entradas de dinheiro ou credito financeiro.
+## Árvore de Categorias Oficiais
 
-### Investimento
+### RECEITAS (Entradas)
 
-Valores separados para objetivos, caixinhas, poupancas ou reservas.
+- **Trabalho**
+  - Salário `(Fixo)`
+  - Bônus `(Variável)`
+  - Hora extra `(Variável)`
+  - 13º salário `(Extra)`
+- **Rendimentos e Resgates**
+  - Resgate de investimento `(Extra)`
+  - Dividendos e Juros `(Variável)`
+- **Outras Receitas**
+  - Flash alimentação `(Fixo)`
+  - Flash convênio `(Fixo)`
+  - Reembolso `(Extra)`
+  - Estorno `(Extra)`
+  - Cashback `(Variável)`
+  - Saldo anterior `(Extra)`
 
-### Despesa
+### TRANSFERÊNCIAS (Neutro)
 
-Saidas de dinheiro, compras, obrigacoes, gastos variaveis e extras.
+- **Movimentações Internas**
+  - Entre minhas contas `(Variável)`
+  - Pagamento de fatura `(Fixo)`
 
-### Transferencia
+### DESPESAS (Saídas)
 
-Movimentos entre contas. Nao devem ser classificados como receita ou despesa.
+- **Moradia & Casa**
+  - Aluguel `(Fixo)`
+  - Condomínio `(Fixo)`
+  - Luz `(Fixo)`
+  - Gás `(Fixo)`
+  - Internet e celular `(Fixo)`
+  - Compras para casa `(Variável)`
+  - Material de limpeza `(Variável)`
+  - Manutenção e reformas `(Extra)`
+- **Alimentação**
+  - Supermercado `(Variável)`
+  - Feira e hortifruti `(Variável)`
+  - Restaurantes `(Variável)`
+  - Delivery `(Variável)`
+  - Cafeteria e lanches `(Variável)`
+  - Bares e festas `(Variável)`
+- **Transporte**
+  - Metrô e ônibus `(Variável)`
+  - Uber e táxi `(Variável)`
+  - Combustível e estacionamento `(Variável)`
+- **Saúde e Bem-estar**
+  - Academia `(Fixo)`
+  - Personal `(Fixo)`
+  - Terapia `(Fixo)`
+  - Nutricionista `(Fixo)`
+  - Farmácia `(Variável)`
+  - Cosméticos `(Variável)`
+  - Estética `(Variável)`
+  - Médico e dentista `(Extra)`
+  - Hospital e exames `(Extra)`
+- **Lazer e Estilo de Vida**
+  - Viagens `(Variável)`
+  - Cinema, teatro e shows `(Variável)`
+  - Livros e cultura `(Variável)`
+  - Assinaturas de streaming `(Fixo)`
+  - Roupas e calçados `(Variável)`
+  - Presentes `(Variável)`
+  - Outros passeios `(Variável)`
+- **Educação e Desenvolvimento**
+  - Faculdade `(Fixo)`
+  - Cursos `(Variável)`
+- **Gastos Shuri**
+  - Ração `(Variável)`
+  - Petiscos `(Variável)`
+  - Higiene `(Variável)`
+  - Brinquedos `(Variável)`
+  - Saúde e veterinário `(Variável)`
+- **Impostos e Serviços Financeiros**
+  - Contabilidade `(Fixo)`
+  - Impostos (IRPF) `(Fixo)`
+  - Empréstimos Caixa `(Fixo)`
+  - Seguro Nu `(Fixo)`
+  - Apoio Uel `(Fixo)`
+  - Doação `(Variável)`
+  - Tarifas e juros `(Variável)`
+  - Anuidade cartão `(Fixo)`
+- **Investimentos (Aportes)**
+  - Aporte em corretora `(Variável)`
+  - Reserva de emergência `(Fixo)`
+  - Poupança da Shuri `(Fixo)`
+  - Poupança da casa `(Fixo)`
 
-Exemplos:
+## Observações De Modelagem
 
-- Conta corrente para investimento.
-- Conta corrente para carteira.
-- Pagamento de fatura de cartao.
-- Resgate de investimento para conta corrente.
-
-## Receitas
-
-Grupo: Entradas.
-
-| Macro tipo    | Micro tipo        |
-| ------------- | ----------------- |
-| Trabalho      | Salario           |
-| Trabalho      | Bonus             |
-| Trabalho      | Hora extra        |
-| Trabalho      | 13o salario       |
-| Beneficios    | Flash alimentacao |
-| Beneficios    | Flash convenio    |
-| Ajustes       | Saldo anterior    |
-| Ajustes       | Reembolso         |
-| Ajustes       | Estorno           |
-| Investimentos | Resgate           |
-
-Observacao: resgate tambem pode aparecer como transferencia quando for apenas movimento entre uma conta de investimento e uma conta corrente. Deve entrar como receita apenas se o objetivo da tela for recompor disponibilidade mensal.
-
-## Investimentos
-
-Grupo: Objetivos e caixinhas.
-
-| Macro tipo | Micro tipo            |
-| ---------- | --------------------- |
-| Objetivos  | Reserva de emergencia |
-| Objetivos  | Poupanca da Shuri     |
-| Objetivos  | Poupanca da casa      |
-
-O modulo de investimentos simples deve detalhar os objetivos em aportes, resgates, rendimentos e ajustes.
-
-## Despesas Fixas
-
-Despesas recorrentes ou obrigacoes mensais. Mesmo quando variam um pouco, tendem a existir todo mes.
-
-### Obrigacoes Mensais - Conta Corrente
-
-Uso esperado: valores pagos por debito em conta, Pix, boleto ou transferencia.
-
-| Macro tipo | Micro tipo         |
-| ---------- | ------------------ |
-| Moradia    | Aluguel            |
-| Moradia    | Condominio         |
-| Moradia    | Luz                |
-| Moradia    | Internet e celular |
-| Moradia    | Gas                |
-| Cuidados   | Terapia            |
-| Cuidados   | Personal           |
-| Cuidados   | Nutricionista      |
-| Outros     | Contabilidade      |
-| Outros     | Emprestimos Caixa  |
-| Outros     | Apoio Uel          |
-| Outros     | Seguro Nu          |
-| Impostos   | IRPF               |
-
-### Obrigacoes Mensais - Cartao De Credito
-
-Uso esperado: valores recorrentes que entram pela fatura do cartao.
-
-| Macro tipo         | Micro tipo      |
-| ------------------ | --------------- |
-| Outros recorrentes | Assinaturas     |
-| Outros recorrentes | Academia        |
-| Outros recorrentes | Anuidade cartao |
-
-## Despesas Variaveis
-
-Despesas que mudam conforme comportamento, consumo e escolhas do mes.
-
-| Macro tipo              | Micro tipo           |
-| ----------------------- | -------------------- |
-| Alimentacao             | Supermercado         |
-| Alimentacao             | Feira/frutas         |
-| Alimentacao             | Restaurantes         |
-| Alimentacao             | Bares                |
-| Alimentacao             | Delivery             |
-| Alimentacao             | Cafeteria            |
-| Manutencao da casa      | Compras para casa    |
-| Manutencao da casa      | Material de limpeza  |
-| Transporte              | Metro/onibus         |
-| Transporte              | Uber e taxi          |
-| Cuidados pessoais       | Farmacia             |
-| Cuidados pessoais       | Estetica             |
-| Cuidados pessoais       | Cosmeticos           |
-| Lazer                   | Viagens              |
-| Lazer                   | Cinema/teatro/show   |
-| Lazer                   | Livros               |
-| Lazer                   | Artesanato/papelaria |
-| Lazer                   | Outros lazer         |
-| Compras gerais          | Roupas               |
-| Compras gerais          | Calcados/acessorios  |
-| Compras gerais          | Presentes            |
-| Compras gerais          | Outros compras       |
-| Gastos Shuri            | Shuri - racao        |
-| Gastos Shuri            | Shuri - petiscos     |
-| Gastos Shuri            | Shuri - higiene      |
-| Gastos Shuri            | Shuri - brinquedos   |
-| Gastos Shuri            | Shuri - saude        |
-| Educacao                | Faculdade            |
-| Educacao                | Curso                |
-| Outros gastos variaveis | Doacao               |
-| Outros gastos variaveis | Impostos/taxas       |
-| Outros gastos variaveis | Tarifas e juros      |
-
-## Despesas Extras
-
-Despesas emergenciais, excepcionais ou de baixa previsibilidade.
-
-| Macro tipo         | Micro tipo      |
-| ------------------ | --------------- |
-| Saude              | Medico/dentista |
-| Saude              | Hospital        |
-| Outras emergencias | Manutencao casa |
-| Outras emergencias | Outros extras   |
-
-## Observacoes De Modelagem
-
-- Grupos, macro tipos e micro tipos devem ser cadastros gerenciaveis.
-- Renomear grupos, macro tipos e micro tipos deve ser uma operacao normal do app.
-- O historico dos lancamentos deve guardar referencia por ID interno, nao depender do nome textual.
-- Ao renomear uma categoria, lancamentos antigos devem refletir o novo nome sem perder consistencia.
-- Categorias ja usadas em lancamentos devem ser arquivadas/inativadas em vez de apagadas fisicamente.
-- Deve existir fusao de categorias para unir duplicidades, movendo os lancamentos da categoria antiga para a categoria mantida.
-- Deve existir protecao contra exclusao acidental de categorias em uso.
-- Categorias arquivadas devem continuar aparecendo em historico, filtros antigos e relatorios, quando houver dados associados.
-- Deve ser possivel criar novos macro tipos e novos micro tipos sem mudanca de codigo.
-- Fixo ou variavel deve ser uma classificacao do orcamento, nao necessariamente da categoria em si para sempre.
-- Meio de pagamento deve ser independente da categoria.
-- Uma mesma categoria pode ser paga por Pix, debito, credito, boleto ou dinheiro.
-- Compras no cartao devem manter data da compra e data de impacto no orcamento.
-- Despesas de cartao impactam o controle mensal pelo mes de vencimento da fatura.
-- Pagamento da fatura deve ser transferencia/quitacao, nao uma nova despesa.
-- Tarifas, juros e IOF devem ser despesas proprias.
-- Emergencias devem ficar separadas das variaveis para nao distorcer o comportamento mensal comum.
-
-## Estrutura Para Controle Mensal
-
-A visualizacao mensal deve conseguir agrupar por:
-
-```text
-Mes
-└─ Grupo: Fixa, Variavel, Extra, Investimento
-   └─ Meio de pagamento
-      └─ Macro tipo
-         └─ Micro tipo
-```
-
-Tambem deve permitir alternar para:
-
-```text
-Mes
-└─ Meio de pagamento
-   └─ Grupo
-      └─ Macro tipo
-         └─ Micro tipo
-```
-
-Essa segunda forma ajuda a responder quanto ainda esta disponivel por forma de pagamento ao longo do mes.
+- As tags "Fixo/Variável/Extra" ajudam nos relatórios de despesas para mostrar o que é "Custo de Vida" vs "Estilo de Vida".
+- "Aporte" é registrado como Despesa para sair do fluxo de caixa diário. Em relatórios de "Quanto eu gastei de fato", a categoria "Investimentos" é simplesmente subtraída.
+- "Resgate" é registrado como Receita para entrar no fluxo de caixa disponível do mês.
+- Pagamento da fatura não é uma nova despesa (as despesas já foram lançadas ao longo do mês usando os Cartões). Pagamento é uma Transferência da Conta Corrente para a Conta Cartão.

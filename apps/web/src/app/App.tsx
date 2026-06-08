@@ -15,7 +15,6 @@ import {
   IconCalendarStats,
   IconChartBar,
   IconCreditCard,
-  IconLayoutDashboard,
   IconListDetails,
   IconPigMoney,
   IconSettings,
@@ -24,10 +23,12 @@ import {
 import { useState } from "react";
 
 import { AccountsPage } from "./accounts/AccountsPage";
+import { BillsPage } from "./cards/BillsPage";
 import { CategoriesPage } from "./categories/CategoriesPage";
+import { TransactionsPage } from "./transactions/TransactionsPage";
+import { ControleMensalPage } from "./monthly-control/ControleMensalPage";
 
 type PageKey =
-  | "dashboard"
   | "monthly-control"
   | "transactions"
   | "bills"
@@ -41,14 +42,8 @@ const pages: Array<{
   key: PageKey;
   label: string;
   description: string;
-  icon: typeof IconLayoutDashboard;
+  icon: typeof IconCalendarStats;
 }> = [
-  {
-    key: "dashboard",
-    label: "Dashboard",
-    description: "Leitura rápida do mês, saldos e próximos vencimentos.",
-    icon: IconLayoutDashboard
-  },
   {
     key: "monthly-control",
     label: "Controle mensal",
@@ -64,7 +59,7 @@ const pages: Array<{
   {
     key: "bills",
     label: "Faturas",
-    description: "Cartoes, compras, parcelas e vencimentos.",
+    description: "Cartões, compras, parcelas e vencimentos.",
     icon: IconCreditCard
   },
   {
@@ -76,7 +71,7 @@ const pages: Array<{
   {
     key: "categories",
     label: "Categorias",
-    description: "Grupos, macros e micros gerenciaveis.",
+    description: "Categorias e subcategorias gerenciáveis.",
     icon: IconTags
   },
   {
@@ -100,18 +95,21 @@ const pages: Array<{
 ];
 
 export function App() {
-  const [activePage, setActivePage] = useState<PageKey>("dashboard");
+  const [activePage, setActivePage] = useState<PageKey>("monthly-control");
   const currentPage = pages.find((page) => page.key === activePage) ?? pages[0];
   const CurrentIcon = currentPage.icon;
   const isAccountsPage = activePage === "accounts";
+  const isBillsPage = activePage === "bills";
   const isCategoriesPage = activePage === "categories";
+  const isTransactionsPage = activePage === "transactions";
+  const isMonthlyControlPage = activePage === "monthly-control";
 
   return (
     <AppShell header={{ height: 64 }} navbar={{ width: 280, breakpoint: "sm" }} padding="lg">
       <AppShell.Header>
         <Group h="100%" px="lg" justify="space-between">
           <Box>
-            <Title order={3}>Financas Pessoais</Title>
+            <Title order={3}>Finanças Pessoais</Title>
             <Text size="sm" c="dimmed">
               Web app local em desenvolvimento
             </Text>
@@ -143,8 +141,14 @@ export function App() {
       <AppShell.Main>
         {isAccountsPage ? (
           <AccountsPage />
+        ) : isBillsPage ? (
+          <BillsPage />
         ) : isCategoriesPage ? (
           <CategoriesPage />
+        ) : isTransactionsPage ? (
+          <TransactionsPage />
+        ) : isMonthlyControlPage ? (
+          <ControleMensalPage />
         ) : (
           <Paper withBorder p="xl" radius="md">
             <Group align="flex-start" gap="md">

@@ -1,0 +1,1 @@
+ALTER TABLE `transactions` ADD `linked_transaction_id` text;

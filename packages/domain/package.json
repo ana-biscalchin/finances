@@ -10,7 +10,7 @@
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run src/ --passWithNoTests"
   },
   "devDependencies": {
     "@types/node": "^24.10.2"

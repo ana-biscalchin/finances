@@ -4,30 +4,32 @@ CREATE TABLE `accounts` (
 	`type` text NOT NULL,
 	`institution` text,
 	`initial_balance_cents` integer DEFAULT 0 NOT NULL,
+	`sort_order` integer DEFAULT 0 NOT NULL,
+	`is_primary` integer DEFAULT false NOT NULL,
+	`default_payment_method_id` text,
 	`is_active` integer DEFAULT true NOT NULL,
 	`created_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL
+	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (`default_payment_method_id`) REFERENCES `payment_methods`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE TABLE `budgets` (
 	`id` text PRIMARY KEY NOT NULL,
 	`budget_month` text NOT NULL,
-	`category_group_id` text,
-	`category_macro_id` text,
-	`category_micro_id` text,
+	`category_id` text,
+	`subcategory_id` text,
 	`payment_method_id` text,
 	`amount_cents` integer NOT NULL,
 	`created_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	FOREIGN KEY (`category_group_id`) REFERENCES `category_groups`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`category_macro_id`) REFERENCES `category_macros`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`category_micro_id`) REFERENCES `category_micros`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`category_id`) REFERENCES `categories`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`subcategory_id`) REFERENCES `subcategories`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`payment_method_id`) REFERENCES `payment_methods`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE INDEX `budgets_month_idx` ON `budgets` (`budget_month`);--> statement-breakpoint
-CREATE INDEX `budgets_category_micro_idx` ON `budgets` (`category_micro_id`);--> statement-breakpoint
-CREATE TABLE `category_groups` (
+CREATE INDEX `budgets_subcategory_idx` ON `budgets` (`subcategory_id`);--> statement-breakpoint
+CREATE TABLE `categories` (
 	`id` text PRIMARY KEY NOT NULL,
 	`nature` text NOT NULL,
 	`name` text NOT NULL,
@@ -38,36 +40,8 @@ CREATE TABLE `category_groups` (
 	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `category_groups_nature_name_unique` ON `category_groups` (`nature`,`name`);--> statement-breakpoint
-CREATE INDEX `category_groups_nature_idx` ON `category_groups` (`nature`);--> statement-breakpoint
-CREATE TABLE `category_macros` (
-	`id` text PRIMARY KEY NOT NULL,
-	`group_id` text NOT NULL,
-	`name` text NOT NULL,
-	`sort_order` integer DEFAULT 0 NOT NULL,
-	`is_active` integer DEFAULT true NOT NULL,
-	`archived_at` text,
-	`created_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	FOREIGN KEY (`group_id`) REFERENCES `category_groups`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `category_macros_group_name_unique` ON `category_macros` (`group_id`,`name`);--> statement-breakpoint
-CREATE INDEX `category_macros_group_idx` ON `category_macros` (`group_id`);--> statement-breakpoint
-CREATE TABLE `category_micros` (
-	`id` text PRIMARY KEY NOT NULL,
-	`macro_id` text NOT NULL,
-	`name` text NOT NULL,
-	`sort_order` integer DEFAULT 0 NOT NULL,
-	`is_active` integer DEFAULT true NOT NULL,
-	`archived_at` text,
-	`created_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	FOREIGN KEY (`macro_id`) REFERENCES `category_macros`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `category_micros_macro_name_unique` ON `category_micros` (`macro_id`,`name`);--> statement-breakpoint
-CREATE INDEX `category_micros_macro_idx` ON `category_micros` (`macro_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `categories_nature_name_unique` ON `categories` (`nature`,`name`);--> statement-breakpoint
+CREATE INDEX `categories_nature_idx` ON `categories` (`nature`);--> statement-breakpoint
 CREATE TABLE `credit_card_bills` (
 	`id` text PRIMARY KEY NOT NULL,
 	`credit_card_id` text NOT NULL,
@@ -151,6 +125,21 @@ CREATE TABLE `reserve_movements` (
 --> statement-breakpoint
 CREATE INDEX `reserve_movements_goal_idx` ON `reserve_movements` (`reserve_goal_id`);--> statement-breakpoint
 CREATE INDEX `reserve_movements_date_idx` ON `reserve_movements` (`movement_date`);--> statement-breakpoint
+CREATE TABLE `subcategories` (
+	`id` text PRIMARY KEY NOT NULL,
+	`category_id` text NOT NULL,
+	`name` text NOT NULL,
+	`behavior` text DEFAULT 'variable' NOT NULL,
+	`sort_order` integer DEFAULT 0 NOT NULL,
+	`is_active` integer DEFAULT true NOT NULL,
+	`archived_at` text,
+	`created_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (`category_id`) REFERENCES `categories`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `subcategories_category_name_unique` ON `subcategories` (`category_id`,`name`);--> statement-breakpoint
+CREATE INDEX `subcategories_category_idx` ON `subcategories` (`category_id`);--> statement-breakpoint
 CREATE TABLE `transactions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`type` text NOT NULL,
@@ -160,7 +149,7 @@ CREATE TABLE `transactions` (
 	`budget_month` text NOT NULL,
 	`account_id` text,
 	`payment_method_id` text,
-	`category_micro_id` text,
+	`subcategory_id` text,
 	`credit_card_id` text,
 	`credit_card_bill_id` text,
 	`status` text DEFAULT 'planned' NOT NULL,
@@ -169,14 +158,14 @@ CREATE TABLE `transactions` (
 	`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`payment_method_id`) REFERENCES `payment_methods`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`category_micro_id`) REFERENCES `category_micros`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`subcategory_id`) REFERENCES `subcategories`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`credit_card_id`) REFERENCES `credit_cards`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`credit_card_bill_id`) REFERENCES `credit_card_bills`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE INDEX `transactions_budget_month_idx` ON `transactions` (`budget_month`);--> statement-breakpoint
 CREATE INDEX `transactions_event_date_idx` ON `transactions` (`event_date`);--> statement-breakpoint
-CREATE INDEX `transactions_category_micro_idx` ON `transactions` (`category_micro_id`);--> statement-breakpoint
+CREATE INDEX `transactions_subcategory_idx` ON `transactions` (`subcategory_id`);--> statement-breakpoint
 CREATE TABLE `transfers` (
 	`id` text PRIMARY KEY NOT NULL,
 	`from_account_id` text NOT NULL,

@@ -40,11 +40,11 @@ Criar um app local, inicialmente como web app em `localhost`, com banco SQLite e
 
 ## Status
 
-Projeto em fase de planejamento tecnico e funcional.
+Projeto em desenvolvimento.
 
-Scaffold inicial em andamento com workspace `pnpm`.
-
-Banco e dominio iniciais configurados com SQLite, Drizzle, migration e seed.
+O scaffold inicial, workspace (`pnpm`), frontend (Vite+React+Mantine) e API local (Fastify) estão criados.
+O banco e domínio estão configurados com SQLite, Drizzle, migrations e seeds.
+Os módulos iniciais (contas, categorias, transações) já estão implementados e testados unitariamente.
 
 ## Desenvolvimento
 

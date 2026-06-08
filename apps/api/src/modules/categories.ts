@@ -1,7 +1,8 @@
 import {
-  categoryGroups,
-  categoryMacros,
-  categoryMicros,
+  categories,
+  subcategories,
+  transactions,
+  budgets,
   type createDatabaseConnection
 } from "@finances/database";
 import { assertCategoryNature } from "@finances/domain";
@@ -20,21 +21,16 @@ import {
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 
-type GroupPayload = {
+type CategoryPayload = {
   name?: unknown;
   nature?: unknown;
   sortOrder?: unknown;
 };
 
-type MacroPayload = {
-  groupId?: unknown;
+type SubcategoryPayload = {
+  categoryId?: unknown;
   name?: unknown;
-  sortOrder?: unknown;
-};
-
-type MicroPayload = {
-  macroId?: unknown;
-  name?: unknown;
+  behavior?: unknown;
   sortOrder?: unknown;
 };
 
@@ -43,71 +39,48 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
   app.get("/categories", async (request) => {
     const includeInactive = getBooleanQueryValue(request.query, "includeInactive");
-    const groupRows = includeInactive
+    const categoryRows = includeInactive
       ? db
           .select()
-          .from(categoryGroups)
-          .orderBy(asc(categoryGroups.sortOrder), asc(categoryGroups.name))
+          .from(categories)
+          .orderBy(asc(categories.sortOrder), asc(categories.name))
           .all()
       : db
           .select()
-          .from(categoryGroups)
-          .where(eq(categoryGroups.isActive, true))
-          .orderBy(asc(categoryGroups.sortOrder), asc(categoryGroups.name))
+          .from(categories)
+          .where(eq(categories.isActive, true))
+          .orderBy(asc(categories.sortOrder), asc(categories.name))
           .all();
-    const macroRows = includeInactive
+          
+    const subcategoryRows = includeInactive
       ? db
           .select()
-          .from(categoryMacros)
-          .orderBy(asc(categoryMacros.sortOrder), asc(categoryMacros.name))
+          .from(subcategories)
+          .orderBy(asc(subcategories.sortOrder), asc(subcategories.name))
           .all()
       : db
           .select()
-          .from(categoryMacros)
-          .where(eq(categoryMacros.isActive, true))
-          .orderBy(asc(categoryMacros.sortOrder), asc(categoryMacros.name))
+          .from(subcategories)
+          .where(eq(subcategories.isActive, true))
+          .orderBy(asc(subcategories.sortOrder), asc(subcategories.name))
           .all();
-    const microRows = includeInactive
-      ? db
-          .select()
-          .from(categoryMicros)
-          .orderBy(asc(categoryMicros.sortOrder), asc(categoryMicros.name))
-          .all()
-      : db
-          .select()
-          .from(categoryMicros)
-          .where(eq(categoryMicros.isActive, true))
-          .orderBy(asc(categoryMicros.sortOrder), asc(categoryMicros.name))
-          .all();
-    const groupMap = new Map(
-      groupRows.map((group) => [
-        group.id,
-        { ...group, macros: [] as Array<(typeof macroRows)[number] & { micros: typeof microRows }> }
+
+    const categoryMap = new Map(
+      categoryRows.map((category) => [
+        category.id,
+        { ...category, subcategories: [] as typeof subcategoryRows }
       ])
     );
-    const macroMap = new Map<string, (typeof macroRows)[number] & { micros: typeof microRows }>();
 
-    for (const macro of macroRows) {
-      const group = groupMap.get(macro.groupId);
-
-      if (!group) {
-        continue;
-      }
-
-      const nestedMacro = { ...macro, micros: [] as typeof microRows };
-      group.macros.push(nestedMacro);
-      macroMap.set(macro.id, nestedMacro);
+    for (const subcategory of subcategoryRows) {
+      categoryMap.get(subcategory.categoryId)?.subcategories.push(subcategory);
     }
 
-    for (const micro of microRows) {
-      macroMap.get(micro.macroId)?.micros.push(micro);
-    }
-
-    return [...groupMap.values()];
+    return [...categoryMap.values()];
   });
 
-  app.post("/category-groups", async (request, reply) => {
-    const payload = parseGroupPayloadOrReply(request.body, reply);
+  app.post("/categories", async (request, reply) => {
+    const payload = parseCategoryPayloadOrReply(request.body, reply);
 
     if (!payload) {
       return reply;
@@ -115,34 +88,34 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
     if (
       !ensureOrReply(reply, () =>
-        ensureGroupNameIsAvailable(connection, payload.nature, payload.name)
+        ensureCategoryNameIsAvailable(connection, payload.nature, payload.name)
       )
     ) {
       return reply;
     }
 
-    const group = {
+    const category = {
       id: crypto.randomUUID(),
       ...payload,
-      sortOrder: payload.sortOrder ?? getNextGroupSortOrder(connection),
+      sortOrder: payload.sortOrder ?? getNextCategorySortOrder(connection),
       isActive: true,
       archivedAt: null
     };
 
-    db.insert(categoryGroups).values(group).run();
+    db.insert(categories).values(category).run();
 
-    return reply.code(201).send(group);
+    return reply.code(201).send(category);
   });
 
-  app.put("/category-groups/:id", async (request, reply) => {
+  app.put("/categories/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const current = db.select().from(categoryGroups).where(eq(categoryGroups.id, id)).get();
+    const current = db.select().from(categories).where(eq(categories.id, id)).get();
 
     if (!current) {
-      return reply.code(404).send({ message: "Grupo de categoria não encontrado." });
+      return reply.code(404).send({ message: "Categoria não encontrada." });
     }
 
-    const payload = parseGroupPayloadOrReply(request.body, reply);
+    const payload = parseCategoryPayloadOrReply(request.body, reply);
 
     if (!payload) {
       return reply;
@@ -150,32 +123,32 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
     if (
       !ensureOrReply(reply, () =>
-        ensureGroupNameIsAvailable(connection, payload.nature, payload.name, id)
+        ensureCategoryNameIsAvailable(connection, payload.nature, payload.name, id)
       )
     ) {
       return reply;
     }
 
-    db.update(categoryGroups)
+    db.update(categories)
       .set({
         ...payload,
         updatedAt: new Date().toISOString()
       })
-      .where(eq(categoryGroups.id, id))
+      .where(eq(categories.id, id))
       .run();
 
-    return db.select().from(categoryGroups).where(eq(categoryGroups.id, id)).get();
+    return db.select().from(categories).where(eq(categories.id, id)).get();
   });
 
-  app.patch("/category-groups/:id/archive", async (request, reply) =>
-    archiveCategoryGroup(connection, request.params, reply)
+  app.patch("/categories/:id/archive", async (request, reply) =>
+    archiveCategory(connection, request.params, reply)
   );
-  app.patch("/category-groups/:id/restore", async (request, reply) =>
-    restoreCategoryGroup(connection, request.params, reply)
+  app.patch("/categories/:id/restore", async (request, reply) =>
+    restoreCategory(connection, request.params, reply)
   );
 
-  app.post("/category-macros", async (request, reply) => {
-    const payload = parseMacroPayloadOrReply(request.body, reply);
+  app.post("/subcategories", async (request, reply) => {
+    const payload = parseSubcategoryPayloadOrReply(request.body, reply);
 
     if (!payload) {
       return reply;
@@ -183,35 +156,35 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
     if (
       !ensureOrReply(reply, () => {
-        ensureGroupExists(connection, payload.groupId);
-        ensureMacroNameIsAvailable(connection, payload.groupId, payload.name);
+        ensureCategoryExists(connection, payload.categoryId);
+        ensureSubcategoryNameIsAvailable(connection, payload.categoryId, payload.name);
       })
     ) {
       return reply;
     }
 
-    const macro = {
+    const subcategory = {
       id: crypto.randomUUID(),
       ...payload,
-      sortOrder: payload.sortOrder ?? getNextMacroSortOrder(connection, payload.groupId),
+      sortOrder: payload.sortOrder ?? getNextSubcategorySortOrder(connection, payload.categoryId),
       isActive: true,
       archivedAt: null
     };
 
-    db.insert(categoryMacros).values(macro).run();
+    db.insert(subcategories).values(subcategory).run();
 
-    return reply.code(201).send(macro);
+    return reply.code(201).send(subcategory);
   });
 
-  app.put("/category-macros/:id", async (request, reply) => {
+  app.put("/subcategories/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const current = db.select().from(categoryMacros).where(eq(categoryMacros.id, id)).get();
+    const current = db.select().from(subcategories).where(eq(subcategories.id, id)).get();
 
     if (!current) {
-      return reply.code(404).send({ message: "Macro categoria não encontrada." });
+      return reply.code(404).send({ message: "Subcategoria não encontrada." });
     }
 
-    const payload = parseMacroPayloadOrReply(request.body, reply);
+    const payload = parseSubcategoryPayloadOrReply(request.body, reply);
 
     if (!payload) {
       return reply;
@@ -219,108 +192,92 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
     if (
       !ensureOrReply(reply, () => {
-        ensureGroupExists(connection, payload.groupId);
-        ensureMacroNameIsAvailable(connection, payload.groupId, payload.name, id);
+        ensureCategoryExists(connection, payload.categoryId);
+        ensureSubcategoryNameIsAvailable(connection, payload.categoryId, payload.name, id);
       })
     ) {
       return reply;
     }
 
-    db.update(categoryMacros)
+    db.update(subcategories)
       .set({
         ...payload,
         updatedAt: new Date().toISOString()
       })
-      .where(eq(categoryMacros.id, id))
+      .where(eq(subcategories.id, id))
       .run();
 
-    return db.select().from(categoryMacros).where(eq(categoryMacros.id, id)).get();
+    return db.select().from(subcategories).where(eq(subcategories.id, id)).get();
   });
 
-  app.patch("/category-macros/:id/archive", async (request, reply) =>
-    archiveCategoryMacro(connection, request.params, reply)
+  app.patch("/subcategories/:id/archive", async (request, reply) =>
+    archiveSubcategory(connection, request.params, reply)
   );
-  app.patch("/category-macros/:id/restore", async (request, reply) =>
-    restoreCategoryMacro(connection, request.params, reply)
+  app.patch("/subcategories/:id/restore", async (request, reply) =>
+    restoreSubcategory(connection, request.params, reply)
   );
 
-  app.post("/category-micros", async (request, reply) => {
-    const payload = parseMicroPayloadOrReply(request.body, reply);
-
-    if (!payload) {
-      return reply;
-    }
-
-    if (
-      !ensureOrReply(reply, () => {
-        ensureMacroExists(connection, payload.macroId);
-        ensureMicroNameIsAvailable(connection, payload.macroId, payload.name);
-      })
-    ) {
-      return reply;
-    }
-
-    const micro = {
-      id: crypto.randomUUID(),
-      ...payload,
-      sortOrder: payload.sortOrder ?? getNextMicroSortOrder(connection, payload.macroId),
-      isActive: true,
-      archivedAt: null
-    };
-
-    db.insert(categoryMicros).values(micro).run();
-
-    return reply.code(201).send(micro);
-  });
-
-  app.put("/category-micros/:id", async (request, reply) => {
+  app.post("/subcategories/:id/merge", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const current = db.select().from(categoryMicros).where(eq(categoryMicros.id, id)).get();
+    const payload = request.body as { targetSubcategoryId?: string };
 
-    if (!current) {
-      return reply.code(404).send({ message: "Micro categoria não encontrada." });
+    if (!isRecord(payload) || typeof payload.targetSubcategoryId !== "string" || !payload.targetSubcategoryId) {
+      return reply.code(400).send({ message: "Payload inválido. targetSubcategoryId é obrigatório." });
     }
 
-    const payload = parseMicroPayloadOrReply(request.body, reply);
+    const { targetSubcategoryId } = payload;
 
-    if (!payload) {
-      return reply;
+    if (id === targetSubcategoryId) {
+      return reply.code(400).send({ message: "Não é possível fundir a subcategoria com ela mesma." });
     }
 
-    if (
-      !ensureOrReply(reply, () => {
-        ensureMacroExists(connection, payload.macroId);
-        ensureMicroNameIsAvailable(connection, payload.macroId, payload.name, id);
-      })
-    ) {
-      return reply;
+    const sourceSub = db.select().from(subcategories).where(eq(subcategories.id, id)).get();
+    if (!sourceSub) {
+      return reply.code(404).send({ message: "Subcategoria de origem não encontrada." });
     }
 
-    db.update(categoryMicros)
-      .set({
-        ...payload,
-        updatedAt: new Date().toISOString()
-      })
-      .where(eq(categoryMicros.id, id))
-      .run();
+    const targetSub = db.select().from(subcategories).where(eq(subcategories.id, targetSubcategoryId)).get();
+    if (!targetSub) {
+      return reply.code(404).send({ message: "Subcategoria de destino não encontrada." });
+    }
 
-    return db.select().from(categoryMicros).where(eq(categoryMicros.id, id)).get();
+    db.transaction((tx) => {
+      tx.update(transactions)
+        .set({
+          subcategoryId: targetSubcategoryId,
+          updatedAt: new Date().toISOString()
+        })
+        .where(eq(transactions.subcategoryId, id))
+        .run();
+
+      tx.update(budgets)
+        .set({
+          subcategoryId: targetSubcategoryId,
+          updatedAt: new Date().toISOString()
+        })
+        .where(eq(budgets.subcategoryId, id))
+        .run();
+
+      tx.update(subcategories)
+        .set({
+          isActive: false,
+          archivedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        })
+        .where(eq(subcategories.id, id))
+        .run();
+    });
+
+    return reply.code(204).send();
   });
-
-  app.patch("/category-micros/:id/archive", async (request, reply) =>
-    archiveCategoryMicro(connection, request.params, reply)
-  );
-  app.patch("/category-micros/:id/restore", async (request, reply) =>
-    restoreCategoryMicro(connection, request.params, reply)
-  );
 }
 
-function parseGroupPayload(body: unknown) {
+function parseCategoryPayload(body: unknown) {
   if (!isRecord(body)) {
-    throw new ValidationError("Payload do grupo deve ser um objeto.");
+    throw new ValidationError("Payload da categoria deve ser um objeto.");
   }
 
-  const payload = body as GroupPayload;
+  const payload = body as CategoryPayload;
 
   return {
     name: parseRequiredString(payload.name, "name"),
@@ -329,55 +286,34 @@ function parseGroupPayload(body: unknown) {
   };
 }
 
-function parseMacroPayload(body: unknown) {
+function parseSubcategoryPayload(body: unknown) {
   if (!isRecord(body)) {
-    throw new ValidationError("Payload da macro deve ser um objeto.");
+    throw new ValidationError("Payload da subcategoria deve ser um objeto.");
   }
 
-  const payload = body as MacroPayload;
+  const payload = body as SubcategoryPayload;
 
   return {
-    groupId: parseRequiredString(payload.groupId, "groupId"),
+    categoryId: parseRequiredString(payload.categoryId, "categoryId"),
     name: parseRequiredString(payload.name, "name"),
+    behavior: parseRequiredString(payload.behavior, "behavior"),
     sortOrder: parseOptionalInteger(payload.sortOrder, "sortOrder")
   };
 }
 
-function parseMicroPayload(body: unknown) {
-  if (!isRecord(body)) {
-    throw new ValidationError("Payload da micro deve ser um objeto.");
-  }
-
-  const payload = body as MicroPayload;
-
-  return {
-    macroId: parseRequiredString(payload.macroId, "macroId"),
-    name: parseRequiredString(payload.name, "name"),
-    sortOrder: parseOptionalInteger(payload.sortOrder, "sortOrder")
-  };
-}
-
-function parseGroupPayloadOrReply(body: unknown, reply: FastifyReply) {
+function parseCategoryPayloadOrReply(body: unknown, reply: FastifyReply) {
   try {
-    return parseGroupPayload(body);
+    return parseCategoryPayload(body);
   } catch (error) {
-    return sendPayloadError(error, reply, "Payload do grupo inválido.");
+    return sendPayloadError(error, reply, "Payload da categoria inválido.");
   }
 }
 
-function parseMacroPayloadOrReply(body: unknown, reply: FastifyReply) {
+function parseSubcategoryPayloadOrReply(body: unknown, reply: FastifyReply) {
   try {
-    return parseMacroPayload(body);
+    return parseSubcategoryPayload(body);
   } catch (error) {
-    return sendPayloadError(error, reply, "Payload da macro inválido.");
-  }
-}
-
-function parseMicroPayloadOrReply(body: unknown, reply: FastifyReply) {
-  try {
-    return parseMicroPayload(body);
-  } catch (error) {
-    return sendPayloadError(error, reply, "Payload da micro inválido.");
+    return sendPayloadError(error, reply, "Payload da subcategoria inválido.");
   }
 }
 
@@ -391,23 +327,15 @@ function ensureOrReply(reply: FastifyReply, callback: () => void) {
   }
 }
 
-function ensureGroupExists(connection: DatabaseConnection, id: string) {
-  const group = connection.db.select().from(categoryGroups).where(eq(categoryGroups.id, id)).get();
+function ensureCategoryExists(connection: DatabaseConnection, id: string) {
+  const category = connection.db.select().from(categories).where(eq(categories.id, id)).get();
 
-  if (!group) {
-    throw new ValidationError("Grupo de categoria não encontrado.");
+  if (!category) {
+    throw new ValidationError("Categoria não encontrada.");
   }
 }
 
-function ensureMacroExists(connection: DatabaseConnection, id: string) {
-  const macro = connection.db.select().from(categoryMacros).where(eq(categoryMacros.id, id)).get();
-
-  if (!macro) {
-    throw new ValidationError("Macro categoria não encontrada.");
-  }
-}
-
-function ensureGroupNameIsAvailable(
+function ensureCategoryNameIsAvailable(
   connection: DatabaseConnection,
   nature: string,
   name: string,
@@ -416,51 +344,32 @@ function ensureGroupNameIsAvailable(
   const normalizedName = normalizeCategoryName(name);
   const existing = connection.db
     .select()
-    .from(categoryGroups)
-    .where(eq(categoryGroups.nature, nature))
+    .from(categories)
+    .where(eq(categories.nature, nature))
     .all()
-    .find((group) => group.id !== ignoreId && normalizeCategoryName(group.name) === normalizedName);
+    .find((category) => category.id !== ignoreId && normalizeCategoryName(category.name) === normalizedName);
 
   if (existing) {
-    throw new ConflictError("Já existe um grupo com essa natureza e nome.");
+    throw new ConflictError("Já existe uma categoria com essa natureza e nome.");
   }
 }
 
-function ensureMacroNameIsAvailable(
+function ensureSubcategoryNameIsAvailable(
   connection: DatabaseConnection,
-  groupId: string,
+  categoryId: string,
   name: string,
   ignoreId?: string
 ) {
   const normalizedName = normalizeCategoryName(name);
   const existing = connection.db
     .select()
-    .from(categoryMacros)
-    .where(eq(categoryMacros.groupId, groupId))
+    .from(subcategories)
+    .where(eq(subcategories.categoryId, categoryId))
     .all()
-    .find((macro) => macro.id !== ignoreId && normalizeCategoryName(macro.name) === normalizedName);
+    .find((sub) => sub.id !== ignoreId && normalizeCategoryName(sub.name) === normalizedName);
 
   if (existing) {
-    throw new ConflictError("Já existe uma macro com esse nome nesse grupo.");
-  }
-}
-
-function ensureMicroNameIsAvailable(
-  connection: DatabaseConnection,
-  macroId: string,
-  name: string,
-  ignoreId?: string
-) {
-  const normalizedName = normalizeCategoryName(name);
-  const existing = connection.db
-    .select()
-    .from(categoryMicros)
-    .where(eq(categoryMicros.macroId, macroId))
-    .all()
-    .find((micro) => micro.id !== ignoreId && normalizeCategoryName(micro.name) === normalizedName);
-
-  if (existing) {
-    throw new ConflictError("Já existe uma micro com esse nome nessa macro.");
+    throw new ConflictError("Já existe uma subcategoria com esse nome nessa categoria.");
   }
 }
 
@@ -472,7 +381,7 @@ function normalizeCategoryName(name: string) {
     .toLowerCase();
 }
 
-function archiveCategoryGroup(
+function archiveCategory(
   connection: DatabaseConnection,
   params: unknown,
   reply: FastifyReply
@@ -480,28 +389,28 @@ function archiveCategoryGroup(
   const { id } = params as { id: string };
   const current = connection.db
     .select()
-    .from(categoryGroups)
-    .where(eq(categoryGroups.id, id))
+    .from(categories)
+    .where(eq(categories.id, id))
     .get();
 
   if (!current) {
-    return reply.code(404).send({ message: "Grupo de categoria não encontrado." });
+    return reply.code(404).send({ message: "Categoria não encontrada." });
   }
 
   connection.db
-    .update(categoryGroups)
+    .update(categories)
     .set({
       isActive: false,
       archivedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     })
-    .where(eq(categoryGroups.id, id))
+    .where(eq(categories.id, id))
     .run();
 
   return reply.code(204).send();
 }
 
-function restoreCategoryGroup(
+function restoreCategory(
   connection: DatabaseConnection,
   params: unknown,
   reply: FastifyReply
@@ -509,24 +418,24 @@ function restoreCategoryGroup(
   const { id } = params as { id: string };
   const current = connection.db
     .select()
-    .from(categoryGroups)
-    .where(eq(categoryGroups.id, id))
+    .from(categories)
+    .where(eq(categories.id, id))
     .get();
 
   if (!current) {
-    return reply.code(404).send({ message: "Grupo de categoria não encontrado." });
+    return reply.code(404).send({ message: "Categoria não encontrada." });
   }
 
   connection.db
-    .update(categoryGroups)
+    .update(categories)
     .set({ isActive: true, archivedAt: null, updatedAt: new Date().toISOString() })
-    .where(eq(categoryGroups.id, id))
+    .where(eq(categories.id, id))
     .run();
 
   return reply.code(204).send();
 }
 
-function archiveCategoryMacro(
+function archiveSubcategory(
   connection: DatabaseConnection,
   params: unknown,
   reply: FastifyReply
@@ -534,28 +443,28 @@ function archiveCategoryMacro(
   const { id } = params as { id: string };
   const current = connection.db
     .select()
-    .from(categoryMacros)
-    .where(eq(categoryMacros.id, id))
+    .from(subcategories)
+    .where(eq(subcategories.id, id))
     .get();
 
   if (!current) {
-    return reply.code(404).send({ message: "Macro categoria não encontrada." });
+    return reply.code(404).send({ message: "Subcategoria não encontrada." });
   }
 
   connection.db
-    .update(categoryMacros)
+    .update(subcategories)
     .set({
       isActive: false,
       archivedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     })
-    .where(eq(categoryMacros.id, id))
+    .where(eq(subcategories.id, id))
     .run();
 
   return reply.code(204).send();
 }
 
-function restoreCategoryMacro(
+function restoreSubcategory(
   connection: DatabaseConnection,
   params: unknown,
   reply: FastifyReply
@@ -563,93 +472,31 @@ function restoreCategoryMacro(
   const { id } = params as { id: string };
   const current = connection.db
     .select()
-    .from(categoryMacros)
-    .where(eq(categoryMacros.id, id))
+    .from(subcategories)
+    .where(eq(subcategories.id, id))
     .get();
 
   if (!current) {
-    return reply.code(404).send({ message: "Macro categoria não encontrada." });
+    return reply.code(404).send({ message: "Subcategoria não encontrada." });
   }
 
   connection.db
-    .update(categoryMacros)
+    .update(subcategories)
     .set({ isActive: true, archivedAt: null, updatedAt: new Date().toISOString() })
-    .where(eq(categoryMacros.id, id))
+    .where(eq(subcategories.id, id))
     .run();
 
   return reply.code(204).send();
 }
 
-function archiveCategoryMicro(
-  connection: DatabaseConnection,
-  params: unknown,
-  reply: FastifyReply
-) {
-  const { id } = params as { id: string };
-  const current = connection.db
-    .select()
-    .from(categoryMicros)
-    .where(eq(categoryMicros.id, id))
-    .get();
-
-  if (!current) {
-    return reply.code(404).send({ message: "Micro categoria não encontrada." });
-  }
-
-  connection.db
-    .update(categoryMicros)
-    .set({
-      isActive: false,
-      archivedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    })
-    .where(eq(categoryMicros.id, id))
-    .run();
-
-  return reply.code(204).send();
+function getNextCategorySortOrder(connection: DatabaseConnection) {
+  return connection.db.select().from(categories).all().length;
 }
 
-function restoreCategoryMicro(
-  connection: DatabaseConnection,
-  params: unknown,
-  reply: FastifyReply
-) {
-  const { id } = params as { id: string };
-  const current = connection.db
-    .select()
-    .from(categoryMicros)
-    .where(eq(categoryMicros.id, id))
-    .get();
-
-  if (!current) {
-    return reply.code(404).send({ message: "Micro categoria não encontrada." });
-  }
-
-  connection.db
-    .update(categoryMicros)
-    .set({ isActive: true, archivedAt: null, updatedAt: new Date().toISOString() })
-    .where(eq(categoryMicros.id, id))
-    .run();
-
-  return reply.code(204).send();
-}
-
-function getNextGroupSortOrder(connection: DatabaseConnection) {
-  return connection.db.select().from(categoryGroups).all().length;
-}
-
-function getNextMacroSortOrder(connection: DatabaseConnection, groupId: string) {
+function getNextSubcategorySortOrder(connection: DatabaseConnection, categoryId: string) {
   return connection.db
     .select()
-    .from(categoryMacros)
-    .where(eq(categoryMacros.groupId, groupId))
-    .all().length;
-}
-
-function getNextMicroSortOrder(connection: DatabaseConnection, macroId: string) {
-  return connection.db
-    .select()
-    .from(categoryMicros)
-    .where(eq(categoryMicros.macroId, macroId))
+    .from(subcategories)
+    .where(eq(subcategories.categoryId, categoryId))
     .all().length;
 }

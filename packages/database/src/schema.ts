@@ -16,6 +16,9 @@ export const accounts = sqliteTable("accounts", {
   type: text("type").notNull(),
   institution: text("institution"),
   initialBalanceCents: integer("initial_balance_cents").notNull().default(0),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
+  defaultPaymentMethodId: text("default_payment_method_id").references(() => paymentMethods.id),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   ...timestamps
 });
@@ -34,8 +37,8 @@ export const paymentMethods = sqliteTable(
   (table) => [uniqueIndex("payment_methods_name_unique").on(table.name)]
 );
 
-export const categoryGroups = sqliteTable(
-  "category_groups",
+export const categories = sqliteTable(
+  "categories",
   {
     id: text("id").primaryKey(),
     nature: text("nature").notNull(),
@@ -46,46 +49,28 @@ export const categoryGroups = sqliteTable(
     ...timestamps
   },
   (table) => [
-    uniqueIndex("category_groups_nature_name_unique").on(table.nature, table.name),
-    index("category_groups_nature_idx").on(table.nature)
+    uniqueIndex("categories_nature_name_unique").on(table.nature, table.name),
+    index("categories_nature_idx").on(table.nature)
   ]
 );
 
-export const categoryMacros = sqliteTable(
-  "category_macros",
+export const subcategories = sqliteTable(
+  "subcategories",
   {
     id: text("id").primaryKey(),
-    groupId: text("group_id")
+    categoryId: text("category_id")
       .notNull()
-      .references(() => categoryGroups.id),
+      .references(() => categories.id),
     name: text("name").notNull(),
+    behavior: text("behavior").notNull().default("variable"),
     sortOrder: integer("sort_order").notNull().default(0),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     archivedAt: text("archived_at"),
     ...timestamps
   },
   (table) => [
-    uniqueIndex("category_macros_group_name_unique").on(table.groupId, table.name),
-    index("category_macros_group_idx").on(table.groupId)
-  ]
-);
-
-export const categoryMicros = sqliteTable(
-  "category_micros",
-  {
-    id: text("id").primaryKey(),
-    macroId: text("macro_id")
-      .notNull()
-      .references(() => categoryMacros.id),
-    name: text("name").notNull(),
-    sortOrder: integer("sort_order").notNull().default(0),
-    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-    archivedAt: text("archived_at"),
-    ...timestamps
-  },
-  (table) => [
-    uniqueIndex("category_micros_macro_name_unique").on(table.macroId, table.name),
-    index("category_micros_macro_idx").on(table.macroId)
+    uniqueIndex("subcategories_category_name_unique").on(table.categoryId, table.name),
+    index("subcategories_category_idx").on(table.categoryId)
   ]
 );
 
@@ -97,6 +82,7 @@ export const creditCards = sqliteTable("credit_cards", {
   dueDay: integer("due_day").notNull(),
   paymentAccountId: text("payment_account_id").references(() => accounts.id),
   limitCents: integer("limit_cents"),
+  isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   ...timestamps
 });
@@ -132,17 +118,18 @@ export const transactions = sqliteTable(
     budgetMonth: text("budget_month").notNull(),
     accountId: text("account_id").references(() => accounts.id),
     paymentMethodId: text("payment_method_id").references(() => paymentMethods.id),
-    categoryMicroId: text("category_micro_id").references(() => categoryMicros.id),
+    subcategoryId: text("subcategory_id").references(() => subcategories.id),
     creditCardId: text("credit_card_id").references(() => creditCards.id),
     creditCardBillId: text("credit_card_bill_id").references(() => creditCardBills.id),
     status: text("status").notNull().default("planned"),
     notes: text("notes"),
+    linkedTransactionId: text("linked_transaction_id"),
     ...timestamps
   },
   (table) => [
     index("transactions_budget_month_idx").on(table.budgetMonth),
     index("transactions_event_date_idx").on(table.eventDate),
-    index("transactions_category_micro_idx").on(table.categoryMicroId)
+    index("transactions_subcategory_idx").on(table.subcategoryId)
   ]
 );
 
@@ -227,34 +214,25 @@ export const budgets = sqliteTable(
   {
     id: text("id").primaryKey(),
     budgetMonth: text("budget_month").notNull(),
-    categoryGroupId: text("category_group_id").references(() => categoryGroups.id),
-    categoryMacroId: text("category_macro_id").references(() => categoryMacros.id),
-    categoryMicroId: text("category_micro_id").references(() => categoryMicros.id),
+    categoryId: text("category_id").references(() => categories.id),
+    subcategoryId: text("subcategory_id").references(() => subcategories.id),
     paymentMethodId: text("payment_method_id").references(() => paymentMethods.id),
     amountCents: integer("amount_cents").notNull(),
     ...timestamps
   },
   (table) => [
     index("budgets_month_idx").on(table.budgetMonth),
-    index("budgets_category_micro_idx").on(table.categoryMicroId)
+    index("budgets_subcategory_idx").on(table.subcategoryId)
   ]
 );
 
-export const categoryGroupsRelations = relations(categoryGroups, ({ many }) => ({
-  macros: many(categoryMacros)
+export const categoriesRelations = relations(categories, ({ many }) => ({
+  subcategories: many(subcategories)
 }));
 
-export const categoryMacrosRelations = relations(categoryMacros, ({ one, many }) => ({
-  group: one(categoryGroups, {
-    fields: [categoryMacros.groupId],
-    references: [categoryGroups.id]
-  }),
-  micros: many(categoryMicros)
-}));
-
-export const categoryMicrosRelations = relations(categoryMicros, ({ one }) => ({
-  macro: one(categoryMacros, {
-    fields: [categoryMicros.macroId],
-    references: [categoryMacros.id]
+export const subcategoriesRelations = relations(subcategories, ({ one }) => ({
+  category: one(categories, {
+    fields: [subcategories.categoryId],
+    references: [categories.id]
   })
 }));

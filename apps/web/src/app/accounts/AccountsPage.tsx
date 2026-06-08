@@ -26,7 +26,16 @@ type Account = {
   type: string;
   institution: string | null;
   initialBalanceCents: number;
+  currentBalanceCents?: number;
+  sortOrder: number;
+  isPrimary: boolean;
+  defaultPaymentMethodId: string | null;
   isActive: boolean;
+};
+
+type PaymentMethod = {
+  id: string;
+  name: string;
 };
 
 type AccountFormState = {
@@ -34,19 +43,27 @@ type AccountFormState = {
   type: string;
   institution: string;
   initialBalanceReais: number | string;
+  sortOrder: number | string;
+  isPrimary: boolean;
+  defaultPaymentMethodId: string;
 };
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+const emptySelectValue = "__none__";
 
 const emptyForm: AccountFormState = {
   name: "",
   type: "checking",
   institution: "",
-  initialBalanceReais: 0
+  initialBalanceReais: 0,
+  sortOrder: 0,
+  isPrimary: false,
+  defaultPaymentMethodId: emptySelectValue
 };
 
 export function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -59,9 +76,29 @@ export function AccountsPage() {
     () =>
       accounts
         .filter((account) => account.isActive)
-        .reduce((total, account) => total + account.initialBalanceCents, 0),
+        .reduce((total, account) => total + (account.currentBalanceCents ?? account.initialBalanceCents), 0),
     [accounts]
   );
+  const paymentMethodOptions = useMemo(
+    () => [
+      { value: emptySelectValue, label: "Sem meio padrão" },
+      ...paymentMethods.map((paymentMethod) => ({
+        value: paymentMethod.id,
+        label: paymentMethod.name
+      }))
+    ],
+    [paymentMethods]
+  );
+
+  async function loadPaymentMethods() {
+    const response = await fetch(`${apiBaseUrl}/payment-methods`);
+
+    if (!response.ok) {
+      throw new Error("Não foi possível carregar os meios de pagamento.");
+    }
+
+    setPaymentMethods(await response.json());
+  }
 
   async function loadAccounts() {
     setIsLoading(true);
@@ -86,9 +123,18 @@ export function AccountsPage() {
     void loadAccounts();
   }, [includeInactive]);
 
+  useEffect(() => {
+    void loadPaymentMethods().catch((loadError) =>
+      setError(loadError instanceof Error ? loadError.message : "Erro inesperado.")
+    );
+  }, []);
+
   function openCreateModal() {
     setEditingAccount(null);
-    setForm(emptyForm);
+    setForm({
+      ...emptyForm,
+      sortOrder: accounts.length
+    });
     setIsModalOpen(true);
   }
 
@@ -98,7 +144,10 @@ export function AccountsPage() {
       name: account.name,
       type: account.type,
       institution: account.institution ?? "",
-      initialBalanceReais: account.initialBalanceCents / 100
+      initialBalanceReais: account.initialBalanceCents / 100,
+      sortOrder: account.sortOrder,
+      isPrimary: account.isPrimary,
+      defaultPaymentMethodId: account.defaultPaymentMethodId ?? emptySelectValue
     });
     setIsModalOpen(true);
   }
@@ -112,7 +161,10 @@ export function AccountsPage() {
         name: form.name,
         type: form.type,
         institution: form.institution,
-        initialBalanceCents: parseInitialBalanceToCents(form.initialBalanceReais)
+        initialBalanceCents: parseInitialBalanceToCents(form.initialBalanceReais),
+        sortOrder: parseSortOrder(form.sortOrder),
+        isPrimary: form.isPrimary,
+        defaultPaymentMethodId: toNullableSelectValue(form.defaultPaymentMethodId)
       };
       const response = await fetch(
         editingAccount ? `${apiBaseUrl}/accounts/${editingAccount.id}` : `${apiBaseUrl}/accounts`,
@@ -200,7 +252,7 @@ export function AccountsPage() {
         <Group justify="space-between">
           <div>
             <Text size="sm" c="dimmed">
-              Saldo inicial ativo
+              Saldo atual total ativo
             </Text>
             <Title order={3}>{formatMoney(moneyFromCents(activeTotal))}</Title>
           </div>
@@ -232,7 +284,7 @@ export function AccountsPage() {
             </Button>
           </Stack>
         ) : (
-          <Table.ScrollContainer minWidth={760}>
+          <Table.ScrollContainer minWidth={860}>
             <Table verticalSpacing="sm" highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
@@ -240,6 +292,9 @@ export function AccountsPage() {
                   <Table.Th>Tipo</Table.Th>
                   <Table.Th>Instituição</Table.Th>
                   <Table.Th>Saldo inicial</Table.Th>
+                  <Table.Th>Saldo atual</Table.Th>
+                  <Table.Th>Ordem</Table.Th>
+                  <Table.Th>Padrões</Table.Th>
                   <Table.Th>Status</Table.Th>
                   <Table.Th>Ações</Table.Th>
                 </Table.Tr>
@@ -253,6 +308,22 @@ export function AccountsPage() {
                     <Table.Td>{getAccountTypeLabel(account.type)}</Table.Td>
                     <Table.Td>{account.institution || "-"}</Table.Td>
                     <Table.Td>{formatMoney(moneyFromCents(account.initialBalanceCents))}</Table.Td>
+                    <Table.Td fw={700} c={(account.currentBalanceCents ?? account.initialBalanceCents) < 0 ? "red" : "teal"}>
+                      {formatMoney(moneyFromCents(account.currentBalanceCents ?? account.initialBalanceCents))}
+                    </Table.Td>
+                    <Table.Td>{account.sortOrder}</Table.Td>
+                    <Table.Td>
+                      <Stack gap={4}>
+                        {account.isPrimary ? (
+                          <Badge color="blue" variant="light">
+                            Principal
+                          </Badge>
+                        ) : null}
+                        <Text size="sm" c="dimmed">
+                          {getPaymentMethodLabel(account.defaultPaymentMethodId, paymentMethods)}
+                        </Text>
+                      </Stack>
+                    </Table.Td>
                     <Table.Td>
                       <Badge color={account.isActive ? "teal" : "gray"} variant="light">
                         {account.isActive ? "Ativa" : "Arquivada"}
@@ -308,7 +379,10 @@ export function AccountsPage() {
             label="Nome"
             placeholder="Conta principal"
             value={form.name}
-            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            onChange={(event) => {
+              const { value } = event.currentTarget;
+              setForm((current) => ({ ...current, name: value }));
+            }}
             required
           />
           <Select
@@ -322,9 +396,10 @@ export function AccountsPage() {
             label="Instituição"
             placeholder="Banco, carteira ou benefício"
             value={form.institution}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, institution: event.target.value }))
-            }
+            onChange={(event) => {
+              const { value } = event.currentTarget;
+              setForm((current) => ({ ...current, institution: value }));
+            }}
           />
           <NumberInput
             label="Saldo inicial"
@@ -335,6 +410,33 @@ export function AccountsPage() {
             prefix="R$ "
             value={form.initialBalanceReais}
             onChange={(value) => setForm((current) => ({ ...current, initialBalanceReais: value }))}
+          />
+          <NumberInput
+            label="Ordem"
+            min={0}
+            value={form.sortOrder}
+            onChange={(value) => setForm((current) => ({ ...current, sortOrder: value }))}
+          />
+          <Checkbox
+            label="Usar como conta principal"
+            description="Novos lançamentos começam por esta conta."
+            checked={form.isPrimary}
+            onChange={(event) => {
+              const { checked } = event.currentTarget;
+              setForm((current) => ({ ...current, isPrimary: checked }));
+            }}
+          />
+          <Select
+            label="Meio de pagamento principal"
+            description="Novos lançamentos desta conta começam por este meio."
+            data={paymentMethodOptions}
+            value={form.defaultPaymentMethodId}
+            onChange={(value) =>
+              setForm((current) => ({
+                ...current,
+                defaultPaymentMethodId: value ?? emptySelectValue
+              }))
+            }
           />
           <Group justify="flex-end">
             <Button variant="subtle" onClick={() => setIsModalOpen(false)}>
@@ -352,6 +454,14 @@ export function AccountsPage() {
 
 function getAccountTypeLabel(type: string) {
   return accountTypes.find((accountType) => accountType.value === type)?.label ?? type;
+}
+
+function getPaymentMethodLabel(paymentMethodId: string | null, paymentMethods: PaymentMethod[]) {
+  return paymentMethods.find((paymentMethod) => paymentMethod.id === paymentMethodId)?.name ?? "-";
+}
+
+function toNullableSelectValue(value: string) {
+  return value === emptySelectValue ? null : value;
 }
 
 async function getResponseError(response: Response, fallback: string) {
@@ -378,4 +488,20 @@ function parseInitialBalanceToCents(value: number | string) {
   }
 
   return parseMoneyToCents(value);
+}
+
+function parseSortOrder(value: number | string) {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+
+    if (Number.isInteger(parsed)) {
+      return parsed;
+    }
+  }
+
+  throw new Error("Ordem inválida.");
 }

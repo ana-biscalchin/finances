@@ -97,6 +97,17 @@ Bibliotecas complementares planejadas:
 - Recharts para graficos.
 - Tabler Icons ou Lucide para icones.
 
+### Estrutura e Gerenciamento
+
+Decisoes sobre o workspace:
+
+- Gerenciador de pacotes: `pnpm` com workspaces.
+- Estrutura de pastas: monorepo com `apps/` (web, api) e `packages/` (database, domain, shared).
+
+### Modelo Inicial de Entidades
+
+O modelo inicial de entidades financeiras foi definido em SQLite usando Drizzle, com entidades para contas, meios de pagamento, categorias (grupos, macros, micros), transacoes, transferencias, cartoes, faturas, parcelas e reservas.
+
 ## Arquitetura Alvo Inicial
 
 ```text
@@ -181,10 +192,7 @@ Observacao: servicos gratuitos podem ter limites, pausas, ausencia de backups au
 
 ## Decisoes Em Aberto
 
-- Estrutura de pastas do monorepo/local app.
-- Gerenciador de pacotes.
 - Estrategia exata de backups.
-- Modelo inicial de entidades financeiras.
 - Padrao de autenticacao local, caso exista.
 - Layouts de CSV suportados.
 - Estrategia de leitura OFX.

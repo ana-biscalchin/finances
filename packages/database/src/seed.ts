@@ -1,5 +1,5 @@
 import { createDatabaseConnection } from "./connection.js";
-import { categoryGroups, categoryMacros, categoryMicros, paymentMethods } from "./schema.js";
+import { categories, subcategories, paymentMethods } from "./schema.js";
 import { categorySeeds, paymentMethodSeeds } from "./seed-data.js";
 import { notInArray } from "drizzle-orm";
 
@@ -37,67 +37,47 @@ db.update(paymentMethods)
   .where(notInArray(paymentMethods.id, activePaymentMethodIds))
   .run();
 
-for (const [groupSortOrder, group] of categorySeeds.entries()) {
-  db.insert(categoryGroups)
+for (const [categorySortOrder, category] of categorySeeds.entries()) {
+  db.insert(categories)
     .values({
-      id: group.id,
-      nature: group.nature,
-      name: group.name,
-      sortOrder: groupSortOrder
+      id: category.id,
+      nature: category.nature,
+      name: category.name,
+      sortOrder: categorySortOrder
     })
     .onConflictDoUpdate({
-      target: categoryGroups.id,
+      target: categories.id,
       set: {
-        nature: group.nature,
-        name: group.name,
-        sortOrder: groupSortOrder,
+        nature: category.nature,
+        name: category.name,
+        sortOrder: categorySortOrder,
         updatedAt: now
       }
     })
     .run();
 
-  for (const [macroSortOrder, macro] of group.macros.entries()) {
-    const macroId = `${group.id}-macro-${slugify(macro.name)}`;
+  for (const [subSortOrder, sub] of category.subcategories.entries()) {
+    const subcategory = typeof sub === "string" ? { name: sub, behavior: "variable" } : sub;
 
-    db.insert(categoryMacros)
+    db.insert(subcategories)
       .values({
-        id: macroId,
-        groupId: group.id,
-        name: macro.name,
-        sortOrder: macroSortOrder
+        id: "id" in subcategory ? subcategory.id : `${category.id}-sub-${slugify(subcategory.name)}`,
+        categoryId: category.id,
+        name: subcategory.name,
+        behavior: subcategory.behavior,
+        sortOrder: subSortOrder
       })
       .onConflictDoUpdate({
-        target: categoryMacros.id,
+        target: subcategories.id,
         set: {
-          groupId: group.id,
-          name: macro.name,
-          sortOrder: macroSortOrder,
+          categoryId: category.id,
+          name: subcategory.name,
+          behavior: subcategory.behavior,
+          sortOrder: subSortOrder,
           updatedAt: now
         }
       })
       .run();
-
-    for (const [microSortOrder, microName] of macro.micros.entries()) {
-      const micro = typeof microName === "string" ? { name: microName } : microName;
-
-      db.insert(categoryMicros)
-        .values({
-          id: "id" in micro ? micro.id : `${macroId}-micro-${slugify(micro.name)}`,
-          macroId,
-          name: micro.name,
-          sortOrder: microSortOrder
-        })
-        .onConflictDoUpdate({
-          target: categoryMicros.id,
-          set: {
-            macroId,
-            name: micro.name,
-            sortOrder: microSortOrder,
-            updatedAt: now
-          }
-        })
-        .run();
-    }
   }
 }
 

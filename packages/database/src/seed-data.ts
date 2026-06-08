@@ -10,89 +10,172 @@ export const paymentMethodSeeds = [
 ] as const;
 
 export const categorySeeds = [
+  // ==========================================
+  // RECEITAS (CASH INFLOW)
+  // ==========================================
   {
-    id: "cg-income",
+    id: "cat-trabalho",
     nature: "income",
-    name: "Entradas",
-    macros: [
-      { name: "Trabalho", micros: ["Salário", "Bônus", "Hora extra", "13º salário"] },
-      { name: "Benefícios", micros: ["Flash alimentação", "Flash convênio"] },
-      { name: "Ajustes", micros: ["Saldo anterior", "Reembolso", "Estorno"] },
-      { name: "Investimentos", micros: ["Resgate"] }
+    name: "Trabalho",
+    subcategories: [
+      { name: "Salário", behavior: "fixed" },
+      { name: "Bônus", behavior: "variable" },
+      { name: "Hora extra", behavior: "variable" },
+      { name: "13º salário", behavior: "extra" }
     ]
   },
   {
-    id: "cg-reserves",
-    nature: "reserve",
-    name: "Objetivos e caixinhas",
-    macros: [
-      {
-        name: "Objetivos",
-        micros: ["Reserva de emergência", "Poupança da Shuri", "Poupança da casa"]
-      }
+    id: "cat-rendimentos",
+    nature: "income",
+    name: "Rendimentos e Resgates",
+    subcategories: [
+      { name: "Resgate de investimento", behavior: "extra" },
+      { name: "Dividendos e Juros", behavior: "variable" }
     ]
   },
   {
-    id: "cg-fixed-checking",
+    id: "cat-outras-receitas",
+    nature: "income",
+    name: "Outras Receitas",
+    subcategories: [
+      { name: "Flash alimentação", behavior: "fixed" },
+      { name: "Flash convênio", behavior: "fixed" },
+      { name: "Reembolso", behavior: "extra" },
+      { name: "Estorno", behavior: "extra" },
+      { name: "Cashback", behavior: "variable" },
+      { name: "Saldo anterior", behavior: "extra" }
+    ]
+  },
+
+  // ==========================================
+  // TRANSFERÊNCIAS (CASH NEUTRAL)
+  // ==========================================
+  {
+    id: "cat-transferencias",
+    nature: "transfer",
+    name: "Movimentações Internas",
+    subcategories: [
+      { name: "Entre minhas contas", behavior: "variable" },
+      { name: "Pagamento de fatura", behavior: "fixed" }
+    ]
+  },
+
+  // ==========================================
+  // DESPESAS (CASH OUTFLOW)
+  // ==========================================
+  {
+    id: "cat-moradia",
     nature: "expense",
-    name: "Obrigações mensais - Conta corrente",
-    macros: [
-      {
-        name: "Moradia",
-        micros: ["Aluguel", "Condomínio", "Luz", "Internet e celular", "Gás"]
-      },
-      { name: "Cuidados", micros: ["Terapia", "Personal", "Nutricionista"] },
-      { name: "Outros", micros: ["Contabilidade", "Empréstimos Caixa", "Apoio Uel", "Seguro Nu"] },
-      { name: "Impostos", micros: ["IRPF"] }
+    name: "Moradia & Casa",
+    subcategories: [
+      { name: "Aluguel", behavior: "fixed" },
+      { name: "Condomínio", behavior: "fixed" },
+      { name: "Luz", behavior: "fixed" },
+      { name: "Gás", behavior: "fixed" },
+      { name: "Internet e celular", behavior: "fixed" },
+      { name: "Compras para casa", behavior: "variable" },
+      { name: "Material de limpeza", behavior: "variable" },
+      { name: "Manutenção e reformas", behavior: "extra" }
     ]
   },
   {
-    id: "cg-fixed-credit-card",
+    id: "cat-alimentacao",
     nature: "expense",
-    name: "Obrigações mensais - Cartão de crédito",
-    macros: [{ name: "Outros recorrentes", micros: ["Assinaturas", "Academia", "Anuidade cartão"] }]
-  },
-  {
-    id: "cg-variable",
-    nature: "expense",
-    name: "Variáveis",
-    macros: [
-      {
-        name: "Alimentação",
-        micros: ["Supermercado", "Feira/frutas", "Restaurantes", "Bares", "Delivery", "Cafeteria"]
-      },
-      { name: "Manutenção da casa", micros: ["Compras para casa", "Material de limpeza"] },
-      { name: "Transporte", micros: ["Metrô/ônibus", "Uber e táxi"] },
-      { name: "Cuidados pessoais", micros: ["Farmácia", "Estética", "Cosméticos"] },
-      {
-        name: "Lazer",
-        micros: ["Viagens", "Cinema/teatro/show", "Livros", "Artesanato/papelaria", "Outros lazer"]
-      },
-      {
-        name: "Compras gerais",
-        micros: ["Roupas", "Calçados/acessórios", "Presentes", "Outros compras"]
-      },
-      {
-        name: "Gastos Shuri",
-        micros: [
-          { id: "cg-variable-macro-gastos-shuri-micro-shuri-racao", name: "Ração" },
-          { id: "cg-variable-macro-gastos-shuri-micro-shuri-petiscos", name: "Petiscos" },
-          { id: "cg-variable-macro-gastos-shuri-micro-shuri-higiene", name: "Higiene" },
-          { id: "cg-variable-macro-gastos-shuri-micro-shuri-brinquedos", name: "Brinquedos" },
-          { id: "cg-variable-macro-gastos-shuri-micro-shuri-saude", name: "Saúde" }
-        ]
-      },
-      { name: "Educação", micros: ["Faculdade", "Curso"] },
-      { name: "Outros gastos variáveis", micros: ["Doação", "Impostos/taxas", "Tarifas e juros"] }
+    name: "Alimentação",
+    subcategories: [
+      { name: "Supermercado", behavior: "variable" },
+      { name: "Feira e hortifruti", behavior: "variable" },
+      { name: "Restaurantes", behavior: "variable" },
+      { name: "Delivery", behavior: "variable" },
+      { name: "Cafeteria e lanches", behavior: "variable" },
+      { name: "Bares e festas", behavior: "variable" }
     ]
   },
   {
-    id: "cg-extra",
+    id: "cat-transporte",
     nature: "expense",
-    name: "Extras",
-    macros: [
-      { name: "Saúde", micros: ["Médico/dentista", "Hospital"] },
-      { name: "Outras emergências", micros: ["Manutenção casa", "Outros extras"] }
+    name: "Transporte",
+    subcategories: [
+      { name: "Metrô e ônibus", behavior: "variable" },
+      { name: "Uber e táxi", behavior: "variable" },
+      { name: "Combustível e estacionamento", behavior: "variable" }
+    ]
+  },
+  {
+    id: "cat-saude",
+    nature: "expense",
+    name: "Saúde e Bem-estar",
+    subcategories: [
+      { name: "Academia", behavior: "fixed" },
+      { name: "Personal", behavior: "fixed" },
+      { name: "Terapia", behavior: "fixed" },
+      { name: "Nutricionista", behavior: "fixed" },
+      { name: "Farmácia", behavior: "variable" },
+      { name: "Cosméticos", behavior: "variable" },
+      { name: "Estética", behavior: "variable" },
+      { name: "Médico e dentista", behavior: "extra" },
+      { name: "Hospital e exames", behavior: "extra" }
+    ]
+  },
+  {
+    id: "cat-lazer",
+    nature: "expense",
+    name: "Lazer e Estilo de Vida",
+    subcategories: [
+      { name: "Viagens", behavior: "variable" },
+      { name: "Cinema, teatro e shows", behavior: "variable" },
+      { name: "Livros e cultura", behavior: "variable" },
+      { name: "Assinaturas de streaming", behavior: "fixed" },
+      { name: "Roupas e calçados", behavior: "variable" },
+      { name: "Presentes", behavior: "variable" },
+      { name: "Outros passeios", behavior: "variable" }
+    ]
+  },
+  {
+    id: "cat-gastos-shuri",
+    nature: "expense",
+    name: "Gastos Shuri",
+    subcategories: [
+      { id: "subcat-shuri-racao", name: "Ração", behavior: "variable" },
+      { id: "subcat-shuri-petiscos", name: "Petiscos", behavior: "variable" },
+      { id: "subcat-shuri-higiene", name: "Higiene", behavior: "variable" },
+      { id: "subcat-shuri-brinquedos", name: "Brinquedos", behavior: "variable" },
+      { id: "subcat-shuri-saude", name: "Saúde e veterinário", behavior: "variable" }
+    ]
+  },
+  {
+    id: "cat-educacao",
+    nature: "expense",
+    name: "Educação e Desenvolvimento",
+    subcategories: [
+      { name: "Faculdade", behavior: "fixed" },
+      { name: "Cursos", behavior: "variable" }
+    ]
+  },
+  {
+    id: "cat-servicos",
+    nature: "expense",
+    name: "Impostos e Serviços Financeiros",
+    subcategories: [
+      { name: "Contabilidade", behavior: "fixed" },
+      { name: "Impostos (IRPF)", behavior: "fixed" },
+      { name: "Empréstimos Caixa", behavior: "fixed" },
+      { name: "Seguro Nu", behavior: "fixed" },
+      { name: "Apoio Uel", behavior: "fixed" },
+      { name: "Doação", behavior: "variable" },
+      { name: "Tarifas e juros", behavior: "variable" },
+      { name: "Anuidade cartão", behavior: "fixed" }
+    ]
+  },
+  {
+    id: "cat-aportes",
+    nature: "expense",
+    name: "Investimentos (Aportes)",
+    subcategories: [
+      { name: "Aporte em corretora", behavior: "variable" },
+      { name: "Reserva de emergência", behavior: "fixed" },
+      { name: "Poupança da Shuri", behavior: "fixed" },
+      { name: "Poupança da casa", behavior: "fixed" }
     ]
   }
 ] as const;

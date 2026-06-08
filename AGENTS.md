@@ -16,6 +16,7 @@ Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 - Backend/API local: Node.js + Fastify.
 - Banco: SQLite local.
 - ORM/migrations: Drizzle.
+- Gerenciador de pacotes: pnpm (workspaces).
 - Tabelas densas: TanStack Table.
 - Graficos: Recharts.
 - Icones: Tabler Icons ou Lucide, decisao final em aberto.
@@ -69,8 +70,6 @@ Manter separacao entre UI, API, banco e dominio.
 
 ## Decisoes Ainda Abertas
 
-- Gerenciador de pacotes.
-- Estrutura final do workspace.
 - Biblioteca final de icones.
 - Paleta de cores.
 - Modo claro/escuro.

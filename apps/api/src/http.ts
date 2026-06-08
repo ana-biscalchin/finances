@@ -44,6 +44,14 @@ export function parseOptionalInteger(value: unknown, fieldName: string) {
   return value;
 }
 
+export function parseRequiredInteger(value: unknown, fieldName: string) {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new ValidationError(`${fieldName} deve ser um inteiro.`);
+  }
+
+  return value;
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

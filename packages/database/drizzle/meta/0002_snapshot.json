@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "22e8cf24-5315-4a8c-b9fe-04d7910da4da",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "b8fcebe0-8344-4ad3-ba01-4c712074ac21",
+  "prevId": "f7e3793a-ab40-4fe1-848e-ca1739a8e5ec",
   "tables": {
     "accounts": {
       "name": "accounts",
@@ -477,6 +477,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "is_active": {
           "name": "is_active",
@@ -1098,6 +1106,13 @@
         },
         "notes": {
           "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "linked_transaction_id": {
+          "name": "linked_transaction_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

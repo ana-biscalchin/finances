@@ -29,7 +29,7 @@ Tarefas:
 - Criar `.gitignore`.
 - Manter a pasta `docs` como base de conhecimento do projeto.
 
-Estrutura sugerida:
+Estrutura do workspace:
 
 ```text
 apps/
@@ -42,8 +42,6 @@ packages/
 data/
 docs/
 ```
-
-Observacao: essa estrutura pode ser ajustada antes do scaffold, mas a separacao entre UI, API, banco e dominio deve ser preservada.
 
 ## Etapa 1: Scaffold Do Web App
 

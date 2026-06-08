@@ -1,0 +1,1071 @@
+import {
+  accounts,
+  categories as dbCategories,
+  creditCards,
+  creditCardBills,
+  subcategories,
+  paymentMethods,
+  transactions,
+  type createDatabaseConnection
+} from "@finances/database";
+import {
+  assertBusinessDate,
+  assertTransactionStatus,
+  assertTransactionType,
+  assertYearMonth,
+  yearMonthFromDate
+} from "@finances/domain";
+import { and, asc, desc, eq } from "drizzle-orm";
+import type { FastifyInstance, FastifyReply } from "fastify";
+
+import {
+  isRecord,
+  parseOptionalString,
+  parseRequiredInteger,
+  parseRequiredString,
+  sendPayloadError,
+  ValidationError,
+  parseOptionalInteger
+} from "../http.js";
+
+type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
+
+type TransactionPayload = {
+  type?: unknown;
+  description?: unknown;
+  amountCents?: unknown;
+  eventDate?: unknown;
+  budgetMonth?: unknown;
+  accountId?: unknown;
+  paymentMethodId?: unknown;
+  subcategoryId?: unknown;
+  creditCardId?: unknown;
+  status?: unknown;
+  notes?: unknown;
+  destinationAccountId?: unknown;
+  linkedTransactionId?: unknown;
+  installmentCount?: unknown;
+};
+
+export function registerTransactionRoutes(app: FastifyInstance, connection: DatabaseConnection) {
+  const { db } = connection;
+
+  app.get("/transactions", async (request) => {
+    const query = request.query as Record<string, unknown>;
+    const filters = [
+      typeof query.budgetMonth === "string"
+        ? eq(transactions.budgetMonth, assertYearMonth(query.budgetMonth))
+        : undefined,
+      typeof query.type === "string" && query.type
+        ? eq(transactions.type, assertTransactionType(query.type))
+        : undefined,
+      typeof query.status === "string" && query.status
+        ? eq(transactions.status, assertTransactionStatus(query.status))
+        : undefined,
+      typeof query.accountId === "string" && query.accountId
+        ? eq(transactions.accountId, query.accountId)
+        : undefined,
+      typeof query.paymentMethodId === "string" && query.paymentMethodId
+        ? eq(transactions.paymentMethodId, query.paymentMethodId)
+        : undefined,
+      typeof query.subcategoryId === "string" && query.subcategoryId
+        ? eq(transactions.subcategoryId, query.subcategoryId)
+        : undefined
+    ].filter(Boolean);
+
+    const baseQuery = db.select().from(transactions);
+    const queryWithFilters = filters.length > 0 ? baseQuery.where(and(...filters)) : baseQuery;
+
+    return queryWithFilters
+      .orderBy(desc(transactions.eventDate), asc(transactions.description))
+      .all();
+  });
+
+  app.get("/transactions/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const transaction = db.select().from(transactions).where(eq(transactions.id, id)).get();
+
+    if (!transaction) {
+      return reply.code(404).send({ message: "Lançamento não encontrado." });
+    }
+
+    if (transaction.linkedTransactionId) {
+      const linked = db.select().from(transactions).where(eq(transactions.id, transaction.linkedTransactionId)).get();
+      return {
+        ...transaction,
+        destinationAccountId: linked?.accountId ?? null
+      };
+    }
+
+    return {
+      ...transaction,
+      destinationAccountId: null
+    };
+  });
+
+  app.post("/transactions", async (request, reply) => {
+    const payload = parseTransactionPayloadOrReply(request.body, reply);
+
+    if (!payload) {
+      return reply;
+    }
+
+    if (!ensureReferencesOrReply(connection, payload, reply)) {
+      return reply;
+    }
+
+    const { destinationAccountId, installmentCount, ...transactionData } = payload;
+    const transactionId = crypto.randomUUID();
+
+    // ── Installments (card purchases split into N months) ──────────────
+    if (installmentCount > 1 && transactionData.creditCardId) {
+      const base = Math.floor(transactionData.amountCents / installmentCount);
+      const created = Array.from({ length: installmentCount }, (_, i) => ({
+        id: crypto.randomUUID(),
+        ...transactionData,
+        description: `${transactionData.description} (${i + 1}/${installmentCount})`,
+        amountCents: i === installmentCount - 1
+          ? transactionData.amountCents - base * (installmentCount - 1)
+          : base,
+        budgetMonth: advanceMonth(transactionData.budgetMonth, i),
+        linkedTransactionId: null
+      }));
+
+      for (const t of created) {
+        db.insert(transactions).values(t).run();
+      }
+
+      return reply.code(201).send(created);
+    }
+
+    // ── Transfer (linked transactions) ─────────────────────────────────
+    if (destinationAccountId) {
+      const linkedId = crypto.randomUUID();
+
+      const primaryTransaction = {
+        id: transactionId,
+        ...transactionData,
+        linkedTransactionId: linkedId
+      };
+
+      const linkedType = transactionData.type === "expense" ? "income" : "expense";
+      const linkedTransaction = {
+        id: linkedId,
+        ...transactionData,
+        type: linkedType,
+        accountId: destinationAccountId,
+        linkedTransactionId: transactionId
+      };
+
+      db.insert(transactions).values(primaryTransaction).run();
+      db.insert(transactions).values(linkedTransaction).run();
+
+      return reply.code(201).send(primaryTransaction);
+    }
+
+    // ── Single transaction ─────────────────────────────────────────────
+    const transaction = {
+      id: transactionId,
+      ...transactionData,
+      linkedTransactionId: null
+    };
+
+    db.insert(transactions).values(transaction).run();
+    return reply.code(201).send(transaction);
+  });
+
+  app.put("/transactions/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const current = db.select().from(transactions).where(eq(transactions.id, id)).get();
+
+    if (!current) {
+      return reply.code(404).send({ message: "Lançamento não encontrado." });
+    }
+
+    const payload = parseTransactionPayloadOrReply(request.body, reply);
+
+    if (!payload) {
+      return reply;
+    }
+
+    if (!ensureReferencesOrReply(connection, payload, reply)) {
+      return reply;
+    }
+
+    const transactionData = { ...payload };
+    delete (transactionData as Record<string, unknown>).destinationAccountId;
+
+    // Update main transaction
+    db.update(transactions)
+      .set({
+        ...transactionData,
+        linkedTransactionId: current.linkedTransactionId,
+        updatedAt: new Date().toISOString()
+      })
+      .where(eq(transactions.id, id))
+      .run();
+
+    // If there is a linked transaction, update it too
+    if (current.linkedTransactionId) {
+      const linked = db.select().from(transactions).where(eq(transactions.id, current.linkedTransactionId)).get();
+      if (linked) {
+        // Linked transaction changes type (if main is expense, linked is income, and vice versa)
+        const linkedType = transactionData.type === "expense" ? "income" : "expense";
+        db.update(transactions)
+          .set({
+            description: transactionData.description,
+            amountCents: transactionData.amountCents,
+            eventDate: transactionData.eventDate,
+            budgetMonth: transactionData.budgetMonth,
+            paymentMethodId: transactionData.paymentMethodId,
+            subcategoryId: transactionData.subcategoryId,
+            status: transactionData.status,
+            notes: transactionData.notes,
+            type: linkedType,
+            updatedAt: new Date().toISOString()
+          })
+          .where(eq(transactions.id, current.linkedTransactionId))
+          .run();
+      }
+    }
+
+    return db.select().from(transactions).where(eq(transactions.id, id)).get();
+  });
+
+  app.delete("/transactions/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const current = db.select().from(transactions).where(eq(transactions.id, id)).get();
+
+    if (!current) {
+      return reply.code(404).send({ message: "Lançamento não encontrado." });
+    }
+
+    // If it is linked, delete the other one as well
+    if (current.linkedTransactionId) {
+      db.delete(transactions)
+        .where(eq(transactions.id, current.linkedTransactionId))
+        .run();
+    }
+
+    db.delete(transactions)
+      .where(eq(transactions.id, id))
+      .run();
+
+    return reply.code(204).send();
+  });
+
+  app.get("/transactions/export", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    const filters = [
+      typeof query.budgetMonth === "string" && query.budgetMonth
+        ? eq(transactions.budgetMonth, assertYearMonth(query.budgetMonth))
+        : undefined,
+      typeof query.type === "string" && query.type
+        ? eq(transactions.type, assertTransactionType(query.type))
+        : undefined,
+      typeof query.status === "string" && query.status
+        ? eq(transactions.status, assertTransactionStatus(query.status))
+        : undefined,
+      typeof query.accountId === "string" && query.accountId ? eq(transactions.accountId, query.accountId) : undefined,
+      typeof query.paymentMethodId === "string" && query.paymentMethodId
+        ? eq(transactions.paymentMethodId, query.paymentMethodId)
+        : undefined,
+      typeof query.subcategoryId === "string" && query.subcategoryId
+        ? eq(transactions.subcategoryId, query.subcategoryId)
+        : undefined
+    ].filter((f): f is Exclude<typeof f, undefined> => f !== undefined);
+
+    const baseQuery = db
+      .select({
+        id: transactions.id,
+        eventDate: transactions.eventDate,
+        budgetMonth: transactions.budgetMonth,
+        type: transactions.type,
+        description: transactions.description,
+        amountCents: transactions.amountCents,
+        accountName: accounts.name,
+        paymentMethodName: paymentMethods.name,
+        subcategoryName: subcategories.name,
+        creditCardName: creditCards.name,
+        status: transactions.status,
+        notes: transactions.notes
+      })
+      .from(transactions)
+      .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+      .leftJoin(paymentMethods, eq(transactions.paymentMethodId, paymentMethods.id))
+      .leftJoin(subcategories, eq(transactions.subcategoryId, subcategories.id))
+      .leftJoin(creditCards, eq(transactions.creditCardId, creditCards.id));
+
+    const queryWithFilters = filters.length > 0 ? baseQuery.where(and(...filters)) : baseQuery;
+    const rows = queryWithFilters
+      .orderBy(desc(transactions.eventDate), asc(transactions.description))
+      .all();
+
+    const escapeCsv = (val: unknown): string => {
+      if (val === undefined || val === null) {
+        return "";
+      }
+      const str = String(val);
+      if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const headers = [
+      "ID",
+      "Data",
+      "Competência",
+      "Tipo",
+      "Descrição",
+      "Valor (Centavos)",
+      "Valor (BRL)",
+      "Conta",
+      "Meio de Pagamento",
+      "Subcategoria",
+      "Cartão",
+      "Status",
+      "Observações"
+    ].join(",");
+
+    const csvLines = rows.map((r) => {
+      const amountBrl = (r.amountCents / 100).toFixed(2);
+      return [
+        r.id,
+        r.eventDate,
+        r.budgetMonth,
+        r.type === "income" ? "Receita" : "Despesa",
+        r.description,
+        r.amountCents,
+        amountBrl,
+        r.accountName ?? "",
+        r.paymentMethodName ?? "",
+        r.subcategoryName ?? "",
+        r.creditCardName ?? "",
+        r.status,
+        r.notes ?? ""
+      ]
+        .map(escapeCsv)
+        .join(",");
+    });
+
+    const csvContent = [headers, ...csvLines].join("\n");
+
+    reply
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header(
+        "Content-Disposition",
+        `attachment; filename="transacoes-${(query.budgetMonth as string) ?? "export"}.csv"`
+      )
+      .send(csvContent);
+  });
+
+  app.post("/transactions/import-preview", async (request, reply) => {
+    const body = request.body as {
+      csvContent?: string;
+      mappings?: {
+        eventDate?: string;
+        description?: string;
+        amount?: string;
+        type?: string;
+        subcategoryId?: string;
+        accountId?: string;
+      };
+      defaultAccountId?: string;
+      defaultCreditCardId?: string;
+      dateFormat?: "DMY" | "MDY" | "YMD";
+    };
+
+    if (!body || typeof body.csvContent !== "string" || !body.mappings) {
+      return reply.code(400).send({ message: "Payload inválido. CSV e mapeamentos requeridos." });
+    }
+
+    const { csvContent, mappings, defaultAccountId, defaultCreditCardId } = body;
+    const dateFormat = body.dateFormat ?? "DMY";
+    const { rows: csvRows } = parseCsvContent(csvContent);
+
+    if (csvRows.length === 0) {
+      return [];
+    }
+
+    const card = defaultCreditCardId
+      ? db.select().from(creditCards).where(eq(creditCards.id, defaultCreditCardId)).get()
+      : null;
+
+    if (defaultCreditCardId && !card) {
+      return reply.code(400).send({ message: "Cartão de crédito não encontrado." });
+    }
+
+    const categoryLookup = db
+      .select({
+        id: subcategories.id,
+        name: subcategories.name,
+        categoryName: dbCategories.name,
+        nature: dbCategories.nature
+      })
+      .from(subcategories)
+      .leftJoin(dbCategories, eq(subcategories.categoryId, dbCategories.id))
+      .all();
+
+    const parsedItems = csvRows
+      .map((row, idx) => {
+        const rawDate = mappings.eventDate ? row[mappings.eventDate] : "";
+        const rawDesc = mappings.description ? row[mappings.description] : "";
+        const rawAmount = mappings.amount ? row[mappings.amount] : "";
+        const rawType = mappings.type ? row[mappings.type] : "";
+        const rawSubcategory = mappings.subcategoryId ? row[mappings.subcategoryId] : "";
+        const rawAccount = mappings.accountId ? row[mappings.accountId] : "";
+
+        const eventDate = parseDateString(rawDate, dateFormat);
+        if (!eventDate) return null;
+
+        const amountResult = parseAmountToCents(rawAmount);
+        if (!amountResult) return null;
+
+        const description = rawDesc || "Transação Importada";
+
+        const type: "income" | "expense" = card
+          ? "expense"
+          : parseImportedTransactionType(rawType, amountResult.detectedType);
+        const subcategoryId = resolveImportedSubcategoryId(rawSubcategory, type, categoryLookup);
+
+        let calculatedBudgetMonth: string | null = null;
+        let accountId: string | null = null;
+        let paymentMethodId: string | null = null;
+        let creditCardId: string | null = null;
+
+        if (card) {
+          creditCardId = card.id;
+          accountId = null;
+          calculatedBudgetMonth = getCreditCardBillMonth(eventDate, card.closingDay);
+        } else {
+          accountId = rawAccount || defaultAccountId || null;
+          paymentMethodId = null;
+          creditCardId = null;
+        }
+
+        return {
+          tempId: `temp-${idx}-${Date.now()}`,
+          eventDate,
+          description,
+          amountCents: amountResult.amountCents,
+          type,
+          accountId,
+          paymentMethodId,
+          creditCardId,
+          budgetMonth: calculatedBudgetMonth,
+          subcategoryId
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
+    if (parsedItems.length === 0) {
+      return [];
+    }
+
+    // Get date range for duplicate check
+    const dates = parsedItems.map((item) => new Date(item.eventDate).getTime());
+    const minTime = Math.min(...dates);
+    const maxTime = Math.max(...dates);
+    const minDateStr = new Date(minTime - 3 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const maxDateStr = new Date(maxTime + 3 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+    // Fetch existing transactions in range
+    const existingTx = db
+      .select({
+        id: transactions.id,
+        description: transactions.description,
+        eventDate: transactions.eventDate,
+        amountCents: transactions.amountCents,
+        accountId: transactions.accountId,
+        creditCardId: transactions.creditCardId,
+        accountName: accounts.name
+      })
+      .from(transactions)
+      .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+      .all();
+
+    // Filter in range locally since SQLite date queries are simpler this way
+    const inRangeTx = existingTx.filter((tx) => tx.eventDate >= minDateStr && tx.eventDate <= maxDateStr);
+
+    const parsedItemsWithDuplicates = parsedItems.map((item) => {
+      const match = inRangeTx.find((tx) => {
+        const sameAmount = tx.amountCents === item.amountCents;
+        const sameAccount = item.creditCardId
+          ? tx.creditCardId === item.creditCardId
+          : (!tx.accountId || !item.accountId || tx.accountId === item.accountId);
+        const daysDiff = dateDiffInDays(tx.eventDate, item.eventDate);
+        const nearDate = daysDiff <= 3;
+        return sameAmount && sameAccount && nearDate;
+      });
+
+      return {
+        ...item,
+        isDuplicate: !!match,
+        duplicateOf: match
+          ? {
+              id: match.id,
+              description: match.description,
+              eventDate: match.eventDate,
+              amountCents: match.amountCents,
+              accountName: match.accountName
+            }
+          : null
+      };
+    });
+
+    return parsedItemsWithDuplicates;
+  });
+
+  app.post("/transactions/import-confirm", async (request, reply) => {
+    const body = request.body as {
+      transactions?: Array<{
+        eventDate: string;
+        description: string;
+        amountCents: number;
+        type: "income" | "expense";
+        accountId?: string | null;
+        paymentMethodId?: string | null;
+        creditCardId?: string | null;
+        subcategoryId?: string | null;
+        status?: string | null;
+        notes?: string | null;
+      }>;
+    };
+
+    if (!body || !Array.isArray(body.transactions)) {
+      return reply.code(400).send({ message: "Payload inválido. Lista de transações requerida." });
+    }
+
+    const created: Array<typeof transactions.$inferSelect> = [];
+
+    db.transaction((tx) => {
+      for (const t of body.transactions!) {
+        const id = crypto.randomUUID();
+        const eventDate = assertBusinessDate(t.eventDate);
+        let budgetMonth = yearMonthFromDate(eventDate);
+        let creditCardBillId: string | null = null;
+
+        if (t.creditCardId) {
+          const card = tx.select().from(creditCards).where(eq(creditCards.id, t.creditCardId)).get();
+          if (!card) {
+            throw new ValidationError("Cartão de crédito não encontrado.");
+          }
+
+          budgetMonth = getCreditCardBillMonth(eventDate, card.closingDay);
+
+          const bill = tx
+            .select()
+            .from(creditCardBills)
+            .where(
+              and(
+                eq(creditCardBills.creditCardId, t.creditCardId),
+                eq(creditCardBills.billMonth, budgetMonth)
+              )
+            )
+            .get();
+
+          if (!bill) {
+            const { closingDate, dueDate } = getCreditCardBillDates(
+              budgetMonth,
+              card.closingDay,
+              card.dueDay
+            );
+
+            const newBill = {
+              id: crypto.randomUUID(),
+              creditCardId: t.creditCardId,
+              billMonth: budgetMonth,
+              closingDate,
+              dueDate,
+              status: "open",
+              paidAt: null,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+
+            tx.insert(creditCardBills).values(newBill).run();
+            creditCardBillId = newBill.id;
+          } else {
+            creditCardBillId = bill.id;
+          }
+        }
+
+        const newTx = {
+          id,
+          type: assertTransactionType(t.type),
+          description: t.description || "Transação Importada",
+          amountCents: t.amountCents,
+          eventDate,
+          budgetMonth,
+          accountId: t.creditCardId ? null : (t.accountId || null),
+          paymentMethodId: t.creditCardId ? null : (t.paymentMethodId || null),
+          subcategoryId: t.subcategoryId || null,
+          creditCardId: t.creditCardId || null,
+          creditCardBillId,
+          status: assertTransactionStatus(t.status || "confirmed"),
+          notes: t.notes || null,
+          linkedTransactionId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        tx.insert(transactions).values(newTx).run();
+        created.push(newTx);
+      }
+    });
+
+    return reply.code(201).send(created);
+  });
+}
+
+function parseTransactionPayload(body: unknown) {
+  if (!isRecord(body)) {
+    throw new ValidationError("Payload do lançamento deve ser um objeto.");
+  }
+
+  const payload = body as TransactionPayload;
+  const eventDate = assertBusinessDate(parseRequiredString(payload.eventDate, "eventDate"));
+  const budgetMonth =
+    payload.budgetMonth === undefined || payload.budgetMonth === null || payload.budgetMonth === ""
+      ? yearMonthFromDate(eventDate)
+      : assertYearMonth(parseRequiredString(payload.budgetMonth, "budgetMonth"));
+  const amountCents = parseRequiredInteger(payload.amountCents, "amountCents");
+
+  if (amountCents <= 0) {
+    throw new ValidationError("amountCents deve ser maior que zero.");
+  }
+
+  const installmentCount = (() => {
+    const raw = parseOptionalInteger((payload as TransactionPayload).installmentCount, "installmentCount");
+    if (raw === undefined || raw === null) return 1;
+    if (raw < 1 || raw > 48) throw new ValidationError("installmentCount deve estar entre 1 e 48.");
+    return raw;
+  })();
+
+  return {
+    type: assertTransactionType(parseRequiredString(payload.type, "type")),
+    description: parseRequiredString(payload.description, "description"),
+    amountCents,
+    eventDate,
+    budgetMonth,
+    accountId: parseOptionalString(payload.accountId, "accountId"),
+    paymentMethodId: parseOptionalString(payload.paymentMethodId, "paymentMethodId"),
+    subcategoryId: parseOptionalString(payload.subcategoryId, "subcategoryId"),
+    creditCardId: parseOptionalString(payload.creditCardId, "creditCardId"),
+    creditCardBillId: null,
+    status:
+      payload.status === undefined || payload.status === null || payload.status === ""
+        ? "planned"
+        : assertTransactionStatus(parseRequiredString(payload.status, "status")),
+    notes: parseOptionalString(payload.notes, "notes"),
+    destinationAccountId: parseOptionalString(payload.destinationAccountId, "destinationAccountId"),
+    linkedTransactionId: parseOptionalString(payload.linkedTransactionId, "linkedTransactionId"),
+    installmentCount
+  };
+}
+
+function parseTransactionPayloadOrReply(body: unknown, reply: FastifyReply) {
+  try {
+    return parseTransactionPayload(body);
+  } catch (error) {
+    return sendPayloadError(error, reply, "Payload do lançamento inválido.");
+  }
+}
+
+function ensureReferencesOrReply(
+  connection: DatabaseConnection,
+  payload: ReturnType<typeof parseTransactionPayload>,
+  reply: FastifyReply
+) {
+  try {
+    ensureOptionalAccountExists(connection, payload.accountId);
+    ensureOptionalPaymentMethodExists(connection, payload.paymentMethodId);
+    ensureOptionalSubcategoryExists(connection, payload.subcategoryId);
+    ensureOptionalCreditCardExists(connection, payload.creditCardId);
+    return true;
+  } catch (error) {
+    sendPayloadError(error, reply, "Referências do lançamento inválidas.");
+    return false;
+  }
+}
+
+function ensureOptionalAccountExists(connection: DatabaseConnection, accountId: string | null) {
+  if (!accountId) {
+    return;
+  }
+
+  const account = connection.db.select().from(accounts).where(eq(accounts.id, accountId)).get();
+
+  if (!account) {
+    throw new ValidationError("Conta não encontrada.");
+  }
+}
+
+function ensureOptionalPaymentMethodExists(
+  connection: DatabaseConnection,
+  paymentMethodId: string | null
+) {
+  if (!paymentMethodId) {
+    return;
+  }
+
+  const paymentMethod = connection.db
+    .select()
+    .from(paymentMethods)
+    .where(eq(paymentMethods.id, paymentMethodId))
+    .get();
+
+  if (!paymentMethod) {
+    throw new ValidationError("Meio de pagamento não encontrado.");
+  }
+}
+
+function ensureOptionalSubcategoryExists(
+  connection: DatabaseConnection,
+  subcategoryId: string | null
+) {
+  if (!subcategoryId) {
+    return;
+  }
+
+  const sub = connection.db
+    .select()
+    .from(subcategories)
+    .where(eq(subcategories.id, subcategoryId))
+    .get();
+
+  if (!sub) {
+    throw new ValidationError("Subcategoria não encontrada.");
+  }
+}
+
+function ensureOptionalCreditCardExists(
+  connection: DatabaseConnection,
+  creditCardId: string | null
+) {
+  if (!creditCardId) {
+    return;
+  }
+
+  const card = connection.db
+    .select()
+    .from(creditCards)
+    .where(eq(creditCards.id, creditCardId))
+    .get();
+
+  if (!card) {
+    throw new ValidationError("Cartão de crédito não encontrado.");
+  }
+}
+
+/**
+ * Advances a YYYY-MM string by `months` months.
+ * Example: advanceMonth("2026-06", 2) → "2026-08"
+ */
+function advanceMonth(yearMonth: string, months: number): string {
+  const [year, month] = yearMonth.split("-").map(Number);
+  const total = (year * 12 + month - 1) + months;
+  const newYear = Math.floor(total / 12);
+  const newMonth = (total % 12) + 1;
+  return `${newYear}-${String(newMonth).padStart(2, "0")}`;
+}
+
+function getCreditCardBillMonth(
+  eventDate: string,
+  closingDay: number
+): ReturnType<typeof assertYearMonth> {
+  const [year, month, day] = eventDate.split("-").map(Number);
+
+  if (day < closingDay) {
+    return formatYearMonth(year, month);
+  }
+
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  return formatYearMonth(nextYear, nextMonth);
+}
+
+function getCreditCardBillDates(
+  billMonth: string,
+  closingDay: number,
+  dueDay: number
+): { closingDate: string; dueDate: string } {
+  const [year, month] = billMonth.split("-").map(Number);
+  const closingDate = formatBusinessDate(year, month, closingDay);
+  const dueYear = month === 12 ? year + 1 : year;
+  const dueMonth = month === 12 ? 1 : month + 1;
+  const dueDate = formatBusinessDate(dueYear, dueMonth, dueDay);
+
+  return { closingDate, dueDate };
+}
+
+function formatYearMonth(year: number, month: number): ReturnType<typeof assertYearMonth> {
+  return assertYearMonth(`${year}-${String(month).padStart(2, "0")}`);
+}
+
+function formatBusinessDate(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function parseCsvContent(csv: string): { headers: string[]; rows: Record<string, string>[] } {
+  const normalized = csv.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines: string[] = [];
+  let currentLine = "";
+  let insideQuotes = false;
+
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized[i];
+    if (char === '"') {
+      insideQuotes = !insideQuotes;
+      currentLine += char;
+    } else if (char === "\n" && !insideQuotes) {
+      lines.push(currentLine);
+      currentLine = "";
+    } else {
+      currentLine += char;
+    }
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  if (lines.length === 0) {
+    return { headers: [], rows: [] };
+  }
+
+  const delimiter = detectCsvDelimiter(lines[0]);
+
+  const parseLine = (line: string): string[] => {
+    const fields: string[] = [];
+    let currentField = "";
+    let insideQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (insideQuotes && line[i + 1] === '"') {
+          currentField += '"';
+          i++;
+        } else {
+          insideQuotes = !insideQuotes;
+        }
+      } else if (char === delimiter && !insideQuotes) {
+        fields.push(cleanCsvField(currentField));
+        currentField = "";
+      } else {
+        currentField += char;
+      }
+    }
+    fields.push(cleanCsvField(currentField));
+    return fields;
+  };
+
+  const parsedHeaders = parseLine(lines[0]);
+  const parsedRows: Record<string, string>[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const fields = parseLine(lines[i]);
+    const rowObj: Record<string, string> = {};
+    for (let j = 0; j < parsedHeaders.length; j++) {
+      rowObj[parsedHeaders[j]] = fields[j] ?? "";
+    }
+    parsedRows.push(rowObj);
+  }
+
+  return { headers: parsedHeaders, rows: parsedRows };
+}
+
+function detectCsvDelimiter(headerLine: string): "," | ";" | "\t" {
+  const candidates = [",", ";", "\t"] as const;
+
+  return candidates
+    .map((delimiter) => ({
+      delimiter,
+      count: countDelimiterOutsideQuotes(headerLine, delimiter)
+    }))
+    .sort((a, b) => b.count - a.count)[0].delimiter;
+}
+
+function countDelimiterOutsideQuotes(line: string, delimiter: "," | ";" | "\t"): number {
+  let count = 0;
+  let insideQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (insideQuotes && line[i + 1] === '"') {
+        i++;
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+    } else if (char === delimiter && !insideQuotes) {
+      count++;
+    }
+  }
+
+  return count;
+}
+
+function cleanCsvField(value: string): string {
+  return value.trim().replace(/^\uFEFF/, "");
+}
+
+function parseDateString(val: string, format: "DMY" | "MDY" | "YMD" = "DMY"): string | null {
+  if (!val) return null;
+  const matchYmd = val.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+  if (matchYmd) {
+    const year = matchYmd[1];
+    const month = matchYmd[2].padStart(2, "0");
+    const day = matchYmd[3].padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  const matchShort = val.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (matchShort) {
+    const first = matchShort[1].padStart(2, "0");
+    const second = matchShort[2].padStart(2, "0");
+    const year = matchShort[3];
+    const month = format === "MDY" ? first : second;
+    const day = format === "MDY" ? second : first;
+    return `${year}-${month}-${day}`;
+  }
+  return null;
+}
+
+function parseAmountToCents(val: string): { amountCents: number; detectedType: "income" | "expense" } | null {
+  if (!val) return null;
+  let clean = val.replace(/[R$\s]/g, "");
+
+  let isNegative = false;
+  if (clean.startsWith("-") || clean.endsWith("-")) {
+    isNegative = true;
+    clean = clean.replace(/-/g, "");
+  }
+  if (clean.startsWith("(") && clean.endsWith(")")) {
+    isNegative = true;
+    clean = clean.slice(1, -1);
+  }
+
+  if (clean.includes(",") && clean.includes(".")) {
+    if (clean.indexOf(".") < clean.indexOf(",")) {
+      clean = clean.replace(/\./g, "").replace(",", ".");
+    } else {
+      clean = clean.replace(/,/g, "");
+    }
+  } else if (clean.includes(",")) {
+    clean = clean.replace(",", ".");
+  }
+
+  const num = parseFloat(clean);
+  if (isNaN(num)) return null;
+
+  const amountCents = Math.round(num * 100);
+  if (amountCents < 0 || isNegative) {
+    return {
+      amountCents: Math.abs(amountCents),
+      detectedType: "expense"
+    };
+  } else {
+    return {
+      amountCents,
+      detectedType: "income"
+    };
+  }
+}
+
+function parseImportedTransactionType(
+  rawType: string,
+  fallback: "income" | "expense"
+): "income" | "expense" {
+  const normalized = normalizeImportedText(rawType);
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (/^\(?\s*\+/.test(normalized)) {
+    return "income";
+  }
+
+  if (/^\(?\s*-/.test(normalized)) {
+    return "expense";
+  }
+
+  if (/\b(receita|income|entrada|credito|credit|cr)\b/.test(normalized) || normalized === "c") {
+    return "income";
+  }
+
+  if (/\b(despesa|expense|saida|debito|debit|db)\b/.test(normalized) || normalized === "d") {
+    return "expense";
+  }
+
+  return fallback;
+}
+
+type ImportedCategoryLookupItem = {
+  id: string;
+  name: string;
+  categoryName: string | null;
+  nature: string | null;
+};
+
+function resolveImportedSubcategoryId(
+  rawCategory: string,
+  transactionType: "income" | "expense",
+  categoryLookup: ImportedCategoryLookupItem[]
+): string | null {
+  const normalizedCategory = normalizeImportedCategoryText(rawCategory);
+
+  if (!normalizedCategory) {
+    return null;
+  }
+
+  const byId = categoryLookup.find((item) => item.id === rawCategory);
+  if (byId) {
+    return byId.id;
+  }
+
+  const compatibleNatures = transactionType === "income" ? ["income", "transfer"] : ["expense", "transfer"];
+  const compatibleItems = categoryLookup.filter((item) =>
+    item.nature ? compatibleNatures.includes(item.nature) : true
+  );
+
+  const exact = compatibleItems.find((item) => normalizeImportedText(item.name) === normalizedCategory);
+  if (exact) {
+    return exact.id;
+  }
+
+  const exactWithCategory = compatibleItems.find((item) => {
+    const categoryName = item.categoryName ? normalizeImportedText(item.categoryName) : "";
+    return `${categoryName} ${normalizeImportedText(item.name)}`.trim() === normalizedCategory;
+  });
+  if (exactWithCategory) {
+    return exactWithCategory.id;
+  }
+
+  const contained = compatibleItems.find((item) => normalizedCategory.includes(normalizeImportedText(item.name)));
+  return contained?.id ?? null;
+}
+
+function normalizeImportedCategoryText(value: string): string {
+  return normalizeImportedText(value)
+    .replace(/^\(?\s*[+-]\s*\)?\s*/, "")
+    .replace(/\b(receita|income|entrada|credito|credit|cr|despesa|expense|saida|debito|debit|db)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeImportedText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+}
+
+function dateDiffInDays(d1Str: string, d2Str: string): number {
+  const d1 = new Date(d1Str);
+  const d2 = new Date(d2Str);
+  const diffTime = Math.abs(d2.getTime() - d1.getTime());
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}

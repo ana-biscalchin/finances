@@ -5,7 +5,7 @@ import { assertCategoryNature, isCategoryNature } from "./categories.js";
 describe("category natures", () => {
   it("accepts supported category natures", () => {
     expect(isCategoryNature("expense")).toBe(true);
-    expect(assertCategoryNature("reserve")).toBe("reserve");
+    expect(assertCategoryNature("transfer")).toBe("transfer");
   });
 
   it("rejects unsupported category natures", () => {

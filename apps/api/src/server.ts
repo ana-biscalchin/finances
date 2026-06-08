@@ -5,6 +5,10 @@ import { pathToFileURL } from "node:url";
 
 import { registerAccountRoutes } from "./modules/accounts.js";
 import { registerCategoryRoutes } from "./modules/categories.js";
+import { registerCreditCardRoutes } from "./modules/credit-cards.js";
+import { registerPaymentMethodRoutes } from "./modules/payment-methods.js";
+import { registerTransactionRoutes } from "./modules/transactions.js";
+import { registerBudgetRoutes } from "./modules/budgets.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -12,13 +16,14 @@ const host = process.env.HOST ?? "0.0.0.0";
 type BuildServerOptions = {
   databasePath?: string;
   logger?: boolean;
+  connection?: ReturnType<typeof createDatabaseConnection>;
 };
 
 export function buildServer(options: BuildServerOptions = {}) {
   const app = Fastify({
     logger: options.logger ?? true
   });
-  const connection = createDatabaseConnection(options.databasePath);
+  const connection = options.connection ?? createDatabaseConnection(options.databasePath);
 
   app.addHook("onClose", async () => {
     connection.sqlite.close();
@@ -42,6 +47,10 @@ export function buildServer(options: BuildServerOptions = {}) {
 
   registerAccountRoutes(app, connection);
   registerCategoryRoutes(app, connection);
+  registerPaymentMethodRoutes(app, connection);
+  registerTransactionRoutes(app, connection);
+  registerCreditCardRoutes(app, connection);
+  registerBudgetRoutes(app, connection);
 
   return app;
 }

@@ -1,4 +1,4 @@
-import { accounts, type createDatabaseConnection } from "@finances/database";
+import { accounts, paymentMethods, transactions, type createDatabaseConnection } from "@finances/database";
 import { assertAccountType } from "@finances/domain";
 import { asc, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -6,6 +6,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   getBooleanQueryValue,
   isRecord,
+  parseOptionalInteger,
   parseOptionalString,
   parseRequiredString,
   sendPayloadError,
@@ -19,6 +20,9 @@ type AccountPayload = {
   type?: unknown;
   institution?: unknown;
   initialBalanceCents?: unknown;
+  sortOrder?: unknown;
+  isPrimary?: unknown;
+  defaultPaymentMethodId?: unknown;
 };
 
 export function registerAccountRoutes(app: FastifyInstance, connection: DatabaseConnection) {
@@ -28,15 +32,36 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
     const includeInactive = getBooleanQueryValue(request.query, "includeInactive");
 
     const rows = includeInactive
-      ? db.select().from(accounts).orderBy(asc(accounts.name)).all()
+      ? db.select().from(accounts).orderBy(asc(accounts.sortOrder), asc(accounts.name)).all()
       : db
           .select()
           .from(accounts)
           .where(eq(accounts.isActive, true))
-          .orderBy(asc(accounts.name))
+          .orderBy(asc(accounts.sortOrder), asc(accounts.name))
           .all();
 
-    return rows;
+    // Compute current balance for each account
+    return rows.map((account) => {
+      const txs = db
+        .select({ type: transactions.type, amountCents: transactions.amountCents })
+        .from(transactions)
+        .where(eq(transactions.accountId, account.id))
+        .all();
+
+      let balanceCents = account.initialBalanceCents;
+      for (const tx of txs) {
+        if (tx.type === "income" || tx.type === "refund" || tx.type === "chargeback") {
+          balanceCents += tx.amountCents;
+        } else if (tx.type === "expense") {
+          balanceCents -= tx.amountCents;
+        }
+      }
+
+      return {
+        ...account,
+        currentBalanceCents: balanceCents
+      };
+    });
   });
 
   app.get("/accounts/:id", async (request, reply) => {
@@ -47,11 +72,29 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
       return reply.code(404).send({ message: "Account not found." });
     }
 
-    return account;
+    const txs = db
+      .select({ type: transactions.type, amountCents: transactions.amountCents })
+      .from(transactions)
+      .where(eq(transactions.accountId, account.id))
+      .all();
+
+    let balanceCents = account.initialBalanceCents;
+    for (const tx of txs) {
+      if (tx.type === "income" || tx.type === "refund" || tx.type === "chargeback") {
+        balanceCents += tx.amountCents;
+      } else if (tx.type === "expense") {
+        balanceCents -= tx.amountCents;
+      }
+    }
+
+    return {
+      ...account,
+      currentBalanceCents: balanceCents
+    };
   });
 
   app.post("/accounts", async (request, reply) => {
-    const payload = parseAccountPayloadOrReply(request.body, reply);
+    const payload = parseAccountPayloadOrReply(connection, request.body, reply);
 
     if (!payload) {
       return reply;
@@ -60,8 +103,13 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
     const account = {
       id: crypto.randomUUID(),
       ...payload,
+      sortOrder: payload.sortOrder ?? getNextAccountSortOrder(connection),
       isActive: true
     };
+
+    if (payload.isPrimary) {
+      clearPrimaryAccounts(connection);
+    }
 
     db.insert(accounts).values(account).run();
 
@@ -76,10 +124,14 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
       return reply.code(404).send({ message: "Account not found." });
     }
 
-    const payload = parseAccountPayloadOrReply(request.body, reply);
+    const payload = parseAccountPayloadOrReply(connection, request.body, reply);
 
     if (!payload) {
       return reply;
+    }
+
+    if (payload.isPrimary) {
+      clearPrimaryAccounts(connection);
     }
 
     db.update(accounts)
@@ -104,6 +156,7 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
     db.update(accounts)
       .set({
         isActive: false,
+        isPrimary: false,
         updatedAt: new Date().toISOString()
       })
       .where(eq(accounts.id, id))
@@ -142,21 +195,70 @@ function parseAccountPayload(body: unknown) {
   const type = assertAccountType(parseRequiredString(payload.type, "type"));
   const institution = parseOptionalString(payload.institution, "institution");
   const initialBalanceCents = parseInitialBalance(payload.initialBalanceCents);
+  const sortOrder = parseOptionalInteger(payload.sortOrder, "sortOrder");
+  const isPrimary = parseOptionalBoolean(payload.isPrimary);
+  const defaultPaymentMethodId = parseOptionalString(
+    payload.defaultPaymentMethodId,
+    "defaultPaymentMethodId"
+  );
 
   return {
     name,
     type,
     institution,
-    initialBalanceCents
+    initialBalanceCents,
+    sortOrder,
+    isPrimary,
+    defaultPaymentMethodId
   };
 }
 
-function parseAccountPayloadOrReply(body: unknown, reply: FastifyReply) {
+function parseAccountPayloadOrReply(
+  connection: DatabaseConnection,
+  body: unknown,
+  reply: FastifyReply
+) {
   try {
-    return parseAccountPayload(body);
+    const payload = parseAccountPayload(body);
+
+    if (payload.defaultPaymentMethodId) {
+      const paymentMethod = connection.db
+        .select()
+        .from(paymentMethods)
+        .where(eq(paymentMethods.id, payload.defaultPaymentMethodId))
+        .get();
+
+      if (!paymentMethod) {
+        throw new ValidationError("Meio de pagamento padrão não encontrado.");
+      }
+    }
+
+    return payload;
   } catch (error) {
     return sendPayloadError(error, reply, "Payload da conta inválido.");
   }
+}
+
+function clearPrimaryAccounts(connection: DatabaseConnection) {
+  connection.db
+    .update(accounts)
+    .set({
+      isPrimary: false,
+      updatedAt: new Date().toISOString()
+    })
+    .run();
+}
+
+function parseOptionalBoolean(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return false;
+  }
+
+  if (typeof value !== "boolean") {
+    throw new ValidationError("isPrimary deve ser booleano.");
+  }
+
+  return value;
 }
 
 function parseInitialBalance(value: unknown) {
@@ -169,4 +271,14 @@ function parseInitialBalance(value: unknown) {
   }
 
   return value;
+}
+
+function getNextAccountSortOrder(connection: DatabaseConnection) {
+  const rows = connection.db.select().from(accounts).all();
+
+  if (rows.length === 0) {
+    return 0;
+  }
+
+  return Math.max(...rows.map((account) => account.sortOrder)) + 1;
 }
