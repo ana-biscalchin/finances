@@ -1,123 +1,122 @@
-# Regras de Negócio — Cartão de Crédito
+# Regras de Negocio: Cartao de Credito
 
-Documento as regras de negócio implementadas no módulo de cartão de crédito.
+Este documento aprofunda as regras do fluxo de cartao. Para a lista completa de regras do produto, veja [Regras de Negocio](regras-negocio.md).
 
----
+## Cartao nao movimenta conta na compra
 
-## 1. Cartão como instrumento de crédito (não como meio de pagamento)
+Uma compra no cartao nao reduz saldo de conta no momento da compra.
 
-Um **cartão de crédito** não é tratado como meio de pagamento na transação de compra.
-Meios de pagamento (PIX, TED, débito etc.) descrevem como o dinheiro sai de uma conta.
-No cartão, o dinheiro **não sai na hora da compra** — sai apenas quando a fatura é paga.
+Compras no cartao devem ficar assim:
 
-**Consequências no modelo:**
-- `paymentMethodId = null` em compras no cartão
-- `accountId = null` em compras no cartão (o saldo da conta não é alterado na compra)
-- `creditCardId` identifica o cartão usado
-- `budgetMonth` = mês da fatura (pode ser diferente do mês da compra)
+- `accountId = null`
+- `paymentMethodId = null`
+- `creditCardId = <id do cartao>`
+- `budgetMonth = mes da fatura`
 
----
+O dinheiro sai de uma conta apenas quando a fatura e paga.
 
-## 2. Cálculo do mês da fatura
+## Calculo do mes da fatura
 
-O impacto orçamentário de uma compra no cartão é no **mês da fatura**, não no mês da compra.
+O mes de impacto da compra e calculado pelo fechamento do cartao:
 
-**Regra:**
-- Se `dia_da_compra < dia_de_fechamento` → fatura do **mês atual**
-- Se `dia_da_compra >= dia_de_fechamento` → fatura do **mês seguinte**
+- Se o dia da compra for menor que o dia de fechamento, a compra entra na fatura do proprio mes.
+- Se o dia da compra for maior ou igual ao dia de fechamento, a compra entra na fatura do mes seguinte.
 
-**Exemplos (fechamento dia 15):**
+Exemplo com fechamento no dia 15:
 
-| Data da compra | Dia | Regra          | Fatura     |
-|----------------|-----|----------------|------------|
-| 10/jun         | 10  | 10 < 15        | junho      |
-| 15/jun         | 15  | 15 >= 15       | julho      |
-| 20/jun         | 20  | 20 >= 15       | julho      |
-| 31/dez         | 31  | 31 >= 15       | janeiro    |
+| Data da compra | Fatura |
+| --- | --- |
+| 10/06/2026 | 2026-06 |
+| 15/06/2026 | 2026-07 |
+| 20/06/2026 | 2026-07 |
 
-O `budgetMonth` é auto-calculado na UI quando o usuário seleciona o cartão e a data da compra,
-mas pode ser editado manualmente se necessário.
+## Faturas
 
----
+Uma fatura e unica por cartao e mes (`creditCardId` + `billMonth`).
 
-## 3. Pagamento da fatura não duplica despesa
+Ao buscar uma fatura por `GET /credit-cards/:id/bills?month=YYYY-MM`:
 
-Quando a fatura é marcada como paga (`POST /credit-cards/:id/bills/:billId/pay`):
-- O `status` da `creditCardBills` muda para `"paid"`
-- **Nenhum lançamento de despesa é criado**
-- O usuário deve registrar o débito na conta separadamente como transferência interna
-  (categoria "Movimentações Internas > Pagamento de fatura") se quiser rastrear a saída
+- se a fatura ja existe, ela e retornada;
+- se nao existe, ela e criada;
+- fechamento e vencimento sao calculados com os dias configurados no cartao.
 
-> **Racional:** a despesa já foi registrada no momento da compra com o `creditCardId` e `budgetMonth`.
-> Criar outra despesa na hora do pagamento duplicaria o gasto no orçamento.
+O total da fatura soma apenas compras daquele cartao e daquele mes de fatura. Lancamentos de pagamento da fatura ficam ligados a `creditCardBillId`, mas nao a `creditCardId`, justamente para nao entrarem no total da fatura.
 
----
+## Status
 
-## 4. Filtro de "Cartão de crédito" nos meios de pagamento
+Status persistidos:
 
-O meio de pagamento `pm-credit-card` (`kind: "credit_card"`) está no seed de dados mas é
-**ocultado do dropdown de meios de pagamento** quando o formulário de lançamento está no modo "Conta".
+- `open`: fatura aberta/nao paga.
+- `paid`: fatura paga.
 
-O usuário acessa o fluxo de cartão pelo toggle **Conta / Cartão de crédito** no formulário de despesa.
-Para receitas, reembolsos e estornos, o toggle não aparece (não fazem sentido em cartão de crédito).
+A UI pode exibir "fechada" quando a data atual passou da data de fechamento e a fatura ainda nao foi paga. Isso e um estado visual derivado, nao um status persistido separado.
 
----
+## Pagamento de fatura
 
-## 5. Consulta de transações na fatura
+Ao marcar fatura como paga:
 
-A fatura de um mês é composta por todas as transações onde:
-```
-creditCardId = <id_do_cartão>
-AND budgetMonth = <YYYY-MM>
-```
+1. A UI pergunta qual conta pagou a fatura.
+2. A API valida a conta.
+3. A API calcula o total da fatura pelas compras do cartao.
+4. A fatura recebe `status = paid` e `paidAt`.
+5. A API cria ou atualiza um lancamento de despesa representando a saida da conta.
 
-O total da fatura considera apenas transações do tipo `expense`.
-Transações `refund` e `chargeback` no mesmo cartão/mês reduzem o total (futuro).
+O lancamento de pagamento:
 
----
+- usa `accountId` da conta escolhida;
+- usa o meio padrao da conta, se existir;
+- usa a subcategoria `Movimentacoes Internas > Pagamento de fatura`, se existir;
+- usa `eventDate = dueDate` da fatura;
+- usa `budgetMonth = mes do vencimento`;
+- usa `creditCardBillId = id da fatura`;
+- deixa `creditCardId = null`.
 
-## 6. Status da fatura
+Essa modelagem evita duplicar as compras no total da fatura, mas permite que o resumo por conta mostre a saida real do dinheiro.
 
-| Status   | Significado                                        |
-|----------|----------------------------------------------------|
-| `open`   | Fatura em aberto, ainda aceitando compras          |
-| `paid`   | Fatura marcada como paga pelo usuário              |
+Se a mesma fatura for marcada como paga novamente, o lancamento de pagamento existente e atualizado; nao e criado outro.
 
-O status `closed` (fechada, mas não paga) pode ser implementado futuramente para representar
-faturas cujo período de fechamento passou mas ainda não foram pagas.
+## Controle mensal
 
----
+No controle mensal:
 
-## 7. Cadastro de cartão
+- faturas abertas com vencimento no mes entram em `Pagamento de fatura` como comprometidas;
+- faturas pagas com vencimento no mes entram como realizadas;
+- o resumo por conta mostra a saida somente quando ha lancamento de pagamento;
+- compras do cartao continuam sendo analisadas por categoria no mes da fatura.
 
-Campos obrigatórios:
-- `name` — nome descritivo (ex: "Nubank Roxinho")
-- `closingDay` — dia de fechamento (1–31)
-- `dueDay` — dia de vencimento (1–31)
+## Parcelamento manual
 
-Campos opcionais:
-- `institution` — nome da instituição (ex: "Nubank")
-- `paymentAccountId` — conta de onde sai o pagamento da fatura
-- `limitCents` — limite de crédito em centavos
+Quando um lancamento de cartao e criado com `installmentCount > 1`:
 
-O `dueDay` é informativo por enquanto — é usado para exibir a data de vencimento
-na tela de faturas, mas não gera alertas ou cobranças automaticamente.
+- o valor total e dividido pelo numero de parcelas;
+- a ultima parcela recebe eventual resto de centavos;
+- cada parcela vira um lancamento separado;
+- a descricao recebe `(1/N)`, `(2/N)` etc.;
+- cada parcela avanca um mes de fatura.
 
----
+## Importacao de fatura
 
-## 8. Arquivamento de cartão
+Na importacao de fatura:
 
-Cartões são **arquivados**, não excluídos. Um cartão arquivado:
-- Não aparece no dropdown de cartões no formulário de lançamento
-- Não aparece na lista padrão de faturas
-- Pode ser restaurado a qualquer momento
-- Mantém o histórico de transações intacto
+- todas as linhas viram despesas de cartao;
+- a fatura aberta na tela define o cartao e o mes inicial;
+- compras fora do mes da fatura aberta sao ignoradas na previa;
+- colunas `Parcela` e `TotalParcelas` podem gerar parcelas futuras;
+- coluna combinada `2/3` ou `2 de 3` tambem e aceita;
+- duplicatas sao desmarcadas na previa e ignoradas na confirmacao.
 
----
+Exemplo: uma linha `2/3` importa a parcela `2/3` na fatura aberta e gera `3/3` na proxima fatura. A parcela `1/3` nao e criada porque pertence a uma fatura anterior.
 
-## Referências
+## Cartoes
 
-- Schema: `packages/database/src/schema.ts` — tabelas `creditCards`, `creditCardBills`
-- API: `apps/api/src/modules/credit-cards.ts`
-- UI formulário: `apps/web/src/app/transactions/TransactionsPage.tsx` (`calcBillMonth`)
-- UI faturas: `apps/web/src/app/cards/BillsPage.tsx`
+Campos principais:
+
+- Nome.
+- Instituicao opcional.
+- Dia de fechamento.
+- Dia de vencimento.
+- Conta padrao de pagamento opcional.
+- Limite opcional.
+- Status ativo/inativo.
+
+Cartoes sao arquivados, nao excluidos. Arquivar remove das listas padrao e preserva historico.

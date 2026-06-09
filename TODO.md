@@ -1,6 +1,6 @@
 # TODO
 
-Lista inicial para comecar o codigo do projeto.
+Backlog e status do projeto.
 
 ## Agora
 
@@ -42,7 +42,7 @@ Lista inicial para comecar o codigo do projeto.
 - [x] Planejar exclusao definitiva de contas como acao separada do arquivamento.
 - [x] Confirmar lista final hardcoded de meios de pagamento.
 - [x] Expor meios de pagamento hardcoded para uso em lancamentos e orcamento.
-- [x] Implementar CRUD completo de categorias, grupos, macros e micros.
+- [x] Implementar CRUD completo de categorias e subcategorias.
 - [x] Implementar arquivamento de categorias.
 - [x] Implementar renomeacao preservando historico por ID.
 - [x] Implementar fusao de categorias duplicadas.
@@ -63,16 +63,28 @@ Lista inicial para comecar o codigo do projeto.
   - [x] Ao carregar a pagina de faturas, sempre mostrar o mes seguinte (mes atual + 1) por padrao.
   - [x] Melhorar exibicao do status da fatura (aberta, fechada, paga).
   - [x] Facilitar navegacao entre faturas de diferentes meses (mes anterior/proximo rápido).
+  - [x] Mostrar area de lancamento rapido na fatura com cartao de credito ja selecionado.
+  - [x] Permitir excluir compras individuais e selecionadas na fatura.
+  - [x] Adicionar botao de importacao de fatura CSV.
+  - [x] Importar faturas parceladas por colunas de parcela, criando parcelas futuras sem duplicar.
 - [x] Criar agregacao do controle mensal na API:
   - [x] Endpoint de resumo de orcamento (calculo de orcado, realizado, comprometido e disponivel).
   - [x] Tratar impacto de fatura de cartao consolidada no orcamento do mes correspondente.
   - [x] Calcular automaticamente o valor de "Pagamento de fatura" a partir da soma das faturas de cartões com vencimento no mês.
+  - [x] Ao marcar fatura como paga, escolher a conta de pagamento e refletir a saída na visão mensal.
 - [x] Criar interface do controle mensal:
   - [x] Tela principal com tabela mostrando o balanco do mes, com agrupamentos por categorias e meio de pagamento.
   - [x] Seletor de mes e filtros basicos.
   - [x] Ajustar nomenclaturas de comportamento sob Receitas para "Receitas Fixas", "Receitas Variáveis" e "Receitas Extras".
 - [x] Testar regra de cartao por vencimento da fatura.
 - [x] Testar que quitacao de fatura nao duplica despesa.
+- [x] Segregar despesas entre à vista (caixa) e cartão de crédito nas agregações da API.
+- [x] Implementar barra de progresso segmentada (SplitProgressBar) diferenciando métodos de pagamento no frontend.
+- [x] Adicionar o card de "Independência de Crédito" para monitorar a autonomia de caixa mensal.
+- [x] Renomear nomenclaturas de "Orçado" para "Planejado/Alocado".
+- [x] Corrigir input do valor planejado para aceitar decimais com vírgula (formato brasileiro) e remover placeholders.
+- [x] Otimizar fluxo de cliques: adicionar foco automático e seleção completa do texto ao abrir o input para digitação imediata.
+- [x] Evitar recarga/scroll para o topo e manter categorias colapsadas após salvar um planejamento (atualização in-place).
 
 ## Importação, Exportação E Backups
 
@@ -96,12 +108,12 @@ Lista inicial para comecar o codigo do projeto.
 
 - [x] **Decisão de produto**:
   - [x] Remover Dashboard como primeira página; a visão inicial do app é o Controle mensal.
-- [ ] **Frontend (UI)**:
-  - [ ] Instalar a biblioteca `recharts` no `apps/web`.
-  - [ ] Implementar gráfico de barras horizontais para despesas por categoria.
-  - [ ] Implementar gráfico de linha simples mostrando evolução diária de saldo/gastos.
-  - [ ] Adicionar área de "Próximos Vencimentos" de faturas de cartão.
-  - [ ] Vincular filtros ao seletor de mês global da aplicação.
+- [x] **Frontend (UI)**:
+  - [x] Instalar a biblioteca `recharts` no `apps/web`.
+  - [x] Implementar gráfico de barras horizontais para despesas por categoria.
+  - [x] Implementar gráfico de linha simples mostrando evolução diária de saldo/gastos.
+  - [x] Adicionar área de "Próximos Vencimentos" de faturas de cartão.
+  - [x] Vincular filtros ao seletor de mês global da aplicação.
 
 ## Reservas (Caixinhas)
 
@@ -121,6 +133,7 @@ Lista inicial para comecar o codigo do projeto.
 - [x] Configurar testes de API.
 - [x] Configurar verificacao de build.
 - [x] Documentar no README os comandos de desenvolvimento e verificacao.
+- [x] Revisar documentacao, listar regras de negocio atuais e remover plano defasado.
 - [x] Testar regra de cartao por vencimento da fatura.
 - [x] Testar que pagamento de fatura nao duplica despesa.
 - [x] Testar que transferencia nao entra como gasto.

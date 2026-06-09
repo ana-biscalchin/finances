@@ -206,8 +206,6 @@ export function TransactionsPage() {
   });
   const [importDateFormat, setImportDateFormat] = useState<"DMY" | "MDY" | "YMD">("DMY");
   const [importAccountId, setImportAccountId] = useState<string>(emptySelectValue);
-  const [importType, setImportType] = useState<"account" | "card">("account");
-  const [importCreditCardId, setImportCreditCardId] = useState<string>(emptySelectValue);
   const [previewTransactions, setPreviewTransactions] = useState<ImportPreviewItem[]>([]);
   const [selectedImportTempIds, setSelectedImportTempIds] = useState<Set<string>>(new Set());
   const [bulkImportType, setBulkImportType] = useState<string>(emptySelectValue);
@@ -424,8 +422,7 @@ export function TransactionsPage() {
           csvContent: csvTextContent,
           mappings,
           dateFormat: importDateFormat,
-          defaultAccountId: importType === "account" && importAccountId !== emptySelectValue ? importAccountId : null,
-          defaultCreditCardId: importType === "card" && importCreditCardId !== emptySelectValue ? importCreditCardId : null
+          defaultAccountId: importAccountId !== emptySelectValue ? importAccountId : null
         })
       });
 
@@ -504,8 +501,6 @@ export function TransactionsPage() {
     setMappings({ eventDate: "", description: "", amount: "", type: "", subcategoryId: "" });
     setImportDateFormat("DMY");
     setImportAccountId(emptySelectValue);
-    setImportType("account");
-    setImportCreditCardId(emptySelectValue);
     setPreviewTransactions([]);
     setSelectedImportTempIds(new Set());
     setBulkImportType(emptySelectValue);
@@ -566,7 +561,7 @@ export function TransactionsPage() {
           nextItem.type = bulkImportType as "income" | "expense";
         }
 
-        if (importType === "account" && bulkImportAccountId !== emptySelectValue) {
+        if (bulkImportAccountId !== emptySelectValue) {
           nextItem.accountId = bulkImportAccountId === "__clear__" ? null : bulkImportAccountId;
           if (
             bulkImportPaymentMethodId === emptySelectValue &&
@@ -576,7 +571,7 @@ export function TransactionsPage() {
           }
         }
 
-        if (importType === "account" && bulkImportPaymentMethodId !== emptySelectValue) {
+        if (bulkImportPaymentMethodId !== emptySelectValue) {
           nextItem.paymentMethodId =
             bulkImportPaymentMethodId === "__clear__" ? null : bulkImportPaymentMethodId;
         }
@@ -1740,43 +1735,18 @@ export function TransactionsPage() {
                 clearable
               />
 
-              <SegmentedControl
-                value={importType}
-                onChange={(val) => setImportType(val as "account" | "card")}
-                data={[
-                  { label: "Conta Corrente", value: "account" },
-                  { label: "Cartão de Crédito", value: "card" }
-                ]}
-                fullWidth
+              <Select
+                label="Associar à Conta (opcional)"
+                description="Opcional. Se não for especificado no arquivo CSV, todas as transações importadas pertencerão a esta conta."
+                data={[{ value: emptySelectValue, label: "Nenhuma (deixar sem conta)" }, ...accountOptions]}
+                value={importAccountId}
+                onChange={(value) => setImportAccountId(value ?? emptySelectValue)}
               />
-
-              {importType === "account" ? (
-                <Select
-                  label="Associar à Conta (opcional)"
-                  description="Opcional. Se não for especificado no arquivo CSV, todas as transações importadas pertencerão a esta conta."
-                  data={[{ value: emptySelectValue, label: "Nenhuma (deixar sem conta)" }, ...accountOptions]}
-                  value={importAccountId}
-                  onChange={(value) => setImportAccountId(value ?? emptySelectValue)}
-                />
-              ) : (
-                <Select
-                  label="Associar ao Cartão de Crédito"
-                  description="Selecione o cartão ao qual as compras importadas serão associadas."
-                  data={creditCardOptions}
-                  value={importCreditCardId}
-                  onChange={(value) => setImportCreditCardId(value ?? emptySelectValue)}
-                  required
-                />
-              )}
 
               <Group justify="flex-end" mt="md">
                 <Button
                   onClick={() => setImportStep(2)}
-                  disabled={
-                    !importFile ||
-                    !csvTextContent ||
-                    (importType === "card" && importCreditCardId === emptySelectValue)
-                  }
+                  disabled={!importFile || !csvTextContent}
                 >
                   Continuar
                 </Button>
@@ -1895,7 +1865,7 @@ export function TransactionsPage() {
                       {selectedImportTempIds.size} selecionados
                     </Badge>
                   </Group>
-                  <SimpleGrid cols={{ base: 1, sm: importType === "account" ? 4 : 2 }} spacing="sm">
+                  <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="sm">
                     <Select
                       label="Lançamento"
                       placeholder="Manter"
@@ -1907,34 +1877,30 @@ export function TransactionsPage() {
                       value={bulkImportType}
                       onChange={(value) => setBulkImportType(value ?? emptySelectValue)}
                     />
-                    {importType === "account" ? (
-                      <>
-                        <Select
-                          label="Conta"
-                          placeholder="Manter"
-                          data={[
-                            { value: emptySelectValue, label: "Manter conta atual" },
-                            { value: "__clear__", label: "Sem conta" },
-                            ...accountOptions
-                          ]}
-                          value={bulkImportAccountId}
-                          onChange={(value) => setBulkImportAccountId(value ?? emptySelectValue)}
-                          searchable
-                        />
-                        <Select
-                          label="Forma de pagamento"
-                          placeholder="Manter"
-                          data={[
-                            { value: emptySelectValue, label: "Manter forma atual" },
-                            { value: "__clear__", label: "Sem meio de pagamento" },
-                            ...paymentMethodOptions.filter((option) => option.value !== emptySelectValue)
-                          ]}
-                          value={bulkImportPaymentMethodId}
-                          onChange={(value) => setBulkImportPaymentMethodId(value ?? emptySelectValue)}
-                          searchable
-                        />
-                      </>
-                    ) : null}
+                    <Select
+                      label="Conta"
+                      placeholder="Manter"
+                      data={[
+                        { value: emptySelectValue, label: "Manter conta atual" },
+                        { value: "__clear__", label: "Sem conta" },
+                        ...accountOptions
+                      ]}
+                      value={bulkImportAccountId}
+                      onChange={(value) => setBulkImportAccountId(value ?? emptySelectValue)}
+                      searchable
+                    />
+                    <Select
+                      label="Forma de pagamento"
+                      placeholder="Manter"
+                      data={[
+                        { value: emptySelectValue, label: "Manter forma atual" },
+                        { value: "__clear__", label: "Sem meio de pagamento" },
+                        ...paymentMethodOptions.filter((option) => option.value !== emptySelectValue)
+                      ]}
+                      value={bulkImportPaymentMethodId}
+                      onChange={(value) => setBulkImportPaymentMethodId(value ?? emptySelectValue)}
+                      searchable
+                    />
                     <Select
                       label="Categoria"
                       placeholder="Manter"
@@ -1963,9 +1929,8 @@ export function TransactionsPage() {
                       <Table.Th style={{ width: 40 }}></Table.Th>
                       <Table.Th>Data/Desc</Table.Th>
                       <Table.Th>Tipo</Table.Th>
-                      {importType === "account" ? <Table.Th>Conta</Table.Th> : null}
-                      {importType === "account" ? <Table.Th>Forma</Table.Th> : null}
-                      {importType === "card" ? <Table.Th>Fatura</Table.Th> : null}
+                      <Table.Th>Conta</Table.Th>
+                      <Table.Th>Forma</Table.Th>
                       <Table.Th style={{ textAlign: "right" }}>Valor</Table.Th>
                       <Table.Th>Subcategoria</Table.Th>
                     </Table.Tr>
@@ -2004,25 +1969,14 @@ export function TransactionsPage() {
                               {getTransactionTypeLabel(item.type)}
                             </Badge>
                           </Table.Td>
-                          {importType === "account" ? (
-                            <Table.Td style={{ verticalAlign: "middle" }}>
-                              <Text size="xs">{getAccountLabel(item.accountId, accounts)}</Text>
-                            </Table.Td>
-                          ) : null}
-                          {importType === "account" ? (
-                            <Table.Td style={{ verticalAlign: "middle" }}>
-                              <Text size="xs">
-                                {getPaymentMethodLabel(item.paymentMethodId, paymentMethods)}
-                              </Text>
-                            </Table.Td>
-                          ) : null}
-                          {importType === "card" ? (
-                            <Table.Td style={{ verticalAlign: "middle" }}>
-                              <Badge variant="light" color="indigo" style={{ textTransform: "none" }}>
-                                {item.budgetMonth ?? "-"}
-                              </Badge>
-                            </Table.Td>
-                          ) : null}
+                          <Table.Td style={{ verticalAlign: "middle" }}>
+                            <Text size="xs">{getAccountLabel(item.accountId, accounts)}</Text>
+                          </Table.Td>
+                          <Table.Td style={{ verticalAlign: "middle" }}>
+                            <Text size="xs">
+                              {getPaymentMethodLabel(item.paymentMethodId, paymentMethods)}
+                            </Text>
+                          </Table.Td>
                           <Table.Td style={{ textAlign: "right", verticalAlign: "middle" }}>
                             <Text fw={700} size="sm" c={getAmountColor(item.type)}>
                               {item.type === "expense" ? "-" : "+"} {formatMoney(moneyFromCents(item.amountCents))}

@@ -1,393 +1,201 @@
-# Modulos Do Projeto
+# Modulos do Projeto
 
-Este documento registra os modulos funcionais planejados para o app de financas pessoais.
+Este documento registra o estado funcional atual do app. Para regras detalhadas de calculo, veja [Regras de Negocio](regras-negocio.md).
 
-## Principios De Dominio
+## Visao geral
 
-Alguns conceitos devem ficar separados desde o inicio:
+O app e um web app local para financas pessoais, com:
 
-- Conta: onde o dinheiro esta ou passa.
-- Meio de pagamento: como o pagamento foi feito.
-- Lancamento: evento financeiro de receita, despesa ou ajuste.
-- Transferencia: movimento entre contas, sem impacto como gasto.
-- Fatura: agrupamento de despesas de cartao por mes de vencimento.
-- Data da compra: quando o gasto aconteceu.
-- Data de impacto no orcamento: mes em que o gasto entra no controle mensal.
+- frontend React/Vite/Mantine em `apps/web`;
+- API Fastify em `apps/api`;
+- SQLite local via Drizzle em `packages/database`;
+- regras e helpers de dominio em `packages/domain`.
 
-Para cartao de credito, a despesa deve impactar o mes de vencimento da fatura, nao necessariamente o mes da compra.
+A tela central do produto e o **Controle mensal**. As demais telas alimentam ou explicam essa visao.
 
-## Modulos Essenciais
+## Implementado
 
-### Contas
+### Controle mensal
 
-Gerencia os locais onde existe saldo ou movimentacao financeira.
+Status: implementado.
 
-Exemplos:
+Funcoes principais:
 
-- Conta corrente.
-- Poupanca.
-- Carteira/dinheiro.
-- Conta de investimento.
-- Flash Alim.
-- Flash Conv.
-- Carteira digital.
+- Selecionar mes de analise.
+- Ver valores planejados, realizados, comprometidos e disponiveis.
+- Agrupar por categoria ou por meio de pagamento.
+- Editar planejamento mensal inline.
+- Separar gasto de caixa e gasto de cartao.
+- Mostrar resumo por conta.
+- Calcular pagamento de fatura a partir das faturas com vencimento no mes.
 
-Campos esperados:
+Arquivos principais:
 
-- Nome.
-- Tipo.
-- Instituicao.
-- Saldo inicial.
-- Conta principal.
-- Meio de pagamento principal.
-- Status ativa/inativa.
-
-Regras esperadas:
-
-- Contas podem ser renomeadas e ter tipo/instituicao alterados.
-- Flash Alim e Flash Conv devem ser contas separadas, pois representam saldos distintos.
-- Flash nao deve ser meio de pagamento nem categoria.
-- Entradas mensais de beneficio devem ser receitas na conta correspondente.
-- Gastos pagos com saldo Flash devem usar a conta Flash correta e o meio de pagamento Cartao de credito.
-- Deve haver no maximo uma conta principal; novos lancamentos usam essa conta como padrao.
-- Cada conta pode definir um meio de pagamento principal para acelerar novos lancamentos.
-- Arquivar conta apenas remove das listas padrao; nao apaga historico.
-- Contas arquivadas podem ser restauradas.
-- Exclusao definitiva deve ser acao separada, com confirmacao e validacoes.
-
-### Meios De Pagamento
-
-Lista fixa das formas usadas para pagar ou receber. Nao precisa de CRUD no app.
-
-Lista confirmada:
-
-- Pix.
-- Dinheiro.
-- Cartao de debito.
-- Cartao de credito.
-- Cartao pre-pago.
-- Boleto.
-- Debito automatico.
-- Transferencia bancaria/TED.
-
-O meio de pagamento deve ser uma dimensao central no controle mensal, mas sua lista deve ser mantida como seed/configuracao interna versionada.
-
-Flash, vale alimentacao, vale refeicao e carteira digital nao entram nesta lista quando representam saldo; devem ser tratados como contas.
-
-### Categorias
-
-Organiza receitas e despesas.
-
-Deve permitir criar, editar, arquivar e gerenciar a estrutura de classificação financeira.
-
-A estrutura gerenciável deve incluir:
-
-- Natureza: receita, despesa, investimento/reserva ou transferência.
-- Categoria (Pai): Agrupador principal.
-- Subcategoria (Filha): Destino final exato.
-- Comportamento (Tag na Subcategoria): Fixo, Variável, Extra, etc.
-
-Exemplos:
-
-- Alimentação > Supermercado (Variável).
-- Alimentação > Restaurante (Variável).
-- Moradia > Aluguel (Fixo).
-- Moradia > Luz (Fixo).
-- Transporte > Combustível (Variável).
-
-Regras esperadas:
-
-- Categorias e subcategorias devem ser editáveis pela usuária.
-- A lista inicial deve vir com sugestões baseadas na taxonomia do projeto.
-- Categorias já usadas em lançamentos não devem ser apagadas fisicamente; devem ser arquivadas/inativadas.
-- Deve ser possível renomear categorias e subcategorias sem perder histórico.
-- O histórico deve se vincular por ID interno, não pelo nome textual.
-- Deve ser possível reordenar categorias e subcategorias.
-- Deve haver fluxo de fusão de subcategorias para corrigir duplicidades.
-- Deve haver aviso antes de arquivar categorias em uso.
-- Categorias arquivadas não devem aparecer como padrão em novos lançamentos, mas devem continuar visíveis em histórico e relatórios antigos.
-- O app deve evitar nomes duplicados em cada nível da hierarquia.
-- A comparação de duplicidade deve ignorar acentos e diferenças de caixa.
+- `apps/api/src/modules/budgets.ts`
+- `apps/web/src/app/monthly-control/ControleMensalPage.tsx`
+- `apps/api/src/budgets.test.ts`
 
 ### Lancamentos
 
-Registra receitas, despesas e ajustes.
+Status: implementado.
 
-Regras conceituais:
+Funcoes principais:
 
-- Conta e onde o saldo muda.
-- Meio de pagamento e a trilha usada no pagamento ou recebimento.
-- Categoria e o motivo economico do lancamento.
-- Entrada de saldo em beneficio, como Flash Alim ou Flash Conv, deve ser registrada como receita na conta correspondente.
-- Receitas e ajustes podem ficar sem meio de pagamento quando nao houver uma trilha de pagamento clara.
-- Despesas pagas com Flash continuam usando conta Flash Alim ou Flash Conv, meio de pagamento Cartao de credito e categoria de consumo correspondente.
+- Criar, editar, listar e excluir lancamentos.
+- Suportar receitas, despesas, reembolsos e estornos.
+- Suportar status previsto, confirmado, conciliado e cancelado.
+- Filtrar por mes, conta, meio de pagamento, categoria, tipo e status.
+- Criar transferencias entre contas por lancamentos vinculados.
+- Exportar CSV.
+- Importar CSV com previa, mapeamento de colunas, reconciliacao e prevencao de duplicatas.
 
-Campos esperados:
+Arquivos principais:
 
-- Tipo: receita, despesa ou ajuste.
-- Descricao.
-- Valor.
-- Data do evento.
-- Data de impacto no orcamento.
-- Conta.
-- Meio de pagamento.
-- Categoria.
-- Status: previsto, confirmado, conciliado, cancelado.
-- Observacao.
+- `apps/api/src/modules/transactions.ts`
+- `apps/web/src/app/transactions/TransactionsPage.tsx`
+- `apps/api/src/transactions.test.ts`
 
-### Transferencias
+### Contas
 
-Registra movimentos entre contas.
+Status: implementado.
 
-Transferencias nao devem entrar como despesa no orcamento.
+Funcoes principais:
 
-Exemplos:
+- Criar, editar, listar, arquivar e restaurar contas.
+- Calcular saldo atual a partir do saldo inicial e lancamentos.
+- Definir uma conta primaria.
+- Definir meio de pagamento padrao por conta.
 
-- Conta corrente para carteira.
-- Conta corrente para investimento.
-- Pagamento de fatura de cartao.
-- Resgate de investimento para conta corrente.
+Arquivos principais:
 
-Campos esperados:
+- `apps/api/src/modules/accounts.ts`
+- `apps/web/src/app/accounts/AccountsPage.tsx`
 
-- Conta origem.
-- Conta destino.
-- Valor.
-- Data.
-- Meio.
-- Status.
-- Observacao.
+### Categorias
 
-Tarifas, IOF e taxas relacionadas devem ser lancamentos de despesa separados.
+Status: implementado.
 
-### Cartoes De Credito
+Funcoes principais:
 
-Gerencia cartoes e suas regras de fatura.
+- Gerenciar categorias e subcategorias.
+- Definir natureza da categoria: receita, despesa ou transferencia.
+- Definir comportamento da subcategoria: fixo, variavel ou extra.
+- Arquivar e restaurar sem apagar historico.
+- Fusionar subcategorias duplicadas, movendo lancamentos e orcamentos.
 
-Campos esperados:
+Arquivos principais:
 
-- Nome do cartao.
-- Instituicao.
-- Dia de fechamento.
-- Dia de vencimento.
-- Conta padrao para pagamento.
-- Limite opcional.
-- Status ativo/inativo.
+- `apps/api/src/modules/categories.ts`
+- `apps/web/src/app/categories/CategoriesPage.tsx`
+- `apps/api/src/categories.test.ts`
 
-### Faturas
+### Cartoes e faturas
 
-Agrupa as compras do cartao por mes de vencimento.
+Status: implementado.
 
-Campos esperados:
+Funcoes principais:
 
-- Cartao.
-- Mes de referencia/vencimento.
-- Data de fechamento.
-- Data de vencimento.
-- Status: aberta, fechada, paga.
-- Valor calculado pelas compras vinculadas.
+- Gerenciar cartoes de credito.
+- Criar faturas automaticamente por cartao e mes.
+- Lancar compras diretamente na fatura.
+- Importar CSV de fatura.
+- Gerar parcelas futuras a partir de colunas de parcela.
+- Excluir compras individuais ou selecionadas da fatura.
+- Marcar fatura como paga escolhendo a conta de pagamento.
+- Registrar saida de conta ao pagar fatura sem duplicar as compras.
 
-O pagamento da fatura deve quitar a fatura, mas nao criar nova despesa duplicada.
+Arquivos principais:
 
-### Parcelamentos
-
-Controla compras parceladas.
-
-Uma compra parcelada deve gerar parcelas futuras vinculadas as faturas corretas.
-
-Campos esperados:
-
-- Compra original.
-- Quantidade de parcelas.
-- Numero da parcela.
-- Valor da parcela.
-- Fatura vinculada.
-
-## Modulo Central
-
-### Controle Mensal
-
-Tela principal para acompanhar o orçamento do mês.
-
-Deve agrupar os dados por:
-
-```text
-Mês
-└─ Natureza
-   └─ Comportamento (Fixo/Variável/Extra)
-      └─ Categoria
-         └─ Subcategoria
-```
-
-Indicadores por linha:
-
-- Orcado.
-- Comprometido.
-- Realizado.
-- Disponivel.
-- Percentual usado.
-
-Definicoes:
-
-- Orcado: limite planejado para o mes.
-- Comprometido: valor ja previsto ou reservado, mas ainda nao necessariamente pago.
-- Realizado: valor confirmado/pago.
-- Disponivel: orcado menos o valor consumido ou comprometido, conforme a visualizacao escolhida.
-
-Essa tela deve responder rapidamente:
-
-- Quanto ainda posso gastar este mes?
-- Em qual categoria estou perto de estourar?
-- Quanto do cartao ja esta comprometido para a fatura atual?
-- Quanto ja saiu por Pix, debito, dinheiro ou boleto?
-
-## Modulos De Planejamento
+- `apps/api/src/modules/credit-cards.ts`
+- `apps/web/src/app/cards/BillsPage.tsx`
+- `apps/web/src/app/cards/CreditCardsPage.tsx`
+- `docs/regras-cartao.md`
 
 ### Orcamentos
 
-Define limites mensais.
+Status: implementado dentro do modulo de controle mensal.
 
-Deve permitir orcamento por:
+Funcoes principais:
 
-- Categoria.
-- Meio de pagamento.
-- Tipo de gasto.
-- Mes.
+- Criar e atualizar valores planejados por mes.
+- Planejar por subcategoria, categoria ou meio de pagamento.
+- Copiar orcamentos de um mes para outro.
+- Remover planejamento quando o valor informado e zero.
 
-Pode evoluir para orcamentos recorrentes, usados como base para criar novos meses.
+Arquivos principais:
 
-### Recorrencias
-
-Controla lancamentos repetidos.
-
-Exemplos:
-
-- Salario.
-- Aluguel.
-- Assinaturas.
-- Internet.
-- Energia.
-- Condominio.
-
-Deve gerar lancamentos previstos.
-
-### Investimentos Simples
-
-Controle simples de valores guardados por objetivo, no estilo caixinhas.
-
-O foco nao e fazer acompanhamento sofisticado de mercado, corretora ou cotacao. O foco e saber quanto foi guardado, retirado e quanto rendeu por objetivo.
-
-Exemplos de objetivos:
-
-- Reserva de emergencia.
-- Viagem.
-- Entrada de imovel.
-- Reforma.
-- Impostos.
-
-Campos esperados para cada objetivo:
-
-- Nome.
-- Valor alvo opcional.
-- Conta vinculada opcional.
-- Data alvo opcional.
-- Status ativo/concluido/arquivado.
-
-Movimentacoes esperadas:
-
-- Aporte.
-- Resgate.
-- Rendimento.
-- Ajuste.
-
-Indicadores:
-
-- Total aportado.
-- Total resgatado.
-- Rendimento acumulado.
-- Saldo atual.
-- Progresso contra valor alvo.
-- Evolucao mensal do saldo.
-
-Transferencias entre conta corrente e investimento devem ser registradas como transferencias. A movimentacao do objetivo registra a finalidade do dinheiro dentro do modulo de investimentos.
-
-### Metas
-
-Metas podem ser cobertas inicialmente pelo modulo de investimentos simples.
-
-Se no futuro houver metas que nao sejam dinheiro guardado, o modulo pode ser separado.
-
-## Modulos De Apoio
+- `apps/api/src/modules/budgets.ts`
+- `apps/web/src/app/monthly-control/ControleMensalPage.tsx`
 
 ### Relatorios
 
-Relatorios planejados:
+Status: implementado parcialmente.
 
-- Gastos por categoria.
-- Receitas versus despesas.
-- Fluxo mensal.
-- Evolucao de saldo.
-- Evolucao de investimentos simples.
-- Faturas por periodo.
-- Comparativo entre meses.
+Funcoes atuais:
 
-### Importacao E Exportacao
+- Resumo de faturas de cartao.
+- Evolucao diaria.
+- Resumo anual.
+- Categorias anuais.
+- Participacao por meio de pagamento.
+- Filtros compartilhados por mes, ano, conta, meio e categoria.
 
-Formatos suportados:
+Arquivos principais:
 
-- CSV.
-- OFX.
+- `apps/api/src/modules/reports.ts`
+- `apps/web/src/app/reports/ReportsPage.tsx`
+- `apps/api/src/reports.test.ts`
 
-Nao ha necessidade de importacao/exportacao JSON no escopo atual.
+### Meios de pagamento
 
-CSV deve ser usado para importacao/exportacao simples e portabilidade.
+Status: implementado como seed/lista fixa.
 
-OFX deve ser considerado para importacao de extratos bancarios e cartoes quando o formato estiver disponivel.
+Funcoes principais:
+
+- Expor meios cadastrados por `GET /payment-methods`.
+- Usar meios em lancamentos, orcamentos e relatorios.
+
+Arquivo principal:
+
+- `packages/database/src/seed-data.ts`
+
+## Parcial ou futuro
+
+### Reservas
+
+Status: schema criado, sem API/UI.
+
+Ja existem tabelas:
+
+- `reserve_goals`
+- `reserve_movements`
+
+Falta implementar:
+
+- CRUD de objetivos.
+- Movimentacoes de aporte, resgate, rendimento e ajuste.
+- Tela de reservas.
+- Relatorios de evolucao de reservas.
 
 ### Backups
 
-Responsavel por proteger o banco SQLite local.
+Status: nao implementado.
 
-Funcionalidades esperadas:
+Falta implementar:
 
-- Backup manual.
-- Backup automatico.
-- Restauracao.
-- Retencao dos ultimos backups.
+- Criar backup manual do SQLite.
+- Listar backups.
+- Restaurar backup com confirmacao.
+- Definir retencao e local padrao.
+
+### OFX
+
+Status: nao implementado.
+
+CSV ja existe para importacao/exportacao. OFX permanece como melhoria futura.
 
 ### Configuracoes
 
-Centraliza preferencias e cadastros auxiliares.
+Status: tela placeholder.
 
-Exemplos:
-
-- Moeda.
-- Formato de data.
-- Meios de pagamento.
-- Preferencias de backup.
-- Futuramente senha local ou criptografia.
-
-## MVP Proposto
-
-Primeiro ciclo:
-
-- Contas.
-- Meios de pagamento.
-- Categorias.
-- Lancamentos.
-- Transferencias.
-- Cartoes de credito.
-- Faturas.
-- Parcelamentos.
-- Controle mensal.
-- Investimentos simples.
-- Backup basico.
-
-Segundo ciclo:
-
-- Recorrencias.
-- Orcamentos mais avancados.
-- Relatorios completos.
-- Importacao CSV.
-- Importacao OFX.
-- Polimento de investimentos.
+Preferencias, backup/restauro, leitura OFX, autenticacao local e criptografia ainda nao foram definidos.

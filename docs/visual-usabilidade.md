@@ -17,11 +17,10 @@ Motivos:
 
 ## Bibliotecas Complementares
 
-Opcoes planejadas:
+Bibliotecas em uso:
 
-- TanStack Table para tabelas densas e interativas.
 - Recharts para graficos.
-- Tabler Icons ou Lucide para icones.
+- Tabler Icons para icones.
 
 Essas bibliotecas nao precisam ser a mesma coisa que a lib visual principal, mas devem seguir os mesmos tokens visuais.
 
@@ -52,7 +51,7 @@ Cada relatorio deve responder uma pergunta concreta, por exemplo:
 
 Os graficos devem vir acompanhados de contexto textual curto, indicadores e legendas claras.
 
-## Tipos De Visualizacao Planejados
+## Tipos De Visualizacao Principais
 
 ### Controle Mensal
 
@@ -63,7 +62,7 @@ Deve combinar:
 - Tabela agrupada.
 - Barras de progresso por categoria.
 - Destaques para estouro ou proximidade do limite.
-- Filtros por mes, grupo, meio de pagamento e categoria.
+- Filtros por mes, meio de pagamento e categoria.
 
 Indicadores:
 
@@ -72,19 +71,6 @@ Indicadores:
 - Realizado.
 - Disponivel.
 - Percentual usado.
-
-### Dashboard
-
-Deve mostrar uma leitura rapida do mes.
-
-Blocos esperados:
-
-- Saldo geral.
-- Receitas do mes.
-- Despesas do mes.
-- Reservas/investimentos simples.
-- Proximos vencimentos.
-- Principais categorias do mes.
 
 ### Relatorio De Categorias
 
@@ -113,7 +99,7 @@ Deve mostrar:
 
 ## Compatibilidade Visual
 
-Mesmo quando uma tela usar TanStack Table ou Recharts, ela deve parecer parte do mesmo app.
+Mesmo quando uma tela usar componentes densos, tabelas ou Recharts, ela deve parecer parte do mesmo app.
 
 Para isso, devem ser compartilhados:
 
@@ -145,4 +131,3 @@ Para isso, devem ser compartilhados:
 - Modo claro/escuro.
 - Densidade padrao das tabelas.
 - Estilo de cards e paineis.
-- Biblioteca final de icones: Tabler Icons ou Lucide.

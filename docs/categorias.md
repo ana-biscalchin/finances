@@ -123,4 +123,4 @@ Dinheiro mudando de bolso. Não deixa mais rico nem mais pobre.
 - As tags "Fixo/Variável/Extra" ajudam nos relatórios de despesas para mostrar o que é "Custo de Vida" vs "Estilo de Vida".
 - "Aporte" é registrado como Despesa para sair do fluxo de caixa diário. Em relatórios de "Quanto eu gastei de fato", a categoria "Investimentos" é simplesmente subtraída.
 - "Resgate" é registrado como Receita para entrar no fluxo de caixa disponível do mês.
-- Pagamento da fatura não é uma nova despesa (as despesas já foram lançadas ao longo do mês usando os Cartões). Pagamento é uma Transferência da Conta Corrente para a Conta Cartão.
+- Pagamento da fatura não é compra nova do cartão. As compras já foram registradas na fatura; ao marcar a fatura como paga, o app registra a saída da conta escolhida em `Movimentações Internas > Pagamento de fatura` para refletir o caixa sem duplicar o total da fatura.

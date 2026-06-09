@@ -28,7 +28,7 @@ import {
   IconCopy,
   IconWallet
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney, moneyFromCents } from "@finances/domain";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
@@ -41,12 +41,24 @@ interface TreeNode {
   realized: number;
   committed: number;
   available: number;
+  realizedCash?: number;
+  realizedCredit?: number;
+  committedCash?: number;
+  committedCredit?: number;
   children?: TreeNode[];
 }
 
 interface SummaryData {
   income: { budgeted: number; realized: number; committed: number };
-  expense: { budgeted: number; realized: number; committed: number };
+  expense: {
+    budgeted: number;
+    realized: number;
+    committed: number;
+    realizedCash?: number;
+    realizedCredit?: number;
+    committedCash?: number;
+    committedCredit?: number;
+  };
 }
 
 interface AccountMonthlySummary {
@@ -72,6 +84,10 @@ interface RowData {
   realized: number;
   committed: number;
   available: number;
+  realizedCash?: number;
+  realizedCredit?: number;
+  committedCash?: number;
+  committedCredit?: number;
   level: number;
   parentId: string | null;
   hasChildren: boolean;
@@ -79,11 +95,84 @@ interface RowData {
   paymentMethodId?: string | null;
 }
 
-const today = new Date().toISOString().slice(0, 10);
-const currentMonth = today.slice(0, 7);
+interface CategoryProgressProps {
+  budgeted: number;
+  realized: number;
+  committed: number;
+  realizedCash?: number;
+  realizedCredit?: number;
+  committedCash?: number;
+  committedCredit?: number;
+  nature: "income" | "expense" | "mixed";
+}
 
-export function ControleMensalPage() {
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+function CategoryProgress({
+  budgeted,
+  realized,
+  committed,
+  realizedCash,
+  realizedCredit,
+  committedCash,
+  committedCredit,
+  nature
+}: CategoryProgressProps) {
+  if (budgeted <= 0) return <Text size="xs" c="dimmed">—</Text>;
+
+  const totalUsed = realized + committed;
+  const isIncome = nature === "income";
+
+  const rCash = realizedCash ?? (isIncome ? realized : realized - (realizedCredit ?? 0));
+  const rCredit = realizedCredit ?? 0;
+  const cCash = committedCash ?? (isIncome ? committed : committed - (committedCredit ?? 0));
+  const cCredit = committedCredit ?? 0;
+
+  const pctRealizedCash = (rCash / budgeted) * 100;
+  const pctRealizedCredit = (rCredit / budgeted) * 100;
+  const pctCommittedCash = (cCash / budgeted) * 100;
+  const pctCommittedCredit = (cCredit / budgeted) * 100;
+  const totalPct = (totalUsed / budgeted) * 100;
+
+  const isOver = !isIncome && totalUsed > budgeted;
+
+  return (
+    <Tooltip
+      multiline
+      w={260}
+      withArrow
+      label={
+        <Stack gap={4} p={4}>
+          <Text size="xs" fw={700}>Detalhamento do uso:</Text>
+          <Text size="xs">💵 À Vista Realizado: {formatMoney(moneyFromCents(rCash))} ({Math.round(pctRealizedCash)}%)</Text>
+          <Text size="xs">💳 Cartão Realizado: {formatMoney(moneyFromCents(rCredit))} ({Math.round(pctRealizedCredit)}%)</Text>
+          <Text size="xs">⏳ À Vista Planejado: {formatMoney(moneyFromCents(cCash))} ({Math.round(pctCommittedCash)}%)</Text>
+          <Text size="xs">⏳ Cartão Planejado: {formatMoney(moneyFromCents(cCredit))} ({Math.round(pctCommittedCredit)}%)</Text>
+          <Text size="xs" fw={700} mt={4} style={{ borderTop: "1px solid rgba(255,255,255,0.2)", paddingTop: 4 }}>
+            Total: {formatMoney(moneyFromCents(totalUsed))} ({Math.round(totalPct)}%)
+          </Text>
+        </Stack>
+      }
+    >
+      <Group gap="xs" wrap="nowrap" style={{ flexGrow: 1 }}>
+        <Progress.Root size="md" radius="xl" style={{ flexGrow: 1 }}>
+          <Progress.Section value={pctRealizedCash} color="teal" />
+          <Progress.Section value={pctRealizedCredit} color="grape" />
+          <Progress.Section value={pctCommittedCash} color="teal.2" />
+          <Progress.Section value={pctCommittedCredit} color="grape.2" />
+        </Progress.Root>
+        <Text size="xs" fw={700} c={isOver ? "red" : isIncome ? "teal" : "dimmed"}>
+          {Math.round(totalPct)}%
+        </Text>
+      </Group>
+    </Tooltip>
+  );
+}
+
+interface ControleMensalPageProps {
+  selectedMonth: string;
+  setSelectedMonth: (month: string) => void;
+}
+
+export function ControleMensalPage({ selectedMonth, setSelectedMonth }: ControleMensalPageProps) {
   const [groupBy, setGroupBy] = useState<"category" | "payment-method">("category");
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
   const [accountSummaries, setAccountSummaries] = useState<AccountMonthlySummary[]>([]);
@@ -92,8 +181,8 @@ export function ControleMensalPage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
 
-  async function loadData() {
-    setIsLoading(true);
+  async function loadData(silent = false) {
+    if (!silent) setIsLoading(true);
     setError(null);
     try {
       const res = await fetch(
@@ -107,7 +196,7 @@ export function ControleMensalPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro inesperado.");
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }
 
@@ -209,6 +298,10 @@ export function ControleMensalPage() {
           realized: node.realized,
           committed: node.committed,
           available: node.available,
+          realizedCash: node.realizedCash,
+          realizedCredit: node.realizedCredit,
+          committedCash: node.committedCash,
+          committedCredit: node.committedCredit,
           level,
           parentId,
           hasChildren: !isLeaf,
@@ -231,6 +324,9 @@ export function ControleMensalPage() {
   const totalExpenseRealized = summary?.expense.realized ?? 0;
   const totalExpenseCommitted = summary?.expense.committed ?? 0;
   const totalExpenseUsed = totalExpenseRealized + totalExpenseCommitted;
+
+  const totalExpenseRealizedCash = summary?.expense.realizedCash ?? 0;
+  const totalExpenseRealizedCredit = summary?.expense.realizedCredit ?? 0;
 
   const totalIncomeBudgeted = summary?.income.budgeted ?? 0;
   const totalIncomeRealized = summary?.income.realized ?? 0;
@@ -317,7 +413,7 @@ export function ControleMensalPage() {
       </Paper>
 
       {/* Summary Cards */}
-      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+      <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
         {/* Income Card */}
         <Card withBorder padding="md" radius="md">
           <Stack gap="xs">
@@ -334,7 +430,7 @@ export function ControleMensalPage() {
                 {formatMoney(moneyFromCents(totalIncomeRealized))}
               </Text>
               <Text size="xs" c="dimmed">
-                Orçado: {formatMoney(moneyFromCents(totalIncomeBudgeted))}
+                Planejado: {formatMoney(moneyFromCents(totalIncomeBudgeted))}
               </Text>
             </div>
             <Progress
@@ -362,7 +458,7 @@ export function ControleMensalPage() {
                 {formatMoney(moneyFromCents(totalExpenseUsed))}
               </Text>
               <Text size="xs" c="dimmed">
-                Limite orçado: {formatMoney(moneyFromCents(totalExpenseBudgeted))}
+                Limite planejado: {formatMoney(moneyFromCents(totalExpenseBudgeted))}
               </Text>
             </div>
             <Progress
@@ -371,6 +467,43 @@ export function ControleMensalPage() {
               size="sm"
               radius="xl"
             />
+          </Stack>
+        </Card>
+
+        {/* Credit Independence Card */}
+        <Card withBorder padding="md" radius="md">
+          <Stack gap="xs">
+            <Group justify="space-between">
+              <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                Independência de Crédito
+              </Text>
+              <Badge color="grape" variant="light">
+                Autonomia
+              </Badge>
+            </Group>
+            <div>
+              <Text size="xl" fw={700} c="teal">
+                {totalExpenseRealized > 0
+                  ? `${Math.round((totalExpenseRealizedCash / totalExpenseRealized) * 100)}% à vista`
+                  : "—"}
+              </Text>
+              <Text size="xs" c="dimmed">
+                À vista: {formatMoney(moneyFromCents(totalExpenseRealizedCash))}
+              </Text>
+              <Text size="xs" c="dimmed">
+                No cartão: {formatMoney(moneyFromCents(totalExpenseRealizedCredit))}
+              </Text>
+            </div>
+            <Progress.Root size="sm" radius="xl">
+              <Progress.Section
+                value={totalExpenseRealized > 0 ? (totalExpenseRealizedCash / totalExpenseRealized) * 100 : 0}
+                color="teal"
+              />
+              <Progress.Section
+                value={totalExpenseRealized > 0 ? (totalExpenseRealizedCredit / totalExpenseRealized) * 100 : 0}
+                color="grape"
+              />
+            </Progress.Root>
           </Stack>
         </Card>
 
@@ -577,7 +710,7 @@ export function ControleMensalPage() {
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th style={{ width: "35%" }}>Item</Table.Th>
-                  <Table.Th style={{ textAlign: "right" }}>Orçado (Limite)</Table.Th>
+                  <Table.Th style={{ textAlign: "right" }}>Planejado/Alocado</Table.Th>
                   <Table.Th style={{ textAlign: "right" }}>Realizado</Table.Th>
                   <Table.Th style={{ textAlign: "right" }}>Comprometido</Table.Th>
                   <Table.Th style={{ textAlign: "right" }}>Disponível / Diferença</Table.Th>
@@ -587,15 +720,6 @@ export function ControleMensalPage() {
               <Table.Tbody>
                 {flatRows.map((row) => {
                   const isExpanded = expandedNodes[row.id] !== false;
-                  const totalUsed = row.realized + row.committed;
-                  const pct = row.budgeted > 0 ? (totalUsed / row.budgeted) * 100 : 0;
-                  const isIncome = row.nature === "income";
-                  const isOver = !isIncome && totalUsed > row.budgeted;
-                  const isIncomeBelowTarget = isIncome && row.budgeted > 0 && totalUsed < row.budgeted;
-
-                  let progressColor = isIncome ? "teal" : "teal";
-                  if (isOver || isIncomeBelowTarget) progressColor = "red";
-                  else if (!isIncome && pct > 80) progressColor = "yellow";
 
                   const styleBg =
                     row.level === 0
@@ -650,7 +774,7 @@ export function ControleMensalPage() {
                           subcategoryId={row.subcategoryId}
                           paymentMethodId={row.paymentMethodId}
                           selectedMonth={selectedMonth}
-                          onSave={loadData}
+                          onSave={() => void loadData(true)}
                         />
                       </Table.Td>
 
@@ -686,26 +810,17 @@ export function ControleMensalPage() {
                       </Table.Td>
 
                       {/* Progress Bar */}
-                      <Table.Td>
-                        {row.budgeted > 0 ? (
-                          <Group gap="xs" wrap="nowrap">
-                            <Progress
-                              value={Math.min(pct, 100)}
-                              color={progressColor}
-                              size="sm"
-                              style={{ flexGrow: 1 }}
-                            />
-                            <Text
-                              size="xs"
-                              fw={700}
-                              c={isOver || isIncomeBelowTarget ? "red" : isIncome ? "teal" : "dimmed"}
-                            >
-                              {Math.round(pct)}%
-                            </Text>
-                          </Group>
-                        ) : (
-                          "—"
-                        )}
+                      <Table.Td style={{ width: "20%" }}>
+                        <CategoryProgress
+                          budgeted={row.budgeted}
+                          realized={row.realized}
+                          committed={row.committed}
+                          realizedCash={row.realizedCash}
+                          realizedCredit={row.realizedCredit}
+                          committedCash={row.committedCash}
+                          committedCredit={row.committedCredit}
+                          nature={row.nature}
+                        />
                       </Table.Td>
                     </Table.Tr>
                   );
@@ -733,11 +848,25 @@ function BudgetCell({
   onSave: () => void;
 }) {
   const [opened, setOpened] = useState(false);
-  const [value, setValue] = useState<number>(initialCents / 100);
+  const [value, setValue] = useState<number | string>(initialCents === 0 ? "" : initialCents / 100);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setValue(initialCents / 100);
+    setValue(initialCents === 0 ? "" : initialCents / 100);
   }, [initialCents]);
+
+  useEffect(() => {
+    if (opened) {
+      setValue(initialCents === 0 ? "" : initialCents / 100);
+      const timer = setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.select();
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [opened, initialCents]);
 
   if (!subcategoryId) {
     return (
@@ -749,7 +878,10 @@ function BudgetCell({
 
   const handleSave = async () => {
     try {
-      const amountCents = Math.round(value * 100);
+      const parsedValue = typeof value === "number"
+        ? value
+        : parseFloat(String(value).replace(",", ".")) || 0;
+      const amountCents = Math.round(parsedValue * 100);
       const res = await fetch(`${apiBaseUrl}/budgets`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -792,13 +924,19 @@ function BudgetCell({
           </Text>
           <Group gap="xs" align="flex-end">
             <NumberInput
+              ref={inputRef}
               size="xs"
               value={value}
-              onChange={(val) => setValue(Number(val))}
+              onChange={(val) => setValue(val)}
               decimalScale={2}
               fixedDecimalScale
+              thousandSeparator="."
+              decimalSeparator=","
               prefix="R$ "
               w={120}
+              min={0}
+              step={0.01}
+              onFocus={(e) => e.currentTarget.select()}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void handleSave();
               }}

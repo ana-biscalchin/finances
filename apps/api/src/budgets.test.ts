@@ -217,6 +217,35 @@ describe("budgets and monthly control", () => {
       }
     });
 
+    // Create a credit card
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Nubank Test",
+        closingDay: 5,
+        dueDay: 12,
+        paymentAccountId: accountId
+      }
+    });
+    const creditCardId = cardRes.json().id;
+
+    // Create a credit card transaction (confirmed) - R$ 200,00
+    await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Compra no cartão",
+        amountCents: 20000,
+        eventDate: "2026-06-02",
+        accountId,
+        creditCardId,
+        subcategoryId,
+        status: "confirmed"
+      }
+    });
+
     // 4. Fetch /controle-mensal
     const controlRes = await app.inject({
       method: "GET",
@@ -226,8 +255,12 @@ describe("budgets and monthly control", () => {
 
     const body = controlRes.json();
     expect(body.summary.expense.budgeted).toBe(100000);
-    expect(body.summary.expense.realized).toBe(30000);
+    expect(body.summary.expense.realized).toBe(50000); // 30000 cash + 20000 card
     expect(body.summary.expense.committed).toBe(10000);
+    expect(body.summary.expense.realizedCash).toBe(30000);
+    expect(body.summary.expense.realizedCredit).toBe(20000);
+    expect(body.summary.expense.committedCash).toBe(10000);
+    expect(body.summary.expense.committedCredit).toBe(0);
 
     // Find our subcategory in the tree
     const expenseNode = body.tree.find((n: any) => n.id === "nature-expense");
@@ -242,9 +275,13 @@ describe("budgets and monthly control", () => {
     const subNode = catNode.children.find((c: any) => c.id === `sub-${subcategoryId}`);
     expect(subNode).toBeDefined();
     expect(subNode.budgeted).toBe(100000);
-    expect(subNode.realized).toBe(30000);
+    expect(subNode.realized).toBe(50000);
     expect(subNode.committed).toBe(10000);
-    expect(subNode.available).toBe(60000); // 1000 - 300 - 100 = 600 (60000)
+    expect(subNode.realizedCash).toBe(30000);
+    expect(subNode.realizedCredit).toBe(20000);
+    expect(subNode.committedCash).toBe(10000);
+    expect(subNode.committedCredit).toBe(0);
+    expect(subNode.available).toBe(40000); // 1000 - 500 - 100 = 400 (40000)
   });
 
   it("should reuse the monthly subcategory budget when grouping by payment method", async () => {
@@ -524,5 +561,158 @@ describe("budgets and monthly control", () => {
     expect(incomeFixedNode.budgeted).toBe(300000);
     expect(incomeFixedNode.realized).toBe(350000);
     expect(incomeFixedNode.available).toBe(50000);
+  }, 10000);
+
+  it("should record bill payment account outflow when marking a credit card bill as paid", async () => {
+    const dbConn = createDatabaseConnection(databasePath);
+    const now = new Date().toISOString();
+
+    dbConn.db.insert(categories).values({
+      id: "cat-transferencias",
+      nature: "transfer",
+      name: "Movimentações Internas",
+      sortOrder: 2,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(subcategories).values({
+      id: "cat-transferencias-sub-pagamento-de-fatura",
+      categoryId: "cat-transferencias",
+      name: "Pagamento de fatura",
+      behavior: "fixed",
+      sortOrder: 1,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(accounts).values({
+      id: "acc-default-card",
+      name: "Conta padrão do cartão",
+      type: "checking",
+      sortOrder: 1,
+      isPrimary: false,
+      isActive: true,
+      defaultPaymentMethodId: null,
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(accounts).values({
+      id: "acc-paid-from",
+      name: "Conta usada no pagamento",
+      type: "checking",
+      sortOrder: 2,
+      isPrimary: true,
+      isActive: true,
+      defaultPaymentMethodId: null,
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(creditCards).values({
+      id: "card-pay-test",
+      name: "Nubank",
+      closingDay: 5,
+      dueDay: 12,
+      paymentAccountId: "acc-default-card",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(creditCardBills).values({
+      id: "bill-pay-test",
+      creditCardId: "card-pay-test",
+      billMonth: "2026-06",
+      closingDate: "2026-06-05",
+      dueDate: "2026-07-12",
+      status: "open",
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(transactions).values({
+      id: "tx-card-purchase-pay-test",
+      type: "expense",
+      description: "Compra no cartão",
+      amountCents: 23000,
+      eventDate: "2026-06-08",
+      budgetMonth: "2026-06",
+      creditCardId: "card-pay-test",
+      creditCardBillId: "bill-pay-test",
+      status: "confirmed",
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.sqlite.close();
+
+    const beforePayRes = await app.inject({
+      method: "GET",
+      url: "/controle-mensal?month=2026-07"
+    });
+
+    expect(beforePayRes.statusCode).toBe(200);
+    const beforePayBody = beforePayRes.json();
+    const beforeExpenseNode = beforePayBody.tree.find((n: any) => n.id === "nature-expense");
+    const beforeBehaviorNode = beforeExpenseNode.children.find((c: any) => c.id === "behavior-expense-fixed");
+    const beforeCatNode = beforeBehaviorNode.children.find((c: any) => c.name === "Movimentações Internas");
+    const beforeSubNode = beforeCatNode.children.find(
+      (c: any) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
+    );
+    expect(beforeSubNode.realized).toBe(0);
+    expect(beforeSubNode.committed).toBe(23000);
+
+    const payRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards/card-pay-test/bills/bill-pay-test/pay",
+      payload: { accountId: "acc-paid-from" }
+    });
+
+    expect(payRes.statusCode).toBe(204);
+
+    const billRes = await app.inject({
+      method: "GET",
+      url: "/credit-cards/card-pay-test/bills?month=2026-06"
+    });
+    expect(billRes.statusCode).toBe(200);
+    expect(billRes.json().totalCents).toBe(23000);
+    expect(billRes.json().transactions).toHaveLength(1);
+
+    const afterPayRes = await app.inject({
+      method: "GET",
+      url: "/controle-mensal?month=2026-07"
+    });
+
+    expect(afterPayRes.statusCode).toBe(200);
+    const afterPayBody = afterPayRes.json();
+    const afterExpenseNode = afterPayBody.tree.find((n: any) => n.id === "nature-expense");
+    const afterBehaviorNode = afterExpenseNode.children.find((c: any) => c.id === "behavior-expense-fixed");
+    const afterCatNode = afterBehaviorNode.children.find((c: any) => c.name === "Movimentações Internas");
+    const afterSubNode = afterCatNode.children.find(
+      (c: any) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
+    );
+    expect(afterSubNode.realized).toBe(23000);
+    expect(afterSubNode.committed).toBe(0);
+
+    const paidAccountSummary = afterPayBody.accountSummaries.find((account: any) => account.id === "acc-paid-from");
+    expect(paidAccountSummary.realizedOutflow).toBe(23000);
+
+    const checkConn = createDatabaseConnection(databasePath);
+    const paymentTx = checkConn.db
+      .select()
+      .from(transactions)
+      .all()
+      .find((transaction) => transaction.creditCardBillId === "bill-pay-test" && !transaction.creditCardId);
+    checkConn.sqlite.close();
+
+    expect(paymentTx).toBeDefined();
+    expect(paymentTx?.accountId).toBe("acc-paid-from");
+    expect(paymentTx?.subcategoryId).toBe("cat-transferencias-sub-pagamento-de-fatura");
+    expect(paymentTx?.budgetMonth).toBe("2026-07");
+    expect(paymentTx?.eventDate).toBe("2026-07-12");
   }, 10000);
 });

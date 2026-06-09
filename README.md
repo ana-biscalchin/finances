@@ -1,50 +1,50 @@
 # Financas Pessoais
 
-App local para gerenciamento de financas pessoais, com foco em controle mensal, cartao de credito por fatura, categorias gerenciaveis, reservas simples e relatorios explicativos.
+App local para gerenciamento de financas pessoais, com foco em controle mensal, faturas de cartao, categorias gerenciaveis, importacao CSV e relatorios explicativos.
 
-## Objetivo
+## Estado atual
 
-Criar um app local, inicialmente como web app em `localhost`, com banco SQLite e possibilidade futura de empacotamento como aplicativo desktop com Electron.
+O projeto ja possui:
 
-## Stack Planejada
+- web app em React, TypeScript, Vite e Mantine;
+- API local em Node.js e Fastify;
+- banco SQLite local via Drizzle;
+- CRUD de contas, categorias, lancamentos e cartoes;
+- controle mensal com planejado, comprometido, realizado e disponivel;
+- faturas de cartao com importacao CSV, parcelamentos e pagamento por conta;
+- importacao/exportacao CSV de lancamentos;
+- relatorios iniciais com Recharts.
 
-- Frontend: React, TypeScript e Vite.
-- UI: Mantine.
-- Backend/API local: Node.js e Fastify.
-- Banco de dados: SQLite.
-- ORM/migrations: Drizzle.
-- Tabelas densas: TanStack Table.
-- Graficos: Recharts.
-- Empacotamento futuro: Electron.
+Ainda nao estao implementados:
 
-## Principios Do Produto
+- backups;
+- importacao OFX;
+- API/UI de reservas, apesar do schema existir;
+- configuracoes finais e empacotamento Electron.
 
-- Banco local no inicio, com backups simples.
-- Controle mensal como tela central do app.
-- Despesas de cartao impactam o mes de vencimento da fatura.
-- Pagamento de fatura nao duplica despesa.
-- Transferencias entre contas nao entram como gasto.
-- Categorias, macros e micros devem ser gerenciaveis e renomeaveis.
-- Relatorios devem ser bonitos, claros e explicativos.
+## Principios do produto
+
+- O app roda localmente em `localhost`.
+- O banco principal fica em SQLite local.
+- O controle mensal e a tela central.
+- Compras no cartao impactam o mes da fatura.
+- Pagamento de fatura movimenta a conta escolhida, mas nao duplica as compras.
+- Transferencias entre contas nao representam gasto novo.
+- Categorias e subcategorias preservam historico por ID.
+- Valores monetarios sao tratados em centavos inteiros.
 
 ## Documentacao
 
 - [Memoria do projeto para agentes](AGENTS.md)
-- [TODO inicial](TODO.md)
-- [Decisoes tecnicas](docs/decisoes-tecnicas.md)
+- [Regras de negocio](docs/regras-negocio.md)
+- [Regras de cartao de credito](docs/regras-cartao.md)
 - [Modulos do projeto](docs/modulos.md)
 - [Categorias financeiras](docs/categorias.md)
+- [Orientacao de importacao CSV](docs/orientacao-importacao-csv.md)
+- [Decisoes tecnicas](docs/decisoes-tecnicas.md)
 - [Visual e usabilidade](docs/visual-usabilidade.md)
-- [Plano de implementacao](docs/plano-implementacao.md)
 - [Criterios de qualidade](docs/criterios-qualidade.md)
-
-## Status
-
-Projeto em desenvolvimento.
-
-O scaffold inicial, workspace (`pnpm`), frontend (Vite+React+Mantine) e API local (Fastify) estão criados.
-O banco e domínio estão configurados com SQLite, Drizzle, migrations e seeds.
-Os módulos iniciais (contas, categorias, transações) já estão implementados e testados unitariamente.
+- [TODO](TODO.md)
 
 ## Desenvolvimento
 
@@ -53,19 +53,23 @@ Requisitos:
 - Node.js `>=24.16.0`
 - pnpm `>=11.5.2`
 
-Comandos:
+Instalacao e desenvolvimento:
 
 ```bash
 pnpm install
 pnpm dev
-pnpm check
 ```
 
-Comandos especificos:
+URLs locais:
+
+```text
+Web: http://localhost:5173
+API: http://localhost:3000
+```
+
+Comandos de verificacao:
 
 ```bash
-pnpm dev:web
-pnpm dev:api
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -81,10 +85,10 @@ pnpm db:seed
 pnpm db:setup
 ```
 
-O banco local fica em:
+Arquivo local do banco:
 
 ```text
 data/financas.sqlite
 ```
 
-Esse arquivo nao deve ser versionado.
+Esse arquivo, backups, `.env` e artefatos de build nao devem ser versionados.

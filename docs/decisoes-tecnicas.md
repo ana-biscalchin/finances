@@ -91,11 +91,10 @@ Motivos:
 - Componentes prontos para formularios, filtros, modais, dashboards e telas densas.
 - Visual moderno e pragmatico para um app pessoal de financas.
 
-Bibliotecas complementares planejadas:
+Bibliotecas complementares em uso:
 
-- TanStack Table para tabelas densas.
 - Recharts para graficos.
-- Tabler Icons ou Lucide para icones.
+- Tabler Icons para icones.
 
 ### Estrutura e Gerenciamento
 
@@ -104,9 +103,9 @@ Decisoes sobre o workspace:
 - Gerenciador de pacotes: `pnpm` com workspaces.
 - Estrutura de pastas: monorepo com `apps/` (web, api) e `packages/` (database, domain, shared).
 
-### Modelo Inicial de Entidades
+### Modelo Atual de Entidades
 
-O modelo inicial de entidades financeiras foi definido em SQLite usando Drizzle, com entidades para contas, meios de pagamento, categorias (grupos, macros, micros), transacoes, transferencias, cartoes, faturas, parcelas e reservas.
+O modelo de entidades financeiras foi definido em SQLite usando Drizzle, com entidades para contas, meios de pagamento, categorias, subcategorias, transacoes, transferencias, cartoes, faturas, parcelas, orcamentos e reservas.
 
 ## Arquitetura Alvo Inicial
 
@@ -165,9 +164,8 @@ Observacao: servicos gratuitos podem ter limites, pausas, ausencia de backups au
 - Categorias.
 - Lancamentos: receitas, despesas e transferencias.
 - Cartoes, faturas e controle mensal.
-- Controle simples de investimentos por objetivos.
-- Parcelas e recorrencias.
-- Dashboard simples: saldo, fluxo mensal e gastos por categoria.
+- Parcelas.
+- Relatorios: faturas, fluxo mensal, categorias e meios de pagamento.
 
 ### Fase 3: Seguranca E Dados
 
@@ -194,5 +192,5 @@ Observacao: servicos gratuitos podem ter limites, pausas, ausencia de backups au
 
 - Estrategia exata de backups.
 - Padrao de autenticacao local, caso exista.
-- Layouts de CSV suportados.
 - Estrategia de leitura OFX.
+- Implementacao de reservas/caixinhas sobre as tabelas existentes.

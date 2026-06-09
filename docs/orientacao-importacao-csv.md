@@ -137,3 +137,88 @@ Data;Lançamento;Valor;Tipo;Forma de Pagamento
 ```
 
 Para arquivos nesse formato, se as datas estiverem no padrão americano, selecione **MM/DD/AAAA** no campo **Formato da Data** durante o mapeamento.
+
+---
+
+## 8. Importação de Fatura de Cartão
+
+A importação feita pela tela **Faturas > Importar fatura** é diferente da importação geral de lançamentos:
+
+- Todas as linhas entram como **despesa de cartão de crédito**.
+- O cartão é o cartão da fatura aberta na tela.
+- O mês da fatura atual é usado para filtrar as compras iniciais do arquivo.
+- Se houver parcelamento, o importador pode criar parcelas futuras automaticamente.
+- Duplicatas são desmarcadas na prévia e também são ignoradas na confirmação para evitar lançamento repetido.
+
+### CSV recomendado para fatura
+
+Use este formato quando construir a planilha manualmente:
+
+```csv
+Data;Descricao;Valor;Categoria;Parcela;TotalParcelas
+10/06/2026;Compra Parcelada;100,00;Roupas e calçados;2;3
+12/06/2026;Supermercado;230,45;Supermercado;;
+14/06/2026;Farmácia;58,90;Farmácia;;
+```
+
+Na tela de mapeamento, selecione:
+
+| Campo no app | Coluna do CSV |
+| :--- | :--- |
+| Coluna de data | `Data` |
+| Coluna de descrição | `Descricao` |
+| Coluna de valor | `Valor` |
+| Coluna de categoria | `Categoria` |
+| Parcela atual | `Parcela` |
+| Total de parcelas | `TotalParcelas` |
+
+### Como o parcelamento é tratado
+
+Se uma linha vier com `Parcela = 2` e `TotalParcelas = 3`, o importador entende que a parcela `1/3` já ficou em uma fatura anterior. Ao importar a fatura atual, ele cria:
+
+```text
+Compra Parcelada (2/3) -> fatura atual
+Compra Parcelada (3/3) -> próxima fatura
+```
+
+Ele **não cria** a `1/3`, porque ela já deveria ter aparecido na fatura anterior.
+
+Se uma linha vier com `Parcela = 1` e `TotalParcelas = 3`, ele cria:
+
+```text
+Compra Parcelada (1/3) -> fatura atual
+Compra Parcelada (2/3) -> próxima fatura
+Compra Parcelada (3/3) -> fatura seguinte
+```
+
+Para compras à vista, deixe `Parcela` e `TotalParcelas` vazios.
+
+### Coluna combinada de parcela
+
+Também é aceito usar uma única coluna com `2/3` ou `2 de 3`:
+
+```csv
+Data;Descricao;Valor;Categoria;Parcela
+10/06/2026;Compra Parcelada;100,00;Roupas e calçados;2/3
+12/06/2026;Supermercado;230,45;Supermercado;
+```
+
+Nesse caso, na tela de mapeamento selecione:
+
+| Campo no app | Coluna do CSV |
+| :--- | :--- |
+| Coluna de parcela (2/3) | `Parcela` |
+| Parcela atual | deixar vazio |
+| Total de parcelas | deixar vazio |
+
+### Duplicidades em fatura
+
+Na importação de fatura, o sistema considera duplicata quando já existe um lançamento com:
+
+- mesmo cartão;
+- mesma descrição;
+- mesmo valor;
+- mesma data;
+- mesmo mês de fatura.
+
+Isso protege principalmente o caso de reimportar a mesma fatura ou importar novamente parcelas futuras que já foram criadas antes.

@@ -9,6 +9,8 @@ import { registerCreditCardRoutes } from "./modules/credit-cards.js";
 import { registerPaymentMethodRoutes } from "./modules/payment-methods.js";
 import { registerTransactionRoutes } from "./modules/transactions.js";
 import { registerBudgetRoutes } from "./modules/budgets.js";
+import { registerReportRoutes } from "./modules/reports.js";
+
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -51,6 +53,8 @@ export function buildServer(options: BuildServerOptions = {}) {
   registerTransactionRoutes(app, connection);
   registerCreditCardRoutes(app, connection);
   registerBudgetRoutes(app, connection);
+  registerReportRoutes(app, connection);
+
 
   return app;
 }

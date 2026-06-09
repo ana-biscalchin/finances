@@ -22,6 +22,9 @@ type ImportPreviewItem = {
   amountCents: number;
   type: "income" | "expense";
   creditCardId: string | null;
+  budgetMonth?: string | null;
+  installmentNumber?: number | null;
+  installmentCount?: number | null;
 };
 
 describe("transactions & account balances business rules", () => {
@@ -520,6 +523,169 @@ describe("transactions & account balances business rules", () => {
       ])
     );
     expect(imported.every((t) => t.creditCardBillId)).toBe(true);
+    conn.sqlite.close();
+  });
+
+  it("should expand remaining credit card bill installments from CSV columns and avoid duplicates on confirm", async () => {
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Parcelas",
+        institution: "Banco Cartão",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+
+    expect(cardRes.statusCode).toBe(201);
+    const cardId = cardRes.json().id as string;
+
+    const csvContent = [
+      "Data;Descrição;Valor;Parcela;TotalParcelas",
+      "10/06/2026;Compra Parcelada;100,00;2;3"
+    ].join("\n");
+
+    const previewRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-preview",
+      payload: {
+        csvContent,
+        mappings: {
+          eventDate: "Data",
+          description: "Descrição",
+          amount: "Valor",
+          installmentNumber: "Parcela",
+          installmentCount: "TotalParcelas"
+        },
+        dateFormat: "DMY",
+        defaultCreditCardId: cardId,
+        importMode: "credit_card_bill",
+        billMonth: "2026-06"
+      }
+    });
+
+    expect(previewRes.statusCode).toBe(200);
+    const preview = previewRes.json<ImportPreviewItem[]>();
+    expect(preview).toEqual([
+      expect.objectContaining({
+        description: "Compra Parcelada (2/3)",
+        budgetMonth: "2026-06",
+        installmentNumber: 2,
+        installmentCount: 3
+      }),
+      expect.objectContaining({
+        description: "Compra Parcelada (3/3)",
+        budgetMonth: "2026-07",
+        installmentNumber: 3,
+        installmentCount: 3
+      })
+    ]);
+
+    const payload = {
+      transactions: preview.map((item) => ({
+        eventDate: item.eventDate,
+        description: item.description,
+        amountCents: item.amountCents,
+        type: item.type,
+        creditCardId: item.creditCardId,
+        budgetMonth: item.budgetMonth,
+        installmentNumber: item.installmentNumber,
+        installmentCount: item.installmentCount,
+        status: "confirmed"
+      })),
+      preventDuplicates: true
+    };
+
+    const confirmRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-confirm",
+      payload
+    });
+
+    expect(confirmRes.statusCode).toBe(201);
+    expect(confirmRes.json()).toHaveLength(2);
+
+    const duplicateConfirmRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-confirm",
+      payload
+    });
+
+    expect(duplicateConfirmRes.statusCode).toBe(201);
+    expect(duplicateConfirmRes.json()).toHaveLength(0);
+
+    const conn = createDatabaseConnection(databasePath);
+    const imported = conn.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.creditCardId, cardId))
+      .all();
+
+    expect(imported).toHaveLength(2);
+    expect(imported).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ description: "Compra Parcelada (2/3)", budgetMonth: "2026-06" }),
+        expect.objectContaining({ description: "Compra Parcelada (3/3)", budgetMonth: "2026-07" })
+      ])
+    );
+    conn.sqlite.close();
+  });
+
+  it("should delete card transactions shown in a bill even when they were not directly linked to the bill", async () => {
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão sem vínculo direto",
+        institution: "Banco Cartão",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+
+    expect(cardRes.statusCode).toBe(201);
+    const cardId = cardRes.json().id as string;
+
+    const transactionRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Compra lançada pela tela geral",
+        amountCents: 8990,
+        eventDate: "2026-06-12",
+        budgetMonth: "2026-06",
+        creditCardId: cardId,
+        status: "confirmed"
+      }
+    });
+
+    expect(transactionRes.statusCode).toBe(201);
+    const transactionId = transactionRes.json().id as string;
+
+    const billRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills?month=2026-06`
+    });
+
+    expect(billRes.statusCode).toBe(200);
+    const bill = billRes.json().bill;
+
+    const deleteRes = await app.inject({
+      method: "DELETE",
+      url: `/credit-cards/${cardId}/bills/${bill.id}/transactions/${transactionId}`
+    });
+
+    expect(deleteRes.statusCode).toBe(204);
+
+    const conn = createDatabaseConnection(databasePath);
+    const deleted = conn.db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
+    expect(deleted).toBeUndefined();
     conn.sqlite.close();
   });
 });

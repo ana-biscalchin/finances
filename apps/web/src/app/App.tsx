@@ -27,6 +27,8 @@ import { BillsPage } from "./cards/BillsPage";
 import { CategoriesPage } from "./categories/CategoriesPage";
 import { TransactionsPage } from "./transactions/TransactionsPage";
 import { ControleMensalPage } from "./monthly-control/ControleMensalPage";
+import { ReportsPage } from "./reports/ReportsPage";
+
 
 type PageKey =
   | "monthly-control"
@@ -103,6 +105,18 @@ export function App() {
   const isCategoriesPage = activePage === "categories";
   const isTransactionsPage = activePage === "transactions";
   const isMonthlyControlPage = activePage === "monthly-control";
+  const isReportsPage = activePage === "reports";
+
+  const today = new Date().toISOString().slice(0, 10);
+  const currentMonth = today.slice(0, 7);
+  const currentYear = today.slice(0, 4);
+
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [filterAccountId, setFilterAccountId] = useState<string>("");
+  const [filterPaymentMethodId, setFilterPaymentMethodId] = useState<string>("");
+  const [filterCategoryId, setFilterCategoryId] = useState<string>("");
+
 
   return (
     <AppShell header={{ height: 64 }} navbar={{ width: 280, breakpoint: "sm" }} padding="lg">
@@ -115,7 +129,7 @@ export function App() {
             </Text>
           </Box>
           <Badge variant="light" color="teal">
-            MVP planning
+            Local MVP
           </Badge>
         </Group>
       </AppShell.Header>
@@ -148,7 +162,20 @@ export function App() {
         ) : isTransactionsPage ? (
           <TransactionsPage />
         ) : isMonthlyControlPage ? (
-          <ControleMensalPage />
+          <ControleMensalPage selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />
+        ) : isReportsPage ? (
+          <ReportsPage
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
+            selectedYear={selectedYear}
+            setSelectedYear={setSelectedYear}
+            filterAccountId={filterAccountId}
+            setFilterAccountId={setFilterAccountId}
+            filterPaymentMethodId={filterPaymentMethodId}
+            setFilterPaymentMethodId={setFilterPaymentMethodId}
+            filterCategoryId={filterCategoryId}
+            setFilterCategoryId={setFilterCategoryId}
+          />
         ) : (
           <Paper withBorder p="xl" radius="md">
             <Group align="flex-start" gap="md">
@@ -165,6 +192,7 @@ export function App() {
           </Paper>
         )}
       </AppShell.Main>
+
     </AppShell>
   );
 }

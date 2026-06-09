@@ -370,10 +370,15 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         type?: string;
         subcategoryId?: string;
         accountId?: string;
+        installment?: string;
+        installmentNumber?: string;
+        installmentCount?: string;
       };
       defaultAccountId?: string;
       defaultCreditCardId?: string;
       dateFormat?: "DMY" | "MDY" | "YMD";
+      importMode?: "transactions" | "credit_card_bill";
+      billMonth?: string;
     };
 
     if (!body || typeof body.csvContent !== "string" || !body.mappings) {
@@ -382,6 +387,9 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
     const { csvContent, mappings, defaultAccountId, defaultCreditCardId } = body;
     const dateFormat = body.dateFormat ?? "DMY";
+    const isCreditCardBillImport = body.importMode === "credit_card_bill";
+    const targetBillMonth =
+      isCreditCardBillImport && typeof body.billMonth === "string" ? assertYearMonth(body.billMonth) : null;
     const { rows: csvRows } = parseCsvContent(csvContent);
 
     if (csvRows.length === 0) {
@@ -408,21 +416,33 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       .all();
 
     const parsedItems = csvRows
-      .map((row, idx) => {
+      .flatMap((row, idx) => {
         const rawDate = mappings.eventDate ? row[mappings.eventDate] : "";
         const rawDesc = mappings.description ? row[mappings.description] : "";
         const rawAmount = mappings.amount ? row[mappings.amount] : "";
         const rawType = mappings.type ? row[mappings.type] : "";
         const rawSubcategory = mappings.subcategoryId ? row[mappings.subcategoryId] : "";
         const rawAccount = mappings.accountId ? row[mappings.accountId] : "";
+        const rawInstallment = mappings.installment ? row[mappings.installment] : "";
+        const rawInstallmentNumber = mappings.installmentNumber ? row[mappings.installmentNumber] : "";
+        const rawInstallmentCount = mappings.installmentCount ? row[mappings.installmentCount] : "";
 
         const eventDate = parseDateString(rawDate, dateFormat);
-        if (!eventDate) return null;
+        if (!eventDate) return [];
 
         const amountResult = parseAmountToCents(rawAmount);
-        if (!amountResult) return null;
+        if (!amountResult) return [];
 
         const description = rawDesc || "Transação Importada";
+        const installmentInfo = card
+          ? parseImportedInstallmentInfo({
+              description,
+              installment: rawInstallment,
+              installmentNumber: rawInstallmentNumber,
+              installmentCount: rawInstallmentCount
+            })
+          : null;
+        const baseDescription = installmentInfo?.baseDescription ?? description;
 
         const type: "income" | "expense" = card
           ? "expense"
@@ -438,24 +458,46 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
           creditCardId = card.id;
           accountId = null;
           calculatedBudgetMonth = getCreditCardBillMonth(eventDate, card.closingDay);
+          if (targetBillMonth && calculatedBudgetMonth !== targetBillMonth) {
+            return [];
+          }
         } else {
           accountId = rawAccount || defaultAccountId || null;
           paymentMethodId = null;
           creditCardId = null;
         }
 
-        return {
-          tempId: `temp-${idx}-${Date.now()}`,
+        const installmentNumber = installmentInfo?.installmentNumber ?? 1;
+        const installmentCount = installmentInfo?.installmentCount ?? 1;
+        const installmentRange =
+          isCreditCardBillImport && card && installmentCount > 1
+            ? Array.from(
+                { length: installmentCount - installmentNumber + 1 },
+                (_, offset) => installmentNumber + offset
+              )
+            : [installmentNumber];
+
+        return installmentRange.map((currentInstallment) => ({
+          tempId: `temp-${idx}-${currentInstallment}-${Date.now()}`,
           eventDate,
-          description,
+          description:
+            installmentCount > 1
+              ? formatImportedInstallmentDescription(baseDescription, currentInstallment, installmentCount)
+              : description,
           amountCents: amountResult.amountCents,
           type,
           accountId,
           paymentMethodId,
           creditCardId,
-          budgetMonth: calculatedBudgetMonth,
-          subcategoryId
-        };
+          budgetMonth:
+            calculatedBudgetMonth && card && installmentCount > 1
+              ? advanceMonth(calculatedBudgetMonth, currentInstallment - installmentNumber)
+              : calculatedBudgetMonth,
+          subcategoryId,
+          installmentNumber: installmentCount > 1 ? currentInstallment : null,
+          installmentCount: installmentCount > 1 ? installmentCount : null,
+          isGeneratedFutureInstallment: currentInstallment > installmentNumber
+        }));
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
 
@@ -479,6 +521,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         amountCents: transactions.amountCents,
         accountId: transactions.accountId,
         creditCardId: transactions.creditCardId,
+        budgetMonth: transactions.budgetMonth,
         accountName: accounts.name
       })
       .from(transactions)
@@ -494,9 +537,12 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         const sameAccount = item.creditCardId
           ? tx.creditCardId === item.creditCardId
           : (!tx.accountId || !item.accountId || tx.accountId === item.accountId);
+        const sameBillMonth = item.creditCardId ? tx.budgetMonth === item.budgetMonth : true;
         const daysDiff = dateDiffInDays(tx.eventDate, item.eventDate);
         const nearDate = daysDiff <= 3;
-        return sameAmount && sameAccount && nearDate;
+        const sameImportedDescription =
+          normalizeImportedText(tx.description) === normalizeImportedText(item.description);
+        return sameAmount && sameAccount && sameBillMonth && nearDate && (item.creditCardId ? sameImportedDescription : true);
       });
 
       return {
@@ -527,10 +573,14 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         accountId?: string | null;
         paymentMethodId?: string | null;
         creditCardId?: string | null;
+        budgetMonth?: string | null;
         subcategoryId?: string | null;
         status?: string | null;
         notes?: string | null;
+        installmentNumber?: number | null;
+        installmentCount?: number | null;
       }>;
+      preventDuplicates?: boolean;
     };
 
     if (!body || !Array.isArray(body.transactions)) {
@@ -543,7 +593,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       for (const t of body.transactions!) {
         const id = crypto.randomUUID();
         const eventDate = assertBusinessDate(t.eventDate);
-        let budgetMonth = yearMonthFromDate(eventDate);
+        let budgetMonth = t.budgetMonth ? assertYearMonth(t.budgetMonth) : yearMonthFromDate(eventDate);
         let creditCardBillId: string | null = null;
 
         if (t.creditCardId) {
@@ -552,7 +602,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
             throw new ValidationError("Cartão de crédito não encontrado.");
           }
 
-          budgetMonth = getCreditCardBillMonth(eventDate, card.closingDay);
+          budgetMonth = t.budgetMonth ? assertYearMonth(t.budgetMonth) : getCreditCardBillMonth(eventDate, card.closingDay);
 
           const bill = tx
             .select()
@@ -609,6 +659,10 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
+
+        if (body.preventDuplicates && isDuplicateImportedTransaction(tx, newTx)) {
+          continue;
+        }
 
         tx.insert(transactions).values(newTx).run();
         created.push(newTx);
@@ -1000,6 +1054,88 @@ function parseImportedTransactionType(
   }
 
   return fallback;
+}
+
+function parseImportedInstallmentInfo({
+  description,
+  installment,
+  installmentNumber,
+  installmentCount
+}: {
+  description: string;
+  installment: string;
+  installmentNumber: string;
+  installmentCount: string;
+}): { installmentNumber: number; installmentCount: number; baseDescription: string } | null {
+  const combined =
+    parseInstallmentPair(installment) ??
+    parseInstallmentPair(description) ??
+    parseInstallmentPair(`${installmentNumber}/${installmentCount}`);
+
+  if (!combined) {
+    return null;
+  }
+
+  const [current, total] = combined;
+  if (current < 1 || total < 2 || current > total || total > 48) {
+    return null;
+  }
+
+  return {
+    installmentNumber: current,
+    installmentCount: total,
+    baseDescription: stripInstallmentMarker(description)
+  };
+}
+
+function parseInstallmentPair(value: string): [number, number] | null {
+  const match = value.match(/(?:^|\D)(\d{1,2})\s*(?:\/|de)\s*(\d{1,2})(?:\D|$)/i);
+  if (!match) {
+    return null;
+  }
+
+  return [Number(match[1]), Number(match[2])];
+}
+
+function stripInstallmentMarker(description: string): string {
+  return description
+    .replace(/\s*(?:\[|\()?\s*\d{1,2}\s*(?:\/|de)\s*\d{1,2}\s*(?:\]|\))?\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatImportedInstallmentDescription(
+  baseDescription: string,
+  installmentNumber: number,
+  installmentCount: number
+) {
+  return `${baseDescription} (${installmentNumber}/${installmentCount})`;
+}
+
+function isDuplicateImportedTransaction(
+  db: Pick<DatabaseConnection["db"], "select">,
+  candidate: typeof transactions.$inferInsert
+) {
+  const existing = db
+    .select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.amountCents, candidate.amountCents),
+        eq(transactions.eventDate, candidate.eventDate),
+        eq(transactions.description, candidate.description),
+        eq(transactions.budgetMonth, candidate.budgetMonth)
+      )
+    )
+    .all();
+
+  return existing.some((transaction) => {
+    if (candidate.creditCardId) {
+      return transaction.creditCardId === candidate.creditCardId;
+    }
+
+    return transaction.accountId === candidate.accountId;
+  });
 }
 
 type ImportedCategoryLookupItem = {
