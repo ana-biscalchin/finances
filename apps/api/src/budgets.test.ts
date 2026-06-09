@@ -715,4 +715,143 @@ describe("budgets and monthly control", () => {
     expect(paymentTx?.budgetMonth).toBe("2026-07");
     expect(paymentTx?.eventDate).toBe("2026-07-12");
   }, 10000);
+
+  it("should revert a credit card bill payment and update monthly control", async () => {
+    const dbConn = createDatabaseConnection(databasePath);
+    const now = new Date().toISOString();
+
+    dbConn.db.insert(categories).values({
+      id: "cat-transferencias",
+      nature: "transfer",
+      name: "Movimentações Internas",
+      sortOrder: 2,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(subcategories).values({
+      id: "cat-transferencias-sub-pagamento-de-fatura",
+      categoryId: "cat-transferencias",
+      name: "Pagamento de fatura",
+      behavior: "fixed",
+      sortOrder: 1,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(accounts).values({
+      id: "acc-revert-test",
+      name: "Conta teste reversão",
+      type: "checking",
+      sortOrder: 1,
+      isPrimary: true,
+      isActive: true,
+      defaultPaymentMethodId: null,
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(creditCards).values({
+      id: "card-revert-test",
+      name: "Nubank",
+      closingDay: 5,
+      dueDay: 12,
+      paymentAccountId: "acc-revert-test",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(creditCardBills).values({
+      id: "bill-revert-test",
+      creditCardId: "card-revert-test",
+      billMonth: "2026-06",
+      closingDate: "2026-06-05",
+      dueDate: "2026-07-12",
+      status: "open",
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.db.insert(transactions).values({
+      id: "tx-purchase-revert-test",
+      type: "expense",
+      description: "Compra revert",
+      amountCents: 15000,
+      eventDate: "2026-06-02",
+      budgetMonth: "2026-06",
+      creditCardId: "card-revert-test",
+      creditCardBillId: "bill-revert-test",
+      status: "confirmed",
+      createdAt: now,
+      updatedAt: now
+    }).run();
+
+    dbConn.sqlite.close();
+
+    // 1. Pay the bill
+    const payRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards/card-revert-test/bills/bill-revert-test/pay",
+      payload: { accountId: "acc-revert-test" }
+    });
+    expect(payRes.statusCode).toBe(204);
+
+    // Verify control shows paid (realized)
+    const afterPayRes = await app.inject({
+      method: "GET",
+      url: "/controle-mensal?month=2026-07"
+    });
+    const afterPayBody = afterPayRes.json();
+    const afterExpenseNode = afterPayBody.tree.find((n: any) => n.id === "nature-expense");
+    const afterBehaviorNode = afterExpenseNode.children.find((c: any) => c.id === "behavior-expense-fixed");
+    const afterCatNode = afterBehaviorNode.children.find((c: any) => c.name === "Movimentações Internas");
+    const afterSubNode = afterCatNode.children.find(
+      (c: any) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
+    );
+    expect(afterSubNode.realized).toBe(15000);
+    expect(afterSubNode.committed).toBe(0);
+
+    // Verify outflow is present in account summary
+    const paidAccountSummary = afterPayBody.accountSummaries.find((account: any) => account.id === "acc-revert-test");
+    expect(paidAccountSummary.realizedOutflow).toBe(15000);
+
+    // 2. Revert the payment
+    const revertRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards/card-revert-test/bills/bill-revert-test/revert"
+    });
+    expect(revertRes.statusCode).toBe(204);
+
+    // Verify control shows open (committed) again
+    const afterRevertRes = await app.inject({
+      method: "GET",
+      url: "/controle-mensal?month=2026-07"
+    });
+    const afterRevertBody = afterRevertRes.json();
+    const afterRevertExpenseNode = afterRevertBody.tree.find((n: any) => n.id === "nature-expense");
+    const afterRevertBehaviorNode = afterRevertExpenseNode.children.find((c: any) => c.id === "behavior-expense-fixed");
+    const afterRevertCatNode = afterRevertBehaviorNode.children.find((c: any) => c.name === "Movimentações Internas");
+    const afterRevertSubNode = afterRevertCatNode.children.find(
+      (c: any) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
+    );
+    expect(afterRevertSubNode.realized).toBe(0);
+    expect(afterRevertSubNode.committed).toBe(15000);
+
+    // Verify outflow is removed from account summary
+    const revertedAccountSummary = afterRevertBody.accountSummaries.find((account: any) => account.id === "acc-revert-test");
+    expect(revertedAccountSummary.realizedOutflow).toBe(0);
+
+    // Verify transaction was deleted
+    const checkConn = createDatabaseConnection(databasePath);
+    const paymentTx = checkConn.db
+      .select()
+      .from(transactions)
+      .all()
+      .find((transaction) => transaction.creditCardBillId === "bill-revert-test" && !transaction.creditCardId);
+    checkConn.sqlite.close();
+    expect(paymentTx).toBeUndefined();
+  }, 10000);
 });

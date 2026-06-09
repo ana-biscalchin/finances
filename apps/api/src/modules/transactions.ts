@@ -9,10 +9,13 @@ import {
   type createDatabaseConnection
 } from "@finances/database";
 import {
+  advanceMonth,
   assertBusinessDate,
   assertTransactionStatus,
   assertTransactionType,
   assertYearMonth,
+  getCreditCardBillDates,
+  getCreditCardBillMonth,
   yearMonthFromDate
 } from "@finances/domain";
 import { and, asc, desc, eq } from "drizzle-orm";
@@ -29,6 +32,8 @@ import {
 } from "../http.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
+type ParsedTransactionPayload = ReturnType<typeof parseTransactionPayload>;
+type TransactionData = Omit<ParsedTransactionPayload, "destinationAccountId" | "installmentCount">;
 
 type TransactionPayload = {
   type?: unknown;
@@ -114,22 +119,16 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply;
     }
 
-    const { destinationAccountId, installmentCount, ...transactionData } = payload;
+    const { destinationAccountId, installmentCount, ...rawTransactionData } = payload;
     const transactionId = crypto.randomUUID();
 
     // ── Installments (card purchases split into N months) ──────────────
-    if (installmentCount > 1 && transactionData.creditCardId) {
-      const base = Math.floor(transactionData.amountCents / installmentCount);
-      const created = Array.from({ length: installmentCount }, (_, i) => ({
-        id: crypto.randomUUID(),
-        ...transactionData,
-        description: `${transactionData.description} (${i + 1}/${installmentCount})`,
-        amountCents: i === installmentCount - 1
-          ? transactionData.amountCents - base * (installmentCount - 1)
-          : base,
-        budgetMonth: advanceMonth(transactionData.budgetMonth, i),
-        linkedTransactionId: null
-      }));
+    if (installmentCount > 1 && rawTransactionData.creditCardId) {
+      const created = buildCreditCardInstallmentTransactions(
+        connection,
+        rawTransactionData,
+        installmentCount
+      );
 
       for (const t of created) {
         db.insert(transactions).values(t).run();
@@ -144,14 +143,14 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
       const primaryTransaction = {
         id: transactionId,
-        ...transactionData,
+        ...rawTransactionData,
         linkedTransactionId: linkedId
       };
 
-      const linkedType = transactionData.type === "expense" ? "income" : "expense";
+      const linkedType = rawTransactionData.type === "expense" ? "income" : "expense";
       const linkedTransaction = {
         id: linkedId,
-        ...transactionData,
+        ...rawTransactionData,
         type: linkedType,
         accountId: destinationAccountId,
         linkedTransactionId: transactionId
@@ -164,6 +163,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     }
 
     // ── Single transaction ─────────────────────────────────────────────
+    const transactionData = normalizeTransactionForStorage(connection, rawTransactionData);
     const transaction = {
       id: transactionId,
       ...transactionData,
@@ -192,8 +192,14 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply;
     }
 
-    const transactionData = { ...payload };
-    delete (transactionData as Record<string, unknown>).destinationAccountId;
+    const rawTransactionData = getTransactionData(payload);
+    const transactionData = normalizeTransactionForStorage(connection, rawTransactionData);
+
+    if (current.linkedTransactionId && transactionData.creditCardId) {
+      return reply
+        .code(400)
+        .send({ message: "Transferência não pode ser convertida em compra de cartão." });
+    }
 
     // Update main transaction
     db.update(transactions)
@@ -697,26 +703,160 @@ function parseTransactionPayload(body: unknown) {
     return raw;
   })();
 
+  const type = assertTransactionType(parseRequiredString(payload.type, "type"));
+  const creditCardId = parseOptionalString(payload.creditCardId, "creditCardId");
+  const destinationAccountId = parseOptionalString(payload.destinationAccountId, "destinationAccountId");
+
+  if (creditCardId && destinationAccountId) {
+    throw new ValidationError("Compra no cartão não pode ser transferência entre contas.");
+  }
+
+  if (creditCardId && type !== "expense") {
+    throw new ValidationError("Lançamento de cartão de crédito deve ser despesa.");
+  }
+
   return {
-    type: assertTransactionType(parseRequiredString(payload.type, "type")),
+    type,
     description: parseRequiredString(payload.description, "description"),
     amountCents,
     eventDate,
     budgetMonth,
-    accountId: parseOptionalString(payload.accountId, "accountId"),
-    paymentMethodId: parseOptionalString(payload.paymentMethodId, "paymentMethodId"),
+    accountId: creditCardId ? null : parseOptionalString(payload.accountId, "accountId"),
+    paymentMethodId: creditCardId
+      ? null
+      : parseOptionalString(payload.paymentMethodId, "paymentMethodId"),
     subcategoryId: parseOptionalString(payload.subcategoryId, "subcategoryId"),
-    creditCardId: parseOptionalString(payload.creditCardId, "creditCardId"),
-    creditCardBillId: null,
+    creditCardId,
+    creditCardBillId: null as string | null,
     status:
       payload.status === undefined || payload.status === null || payload.status === ""
         ? "planned"
         : assertTransactionStatus(parseRequiredString(payload.status, "status")),
     notes: parseOptionalString(payload.notes, "notes"),
-    destinationAccountId: parseOptionalString(payload.destinationAccountId, "destinationAccountId"),
+    destinationAccountId,
     linkedTransactionId: parseOptionalString(payload.linkedTransactionId, "linkedTransactionId"),
     installmentCount
   };
+}
+
+function getTransactionData(payload: ParsedTransactionPayload): TransactionData {
+  const { destinationAccountId, installmentCount, ...transactionData } = payload;
+  void destinationAccountId;
+  void installmentCount;
+
+  return transactionData;
+}
+
+function normalizeTransactionForStorage(
+  connection: DatabaseConnection,
+  transactionData: TransactionData
+): TransactionData {
+  if (!transactionData.creditCardId) {
+    return transactionData;
+  }
+
+  const card = getCreditCardOrThrow(connection, transactionData.creditCardId);
+  const budgetMonth = getCreditCardBillMonth(transactionData.eventDate, card.closingDay);
+  const bill = getOrCreateCreditCardBill(connection, card, budgetMonth);
+
+  return {
+    ...transactionData,
+    budgetMonth,
+    accountId: null,
+    paymentMethodId: null,
+    creditCardBillId: bill.id
+  };
+}
+
+function buildCreditCardInstallmentTransactions(
+  connection: DatabaseConnection,
+  transactionData: TransactionData,
+  installmentCount: number
+) {
+  if (!transactionData.creditCardId) {
+    throw new ValidationError("Parcelamento exige cartão de crédito.");
+  }
+
+  const card = getCreditCardOrThrow(connection, transactionData.creditCardId);
+  const firstBillMonth = getCreditCardBillMonth(transactionData.eventDate, card.closingDay);
+  const baseAmountCents = Math.floor(transactionData.amountCents / installmentCount);
+
+  return Array.from({ length: installmentCount }, (_, index) => {
+    const budgetMonth = advanceMonth(firstBillMonth, index);
+    const bill = getOrCreateCreditCardBill(connection, card, budgetMonth);
+
+    return {
+      id: crypto.randomUUID(),
+      ...transactionData,
+      description: `${transactionData.description} (${index + 1}/${installmentCount})`,
+      amountCents:
+        index === installmentCount - 1
+          ? transactionData.amountCents - baseAmountCents * (installmentCount - 1)
+          : baseAmountCents,
+      budgetMonth,
+      accountId: null,
+      paymentMethodId: null,
+      creditCardBillId: bill.id,
+      linkedTransactionId: null
+    };
+  });
+}
+
+function getCreditCardOrThrow(connection: DatabaseConnection, creditCardId: string) {
+  const card = connection.db
+    .select()
+    .from(creditCards)
+    .where(eq(creditCards.id, creditCardId))
+    .get();
+
+  if (!card) {
+    throw new ValidationError("Cartão de crédito não encontrado.");
+  }
+
+  return card;
+}
+
+function getOrCreateCreditCardBill(
+  connection: DatabaseConnection,
+  card: typeof creditCards.$inferSelect,
+  billMonth: string
+) {
+  const existingBill = connection.db
+    .select()
+    .from(creditCardBills)
+    .where(
+      and(
+        eq(creditCardBills.creditCardId, card.id),
+        eq(creditCardBills.billMonth, assertYearMonth(billMonth))
+      )
+    )
+    .get();
+
+  if (existingBill) {
+    return existingBill;
+  }
+
+  const { closingDate, dueDate } = getCreditCardBillDates(
+    billMonth,
+    card.closingDay,
+    card.dueDay
+  );
+  const now = new Date().toISOString();
+  const bill = {
+    id: crypto.randomUUID(),
+    creditCardId: card.id,
+    billMonth,
+    closingDate,
+    dueDate,
+    status: "open",
+    paidAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  connection.db.insert(creditCardBills).values(bill).run();
+
+  return bill;
 }
 
 function parseTransactionPayloadOrReply(body: unknown, reply: FastifyReply) {
@@ -811,55 +951,6 @@ function ensureOptionalCreditCardExists(
   if (!card) {
     throw new ValidationError("Cartão de crédito não encontrado.");
   }
-}
-
-/**
- * Advances a YYYY-MM string by `months` months.
- * Example: advanceMonth("2026-06", 2) → "2026-08"
- */
-function advanceMonth(yearMonth: string, months: number): string {
-  const [year, month] = yearMonth.split("-").map(Number);
-  const total = (year * 12 + month - 1) + months;
-  const newYear = Math.floor(total / 12);
-  const newMonth = (total % 12) + 1;
-  return `${newYear}-${String(newMonth).padStart(2, "0")}`;
-}
-
-function getCreditCardBillMonth(
-  eventDate: string,
-  closingDay: number
-): ReturnType<typeof assertYearMonth> {
-  const [year, month, day] = eventDate.split("-").map(Number);
-
-  if (day < closingDay) {
-    return formatYearMonth(year, month);
-  }
-
-  const nextMonth = month === 12 ? 1 : month + 1;
-  const nextYear = month === 12 ? year + 1 : year;
-  return formatYearMonth(nextYear, nextMonth);
-}
-
-function getCreditCardBillDates(
-  billMonth: string,
-  closingDay: number,
-  dueDay: number
-): { closingDate: string; dueDate: string } {
-  const [year, month] = billMonth.split("-").map(Number);
-  const closingDate = formatBusinessDate(year, month, closingDay);
-  const dueYear = month === 12 ? year + 1 : year;
-  const dueMonth = month === 12 ? 1 : month + 1;
-  const dueDate = formatBusinessDate(dueYear, dueMonth, dueDay);
-
-  return { closingDate, dueDate };
-}
-
-function formatYearMonth(year: number, month: number): ReturnType<typeof assertYearMonth> {
-  return assertYearMonth(`${year}-${String(month).padStart(2, "0")}`);
-}
-
-function formatBusinessDate(year: number, month: number, day: number): string {
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function parseCsvContent(csv: string): { headers: string[]; rows: Record<string, string>[] } {

@@ -139,9 +139,93 @@ describe("transactions & account balances business rules", () => {
       }
     });
 
+    // 6. Planned and canceled transactions do not affect current account balance
+    await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Despesa prevista",
+        amountCents: 90000,
+        eventDate: "2026-06-05",
+        accountId: accountAId,
+        status: "planned"
+      }
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "income",
+        description: "Receita cancelada",
+        amountCents: 100000,
+        eventDate: "2026-06-06",
+        accountId: accountAId,
+        status: "canceled"
+      }
+    });
+
     // Verify final dynamic balance: 1000 + 200 - 150 + 50 + 30 = 1130 (113000 cents)
     resAcc = await app.inject({ method: "GET", url: `/accounts/${accountAId}` });
     expect(resAcc.json().currentBalanceCents).toBe(113000);
+  });
+
+  it("should normalize credit card purchases created through the general transaction endpoint", async () => {
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Normalizado",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+    expect(cardRes.statusCode).toBe(201);
+    const cardId = cardRes.json().id as string;
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Compra no cartão pelo endpoint geral",
+        amountCents: 12345,
+        eventDate: "2026-06-10",
+        accountId: accountAId,
+        paymentMethodId: null,
+        creditCardId: cardId,
+        status: "confirmed"
+      }
+    });
+
+    expect(createRes.statusCode).toBe(201);
+    const transaction = createRes.json();
+    expect(transaction.accountId).toBeNull();
+    expect(transaction.paymentMethodId).toBeNull();
+    expect(transaction.creditCardId).toBe(cardId);
+    expect(transaction.creditCardBillId).toBeTruthy();
+    expect(transaction.budgetMonth).toBe("2026-06");
+
+    const accountRes = await app.inject({ method: "GET", url: `/accounts/${accountAId}` });
+    expect(accountRes.json().currentBalanceCents).toBe(100000);
+
+    const conn = createDatabaseConnection(databasePath);
+    const bill = conn.db
+      .select()
+      .from(creditCardBills)
+      .where(eq(creditCardBills.id, transaction.creditCardBillId))
+      .get();
+    conn.sqlite.close();
+
+    expect(bill).toMatchObject({
+      creditCardId: cardId,
+      billMonth: "2026-06",
+      closingDate: "2026-06-15",
+      dueDate: "2026-07-10"
+    });
   });
 
   it("should handle transfer linked transactions and updates", async () => {

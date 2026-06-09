@@ -44,7 +44,7 @@ import {
   IconAlertTriangle,
   IconEraser
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { formatBusinessDateForDisplay } from "../date-format";
 
@@ -257,6 +257,21 @@ function FaturasView() {
     }
   }
 
+  async function revertPayment(cardId: string, billId: string) {
+    try {
+      const res = await fetch(`${apiBaseUrl}/credit-cards/${cardId}/bills/${billId}/revert`, {
+        method: "POST"
+      });
+      if (!res.ok) {
+        throw new Error(await getResponseError(res, "Erro ao reverter o pagamento da fatura."));
+      }
+      await loadBillForCard(cardId, selectedMonth);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro inesperado.");
+      throw e;
+    }
+  }
+
   function handleNavigateMonth(direction: number) {
     const [year, month] = selectedMonth.split("-").map(Number);
     const nextDate = new Date(year, month - 1 + direction, 1);
@@ -265,6 +280,20 @@ function FaturasView() {
     setSelectedMonth(`${nextYear}-${nextMonthNum}`);
   }
 
+  // Track which card+month combos have already been loaded to avoid redundant
+  // fetches that would reset child component state (e.g. the create form).
+  const loadedBillKeysRef = useRef<Set<string>>(new Set());
+
+  const loadBillForCardStable = useCallback(
+    (cardId: string, month: string, force = false) => {
+      const key = `${cardId}::${month}`;
+      if (!force && loadedBillKeysRef.current.has(key)) return;
+      loadedBillKeysRef.current.add(key);
+      void loadBillForCard(cardId, month);
+    },
+    []
+  );
+
   useEffect(() => {
     void loadCards();
     void loadCategories();
@@ -272,10 +301,12 @@ function FaturasView() {
   }, []);
 
   useEffect(() => {
+    // Reset loaded keys when month changes so bills are re-fetched.
+    loadedBillKeysRef.current = new Set();
     for (const card of activeCards) {
-      void loadBillForCard(card.id, selectedMonth);
+      loadBillForCardStable(card.id, selectedMonth);
     }
-  }, [activeCards, selectedMonth]);
+  }, [activeCards, selectedMonth, loadBillForCardStable]);
 
   return (
     <Stack gap="lg">
@@ -346,7 +377,8 @@ function FaturasView() {
             categories={categories}
             accounts={accounts}
             onMarkAsPaid={(billId, accountId) => markAsPaid(card.id, billId, accountId)}
-            onReload={() => void loadBillForCard(card.id, selectedMonth)}
+            onRevertPayment={(billId) => revertPayment(card.id, billId)}
+            onReload={() => loadBillForCardStable(card.id, selectedMonth, true)}
           />
         ))
       )}
@@ -362,6 +394,7 @@ function CardBillPanel({
   categories,
   accounts,
   onMarkAsPaid,
+  onRevertPayment,
   onReload
 }: {
   card: CreditCard;
@@ -371,6 +404,7 @@ function CardBillPanel({
   categories: Category[];
   accounts: Account[];
   onMarkAsPaid: (billId: string, accountId: string) => Promise<void>;
+  onRevertPayment: (billId: string) => Promise<void>;
   onReload: () => void;
 }) {
   const [filterStatus, setFilterStatus] = useState<string>(emptySelectValue);
@@ -479,7 +513,11 @@ function CardBillPanel({
   useEffect(() => {
     setSelectedTransactionIds(new Set());
     setPanelError(null);
-    setCreateForm((current) => ({ ...current, eventDate: today }));
+    // Only reset the create form when the drawer is NOT open,
+    // otherwise the user would lose their in-progress draft.
+    if (!isCreateDrawerOpen) {
+      setCreateForm((current) => ({ ...current, eventDate: today }));
+    }
   }, [billData?.bill.id, selectedMonth]);
 
   function openEditModal(transaction: CardTransaction) {
@@ -523,6 +561,21 @@ function CardBillPanel({
       setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
     } finally {
       setIsPayingBill(false);
+    }
+  }
+
+  async function revertBill() {
+    if (!billData) return;
+    const confirmed = window.confirm(
+      `Deseja reverter o pagamento da fatura de ${card.name} (${selectedMonth})? O lançamento de saída da conta correspondente será excluído.`
+    );
+    if (!confirmed) return;
+
+    setPanelError(null);
+    try {
+      await onRevertPayment(billData.bill.id);
+    } catch (error) {
+      setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
     }
   }
 
@@ -1044,6 +1097,19 @@ function CardBillPanel({
                 onClick={openPayModal}
               >
                 Marcar como paga
+              </Button>
+            </Tooltip>
+          ) : null}
+          {billData && isPaid ? (
+            <Tooltip label="Reverter pagamento (exclui o lançamento da conta)">
+              <Button
+                size="xs"
+                leftSection={<IconEraser size={14} />}
+                variant="light"
+                color="red"
+                onClick={() => void revertBill()}
+              >
+                Reverter pagamento
               </Button>
             </Tooltip>
           ) : null}
@@ -1736,9 +1802,10 @@ function CardBillPanel({
             label="Descrição"
             placeholder="Mercado, farmácia, assinatura..."
             value={createForm.description}
-            onChange={(event) =>
-              setCreateForm((current) => ({ ...current, description: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setCreateForm((current) => ({ ...current, description: value }));
+            }}
             required
           />
 
@@ -1761,9 +1828,10 @@ function CardBillPanel({
             label="Data da compra"
             type="date"
             value={createForm.eventDate}
-            onChange={(event) =>
-              setCreateForm((current) => ({ ...current, eventDate: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setCreateForm((current) => ({ ...current, eventDate: value }));
+            }}
             required
           />
 
@@ -1825,9 +1893,10 @@ function CardBillPanel({
             autosize
             minRows={2}
             value={createForm.notes}
-            onChange={(event) =>
-              setCreateForm((current) => ({ ...current, notes: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setCreateForm((current) => ({ ...current, notes: value }));
+            }}
           />
 
           <Group
@@ -1878,9 +1947,10 @@ function CardBillPanel({
           <TextInput
             label="Descrição"
             value={editForm.description}
-            onChange={(event) =>
-              setEditForm((current) => ({ ...current, description: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setEditForm((current) => ({ ...current, description: value }));
+            }}
             required
           />
 
@@ -1889,9 +1959,10 @@ function CardBillPanel({
               label="Data da compra"
               type="date"
               value={editForm.eventDate}
-              onChange={(event) =>
-                setEditForm((current) => ({ ...current, eventDate: event.currentTarget.value }))
-              }
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setEditForm((current) => ({ ...current, eventDate: value }));
+              }}
               required
             />
             <NumberInput
@@ -1940,9 +2011,10 @@ function CardBillPanel({
             autosize
             minRows={2}
             value={editForm.notes}
-            onChange={(event) =>
-              setEditForm((current) => ({ ...current, notes: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setEditForm((current) => ({ ...current, notes: value }));
+            }}
           />
 
           <Group

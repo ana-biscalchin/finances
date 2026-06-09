@@ -141,3 +141,16 @@ Backlog e status do projeto.
 - [x] Testar fusao de categorias.
 - [ ] Testar backup para nao sobrescrever dados sem confirmacao.
 - [ ] Manter diffs pequenos e revisar tarefas acima de 1000 linhas com mais rigor.
+
+## Refatoracao Financeira
+
+- [x] Implementar fundacao financeira da API:
+  - [x] Centralizar classificacao financeira em `packages/domain`.
+  - [x] Centralizar calculo de datas/mes de fatura de cartao.
+  - [x] Normalizar compras no cartao para nao movimentarem conta antes da fatura.
+  - [x] Ignorar lancamentos cancelados no saldo de contas.
+  - [x] Proteger relatorios contra duplicidade de pagamento de fatura.
+  - [x] Proteger relatorios contra transferencias como consumo/receita.
+- [ ] Separar API do controle mensal por visao de competencia e caixa.
+- [ ] Criar abas de competencia e caixa no Controle mensal.
+- [ ] Revisar relatorios e textos da UI com a nova linguagem financeira.

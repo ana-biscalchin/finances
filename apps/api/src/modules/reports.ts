@@ -9,7 +9,13 @@ import {
   type createDatabaseConnection
 } from "@finances/database";
 
-import { assertYearMonth } from "@finances/domain";
+import {
+  advanceMonth,
+  assertYearMonth,
+  getAccountDelta,
+  isConsumptionExpense,
+  isReportableIncome
+} from "@finances/domain";
 import { and, eq, inArray, like, ne, or, lt } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
@@ -17,25 +23,6 @@ type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 
 export function registerReportRoutes(app: FastifyInstance, connection: DatabaseConnection) {
   const { db } = connection;
-
-  // Helper function to calculate time adjustments
-  function advanceMonth(yearMonth: string, months: number): string {
-    const [year, month] = yearMonth.split("-").map(Number);
-    const total = (year * 12 + month - 1) + months;
-    const newYear = Math.floor(total / 12);
-    const newMonth = (total % 12) + 1;
-    return `${newYear}-${String(newMonth).padStart(2, "0")}`;
-  }
-
-  function getAccountDelta(t: { type: string; amountCents: number }) {
-    if (t.type === "income" || t.type === "refund" || t.type === "chargeback") {
-      return t.amountCents;
-    }
-    if (t.type === "expense") {
-      return -t.amountCents;
-    }
-    return 0;
-  }
 
   // 1. GET /reports/credit-cards-summary?month=YYYY-MM
   app.get("/reports/credit-cards-summary", async (request, reply) => {
@@ -102,6 +89,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         .where(
           and(
             eq(transactions.creditCardBillId, bill.id),
+            eq(transactions.creditCardId, bill.creditCardId),
             eq(transactions.type, "expense"),
             ne(transactions.status, "canceled")
           )
@@ -158,7 +146,8 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         .select({
           type: transactions.type,
           amountCents: transactions.amountCents,
-          status: transactions.status
+          status: transactions.status,
+          accountId: transactions.accountId
         })
         .from(transactions)
         .where(
@@ -209,7 +198,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         type: transactions.type,
         amountCents: transactions.amountCents,
         status: transactions.status,
-        accountId: transactions.accountId
+        accountId: transactions.accountId,
+        creditCardId: transactions.creditCardId,
+        creditCardBillId: transactions.creditCardBillId,
+        linkedTransactionId: transactions.linkedTransactionId
       })
       .from(transactions)
       .where(and(...txFilters))
@@ -250,7 +242,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         }
 
         // Expense accumulation impact (realized + planned)
-        if (tx.type === "expense") {
+        if (isConsumptionExpense(tx)) {
           cumulativeSpent += tx.amountCents;
         }
       }
@@ -315,7 +307,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         eventDate: transactions.eventDate,
         type: transactions.type,
         amountCents: transactions.amountCents,
-        status: transactions.status
+        status: transactions.status,
+        creditCardId: transactions.creditCardId,
+        creditCardBillId: transactions.creditCardBillId,
+        linkedTransactionId: transactions.linkedTransactionId
       })
       .from(transactions)
       .where(and(...txFilters))
@@ -344,9 +339,9 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       const isRealized = tx.status === "confirmed" || tx.status === "reconciled";
       if (!isRealized) continue; // Only count realized income/expenses for history
 
-      if (tx.type === "income" || tx.type === "refund" || tx.type === "chargeback") {
+      if (isReportableIncome(tx)) {
         monthlyValues[monthIdx].incomeCents += tx.amountCents;
-      } else if (tx.type === "expense") {
+      } else if (isConsumptionExpense(tx)) {
         monthlyValues[monthIdx].expenseCents += tx.amountCents;
       }
     }
@@ -384,7 +379,12 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       const yearExpenses = db
         .select({
           amountCents: transactions.amountCents,
-          subcategoryId: transactions.subcategoryId
+          subcategoryId: transactions.subcategoryId,
+          type: transactions.type,
+          status: transactions.status,
+          creditCardId: transactions.creditCardId,
+          creditCardBillId: transactions.creditCardBillId,
+          linkedTransactionId: transactions.linkedTransactionId
         })
         .from(transactions)
         .where(and(...txFilters))
@@ -405,7 +405,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       const categorySums = new Map<string, { name: string; sum: number }>();
 
       for (const tx of yearExpenses) {
-        if (!tx.subcategoryId) continue;
+        if (!tx.subcategoryId || !isConsumptionExpense(tx)) continue;
         const catInfo = subToCatMap.get(tx.subcategoryId);
         if (!catInfo) continue;
 
@@ -442,7 +442,12 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       const yearExpenses = db
         .select({
           amountCents: transactions.amountCents,
-          subcategoryId: transactions.subcategoryId
+          subcategoryId: transactions.subcategoryId,
+          type: transactions.type,
+          status: transactions.status,
+          creditCardId: transactions.creditCardId,
+          creditCardBillId: transactions.creditCardBillId,
+          linkedTransactionId: transactions.linkedTransactionId
         })
         .from(transactions)
         .where(and(...txFilters))
@@ -451,7 +456,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       const subcategorySums = new Map<string, number>();
 
       for (const tx of yearExpenses) {
-        if (!tx.subcategoryId) continue;
+        if (!tx.subcategoryId || !isConsumptionExpense(tx)) continue;
         subcategorySums.set(
           tx.subcategoryId,
           (subcategorySums.get(tx.subcategoryId) ?? 0) + tx.amountCents
@@ -522,7 +527,12 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const expenses = db
       .select({
         amountCents: transactions.amountCents,
-        paymentMethodId: transactions.paymentMethodId
+        paymentMethodId: transactions.paymentMethodId,
+        type: transactions.type,
+        status: transactions.status,
+        creditCardId: transactions.creditCardId,
+        creditCardBillId: transactions.creditCardBillId,
+        linkedTransactionId: transactions.linkedTransactionId
       })
       .from(transactions)
       .where(and(...txFilters))
@@ -534,6 +544,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const pmSums = new Map<string, number>();
 
     for (const tx of expenses) {
+      if (!isConsumptionExpense(tx)) continue;
       const pmId = tx.paymentMethodId || "null";
       pmSums.set(pmId, (pmSums.get(pmId) ?? 0) + tx.amountCents);
     }

@@ -1,4 +1,5 @@
-import { createDatabaseConnection } from "@finances/database";
+import { createDatabaseConnection, transactions } from "@finances/database";
+import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -188,5 +189,133 @@ describe("reports API", () => {
     expect(pmPart).toHaveLength(1);
     expect(pmPart[0].paymentMethodName).toBe("Geral / Sem Meio Específico");
     expect(pmPart[0].amountCents).toBe(15000);
+  });
+
+  it("should not count credit card bill payments as card purchases or consumption", async () => {
+    const accountRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta pagamento",
+        type: "checking",
+        initialBalanceCents: 100000
+      }
+    });
+    expect(accountRes.statusCode).toBe(201);
+    const account = accountRes.json();
+
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão relatório",
+        closingDay: 5,
+        dueDay: 12,
+        paymentAccountId: account.id
+      }
+    });
+    expect(cardRes.statusCode).toBe(201);
+    const card = cardRes.json();
+
+    const billRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${card.id}/bills?month=2026-06`
+    });
+    expect(billRes.statusCode).toBe(200);
+    const bill = billRes.json().bill;
+
+    const purchaseRes = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${card.id}/bills/${bill.id}/transactions`,
+      payload: {
+        description: "Compra da fatura",
+        amountCents: 12000,
+        eventDate: "2026-06-02",
+        status: "confirmed"
+      }
+    });
+    expect(purchaseRes.statusCode).toBe(201);
+
+    const payRes = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${card.id}/bills/${bill.id}/pay`,
+      payload: { accountId: account.id }
+    });
+    expect(payRes.statusCode).toBe(204);
+
+    const summaryRes = await app.inject({
+      method: "GET",
+      url: "/reports/credit-cards-summary?month=2026-06"
+    });
+    expect(summaryRes.statusCode).toBe(200);
+    const summary = summaryRes.json();
+    expect(summary).toHaveLength(1);
+    expect(summary[0]).toMatchObject({
+      cardId: card.id,
+      amountCents: 12000,
+      status: "paid"
+    });
+
+    const annualRes = await app.inject({
+      method: "GET",
+      url: "/reports/annual-summary?year=2026"
+    });
+    expect(annualRes.statusCode).toBe(200);
+    const annual = annualRes.json();
+    expect(annual[5].expenseCents).toBe(12000);
+  });
+
+  it("should not count linked transfers as annual income or consumption", async () => {
+    const accountARes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta origem",
+        type: "checking",
+        initialBalanceCents: 100000
+      }
+    });
+    const accountBRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta destino",
+        type: "savings",
+        initialBalanceCents: 0
+      }
+    });
+
+    const transferRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Transferência interna",
+        amountCents: 25000,
+        eventDate: "2026-06-10",
+        accountId: accountARes.json().id,
+        destinationAccountId: accountBRes.json().id,
+        status: "confirmed"
+      }
+    });
+    expect(transferRes.statusCode).toBe(201);
+
+    const annualRes = await app.inject({
+      method: "GET",
+      url: "/reports/annual-summary?year=2026"
+    });
+    expect(annualRes.statusCode).toBe(200);
+    const annual = annualRes.json();
+    expect(annual[5].incomeCents).toBe(0);
+    expect(annual[5].expenseCents).toBe(0);
+
+    const conn = createDatabaseConnection(databasePath);
+    const createdTransfer = conn.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transferRes.json().id))
+      .get();
+    conn.sqlite.close();
+    expect(createdTransfer?.linkedTransactionId).toBeTruthy();
   });
 });

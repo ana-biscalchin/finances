@@ -1,5 +1,5 @@
 import { accounts, paymentMethods, transactions, type createDatabaseConnection } from "@finances/database";
-import { assertAccountType } from "@finances/domain";
+import { assertAccountType, getAccountDelta } from "@finances/domain";
 import { asc, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
@@ -40,26 +40,10 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
           .orderBy(asc(accounts.sortOrder), asc(accounts.name))
           .all();
 
-    // Compute current balance for each account
     return rows.map((account) => {
-      const txs = db
-        .select({ type: transactions.type, amountCents: transactions.amountCents })
-        .from(transactions)
-        .where(eq(transactions.accountId, account.id))
-        .all();
-
-      let balanceCents = account.initialBalanceCents;
-      for (const tx of txs) {
-        if (tx.type === "income" || tx.type === "refund" || tx.type === "chargeback") {
-          balanceCents += tx.amountCents;
-        } else if (tx.type === "expense") {
-          balanceCents -= tx.amountCents;
-        }
-      }
-
       return {
         ...account,
-        currentBalanceCents: balanceCents
+        currentBalanceCents: getCurrentAccountBalance(connection, account)
       };
     });
   });
@@ -72,24 +56,9 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
       return reply.code(404).send({ message: "Account not found." });
     }
 
-    const txs = db
-      .select({ type: transactions.type, amountCents: transactions.amountCents })
-      .from(transactions)
-      .where(eq(transactions.accountId, account.id))
-      .all();
-
-    let balanceCents = account.initialBalanceCents;
-    for (const tx of txs) {
-      if (tx.type === "income" || tx.type === "refund" || tx.type === "chargeback") {
-        balanceCents += tx.amountCents;
-      } else if (tx.type === "expense") {
-        balanceCents -= tx.amountCents;
-      }
-    }
-
     return {
       ...account,
-      currentBalanceCents: balanceCents
+      currentBalanceCents: getCurrentAccountBalance(connection, account)
     };
   });
 
@@ -183,6 +152,27 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
 
     return reply.code(204).send();
   });
+}
+
+function getCurrentAccountBalance(
+  connection: DatabaseConnection,
+  account: typeof accounts.$inferSelect
+) {
+  const accountTransactions = connection.db
+    .select({
+      type: transactions.type,
+      status: transactions.status,
+      amountCents: transactions.amountCents,
+      accountId: transactions.accountId
+    })
+    .from(transactions)
+    .where(eq(transactions.accountId, account.id))
+    .all();
+
+  return accountTransactions.reduce(
+    (balance, transaction) => balance + getAccountDelta(transaction),
+    account.initialBalanceCents
+  );
 }
 
 function parseAccountPayload(body: unknown) {

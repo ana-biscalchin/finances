@@ -44,3 +44,25 @@ export function yearMonthFromDate(value: BusinessDate): YearMonth {
 export function todayBusinessDate(now = new Date()): BusinessDate {
   return assertBusinessDate(now.toISOString().slice(0, 10));
 }
+
+export function formatYearMonth(year: number, month: number): YearMonth {
+  return assertYearMonth(`${year}-${String(month).padStart(2, "0")}`);
+}
+
+export function advanceMonth(yearMonth: string, months: number): YearMonth {
+  const [year, month] = assertYearMonth(yearMonth).split("-").map(Number);
+  const total = year * 12 + month - 1 + months;
+  const nextYear = Math.floor(total / 12);
+  const nextMonth = (total % 12) + 1;
+
+  return formatYearMonth(nextYear, nextMonth);
+}
+
+export function formatBusinessDateClamped(year: number, month: number, day: number): BusinessDate {
+  const lastDay = new Date(year, month, 0).getDate();
+  const clampedDay = Math.min(Math.max(day, 1), lastDay);
+
+  return assertBusinessDate(
+    `${year}-${String(month).padStart(2, "0")}-${String(clampedDay).padStart(2, "0")}`
+  );
+}

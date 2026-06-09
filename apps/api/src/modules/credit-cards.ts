@@ -6,7 +6,8 @@ import {
   transactions,
   type createDatabaseConnection
 } from "@finances/database";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { assertTransactionStatus, getCreditCardBillDates } from "@finances/domain";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -177,14 +178,11 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       .get();
 
     if (!bill) {
-      // Compute closing and due dates based on card settings
-      const [year, month] = billMonth.split("-").map(Number);
-      const closingDate = formatDate(year, month, card.closingDay);
-
-      // Due date is typically in the next month
-      const dueYear = month === 12 ? year + 1 : year;
-      const dueMonth = month === 12 ? 1 : month + 1;
-      const dueDate = formatDate(dueYear, dueMonth, card.dueDay);
+      const { closingDate, dueDate } = getCreditCardBillDates(
+        billMonth,
+        card.closingDay,
+        card.dueDay
+      );
 
       bill = {
         id: crypto.randomUUID(),
@@ -232,7 +230,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     });
 
     const totalCents = allTransactions
-      .filter((t) => t.type === "expense")
+      .filter((t) => t.type === "expense" && t.status !== "canceled")
       .reduce((sum, t) => sum + t.amountCents, 0);
 
     return {
@@ -354,6 +352,49 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
   });
 
   /**
+   * POST /credit-cards/:id/bills/:billId/revert
+   * Reverts a bill payment, deletes the account outflow transaction.
+   */
+  app.post("/credit-cards/:id/bills/:billId/revert", async (request, reply) => {
+    const { id, billId } = request.params as { id: string; billId: string };
+    const card = db.select().from(creditCards).where(eq(creditCards.id, id)).get();
+
+    if (!card) {
+      return reply.code(404).send({ message: "Cartão não encontrado." });
+    }
+
+    const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
+
+    if (!bill || bill.creditCardId !== id) {
+      return reply.code(404).send({ message: "Fatura não encontrada." });
+    }
+
+    if (bill.status !== "paid") {
+      return reply.code(400).send({ message: "A fatura não está paga." });
+    }
+
+    const updatedAt = new Date().toISOString();
+
+    // Delete the payment transaction associated with this bill
+    db.delete(transactions)
+      .where(
+        and(
+          eq(transactions.creditCardBillId, billId),
+          isNull(transactions.creditCardId)
+        )
+      )
+      .run();
+
+    // Update the bill status to open
+    db.update(creditCardBills)
+      .set({ status: "open", paidAt: null, updatedAt })
+      .where(eq(creditCardBills.id, billId))
+      .run();
+
+    return reply.code(204).send();
+  });
+
+  /**
    * POST /credit-cards/:id/bills/:billId/transactions
    * Adds a card purchase transaction linked to a bill.
    */
@@ -383,7 +424,9 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       const subcategoryId = parseOptionalString(body.subcategoryId, "subcategoryId");
       const notes = parseOptionalString(body.notes, "notes");
       const status =
-        typeof body.status === "string" && body.status.length > 0 ? body.status : "planned";
+        typeof body.status === "string" && body.status.length > 0
+          ? assertTransactionStatus(body.status)
+          : "planned";
 
       if (amountCents <= 0) {
         throw new ValidationError("amountCents deve ser maior que zero.");
@@ -396,7 +439,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         amountCents,
         eventDate,
         budgetMonth: bill.billMonth,
-        accountId: card.paymentAccountId ?? null,
+        accountId: null,
         paymentMethodId: null,
         subcategoryId: subcategoryId ?? null,
         creditCardId: id,
@@ -450,7 +493,10 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       const eventDate = parseRequiredString(body.eventDate, "eventDate");
       const subcategoryId = parseOptionalString(body.subcategoryId, "subcategoryId");
       const notes = parseOptionalString(body.notes, "notes");
-      const status = typeof body.status === "string" && body.status.length > 0 ? body.status : current.status;
+      const status =
+        typeof body.status === "string" && body.status.length > 0
+          ? assertTransactionStatus(body.status)
+          : assertTransactionStatus(current.status);
 
       if (amountCents <= 0) throw new ValidationError("amountCents deve ser maior que zero.");
 
@@ -459,7 +505,10 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           description,
           amountCents,
           eventDate,
+          accountId: null,
+          paymentMethodId: null,
           subcategoryId: subcategoryId ?? null,
+          creditCardId: id,
           creditCardBillId: current.creditCardBillId ?? billId,
           notes: notes ?? null,
           status,
@@ -563,11 +612,4 @@ function ensurePaymentAccountOrReply(
   }
 
   return true;
-}
-
-function formatDate(year: number, month: number, day: number) {
-  // Clamp day to last valid day of the month
-  const lastDay = new Date(year, month, 0).getDate();
-  const clampedDay = Math.min(day, lastDay);
-  return `${year}-${String(month).padStart(2, "0")}-${String(clampedDay).padStart(2, "0")}`;
 }

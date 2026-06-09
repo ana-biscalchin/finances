@@ -87,6 +87,20 @@ Manter separacao entre UI, API, banco e dominio.
 - Nao apagar historico ou conteudo sem confirmacao explicita.
 - Nao commitar banco SQLite local, backups, `.env` ou artefatos de build.
 
+## Varredura De Reaproveitamento
+
+Antes de comecar a implementar uma feature nova, o agente deve:
+
+1. Varrer os arquivos relacionados ao modulo em desenvolvimento (e modulos vizinhos) em busca de:
+   - Tipos, interfaces e constantes que ja existem e podem ser reutilizados.
+   - Funcoes helper, utilitarios e logica de formatacao que ja foram escritas.
+   - Componentes de UI que resolvem o mesmo tipo de problema (selects, badges, tabelas, modais).
+   - Padroes de estado, efeitos e handlers que se repetem entre paginas.
+2. Apontar as duplicacoes encontradas antes de escrever codigo novo.
+3. Quando a duplicacao for significativa (mais de ~20 linhas ou mais de 2 ocorrencias), propor extrair para um modulo compartilhado antes ou durante a implementacao.
+4. Codigo compartilhado do frontend fica em `apps/web/src/app/shared/`.
+5. Logica de dominio reutilizavel (regras financeiras, validacoes) fica em `packages/domain/`.
+
 ## Encerramento De Tarefas
 
 Ao terminar uma etapa de desenvolvimento, sempre responder com:
