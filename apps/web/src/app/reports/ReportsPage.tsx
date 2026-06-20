@@ -50,6 +50,7 @@ import {
 
 
 import { formatMoney, moneyFromCents } from "@finances/domain";
+import { MonthSelector } from "../shared/MonthSelector";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -129,6 +130,7 @@ export function ReportsPage({
   setFilterCategoryId
 }: ReportsPageProps) {
   const [timeframe, setTimeframe] = useState<string>("monthly");
+  const [view, setView] = useState<"competence" | "cash">("competence");
 
   // Options states
   const [accountsList, setAccountsList] = useState<AccountOption[]>([]);
@@ -164,7 +166,7 @@ export function ReportsPage({
     void fetchOptions();
   }, []);
 
-  // Fetch report data when timeframe, dates or filters change
+  // Fetch report data when timeframe, dates, view or filters change
   const loadReportData = async () => {
     setIsLoading(true);
     setError(null);
@@ -173,6 +175,7 @@ export function ReportsPage({
     if (filterAccountId) queryParams.append("accountId", filterAccountId);
     if (filterPaymentMethodId) queryParams.append("paymentMethodId", filterPaymentMethodId);
     if (filterCategoryId) queryParams.append("categoryId", filterCategoryId);
+    queryParams.append("view", view);
 
     try {
       if (timeframe === "monthly") {
@@ -211,6 +214,7 @@ export function ReportsPage({
     void loadReportData();
   }, [
     timeframe,
+    view,
     selectedMonth,
     selectedYear,
     filterAccountId,
@@ -218,33 +222,10 @@ export function ReportsPage({
     filterCategoryId
   ]);
 
-  // Navigate months (monthly view)
-  const handleNavigateMonth = (direction: number) => {
-    const [year, month] = selectedMonth.split("-").map(Number);
-    const nextDate = new Date(year, month - 1 + direction, 1);
-    const nextYear = nextDate.getFullYear();
-    const nextMonthNum = String(nextDate.getMonth() + 1).padStart(2, "0");
-    setSelectedMonth(`${nextYear}-${nextMonthNum}`);
-  };
-
   // Navigate years (annual view)
   const handleNavigateYear = (direction: number) => {
     const nextYear = Number(selectedYear) + direction;
     setSelectedYear(String(nextYear));
-  };
-
-  const getMonthOptions = () => {
-    const now = new Date();
-    const options = [];
-    for (let i = -6; i <= 6; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const label = new Intl.DateTimeFormat("pt-BR", { month: "short", year: "2-digit" })
-        .format(d)
-        .replace(".", "");
-      options.push({ value, label: label.charAt(0).toUpperCase() + label.slice(1) });
-    }
-    return options;
   };
 
   const getYearOptions = () => {
@@ -346,6 +327,14 @@ export function ReportsPage({
         </Group>
       </Paper>
 
+      {timeframe === "monthly" ? (
+        <MonthSelector
+          title="Mês de referência"
+          selectedMonth={selectedMonth}
+          onChange={setSelectedMonth}
+        />
+      ) : null}
+
       {/* Filters Toolbar */}
       <Paper withBorder p="md" radius="md">
         <Stack gap="md">
@@ -356,18 +345,9 @@ export function ReportsPage({
             <Text fw={700} size="sm">Filtros de Análise</Text>
           </Group>
 
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
             {/* Period selector */}
-            {timeframe === "monthly" ? (
-              <Select
-                label="Mês de Referência"
-                placeholder="Selecione o mês"
-                data={getMonthOptions()}
-                value={selectedMonth}
-                onChange={(val) => val && setSelectedMonth(val)}
-                leftSection={<IconCalendar size={16} />}
-              />
-            ) : (
+            {timeframe === "yearly" ? (
               <Select
                 label="Ano de Referência"
                 placeholder="Selecione o ano"
@@ -376,7 +356,18 @@ export function ReportsPage({
                 onChange={(val) => val && setSelectedYear(val)}
                 leftSection={<IconCalendar size={16} />}
               />
-            )}
+            ) : null}
+
+            {/* Regime selection */}
+            <Select
+              label="Regime Financeiro"
+              data={[
+                { value: "competence", label: "Competência (Orçamento)" },
+                { value: "cash", label: "Caixa (Fluxo Real)" }
+              ]}
+              value={view}
+              onChange={(val) => setView((val as "competence" | "cash") || "competence")}
+            />
 
             {/* Account filter */}
             <Select
@@ -442,35 +433,14 @@ export function ReportsPage({
       ) : timeframe === "monthly" ? (
         /* =================== MONTHLY VIEW =================== */
         <Stack gap="lg">
-          {/* Month Navigator Toolbar */}
-          <Group justify="space-between" align="center">
-            <Title order={3} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              Período:{" "}
-              <Badge size="lg" color="teal" variant="light">
-                {new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" })
-                  .format(new Date(Number(selectedMonth.split("-")[0]), Number(selectedMonth.split("-")[1]) - 1))
-                  .toUpperCase()}
-              </Badge>
-            </Title>
-            <Group gap="xs">
-              <Button
-                size="xs"
-                variant="subtle"
-                leftSection={<IconChevronLeft size={16} />}
-                onClick={() => handleNavigateMonth(-1)}
-              >
-                Mês anterior
-              </Button>
-              <Button
-                size="xs"
-                variant="subtle"
-                rightSection={<IconChevronRight size={16} />}
-                onClick={() => handleNavigateMonth(1)}
-              >
-                Próximo mês
-              </Button>
-            </Group>
-          </Group>
+          <Title order={3} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            Período:{" "}
+            <Badge size="lg" color="teal" variant="light">
+              {new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" })
+                .format(new Date(Number(selectedMonth.split("-")[0]), Number(selectedMonth.split("-")[1]) - 1))
+                .toUpperCase()}
+            </Badge>
+          </Title>
 
           {/* Destaques cards */}
           <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
@@ -717,6 +687,7 @@ export function ReportsPage({
                       month={selectedMonth}
                       filterAccountId={filterAccountId}
                       filterCategoryId={filterCategoryId}
+                      view={view}
                     />
                   </Box>
                 </Stack>
@@ -885,7 +856,7 @@ export function ReportsPage({
                             }}
                           />
                           <Bar dataKey="amountCents" name="Total Gasto" fill="var(--mantine-color-red-6)" radius={[0, 4, 4, 0]} barSize={18}>
-                            {categoriesSpent.map((entry, index) => (
+                            {categoriesSpent.map((_, index) => (
                               <Cell
                                 key={`cell-${index}`}
                                 fill={`var(--mantine-color-red-${Math.min(9, Math.max(5, 9 - index))})`}
@@ -920,6 +891,7 @@ export function ReportsPage({
                       year={selectedYear}
                       filterAccountId={filterAccountId}
                       filterCategoryId={filterCategoryId}
+                      view={view}
                     />
                   </Box>
                 </Stack>
@@ -1131,7 +1103,7 @@ function MonthlyCategoryChart({
                   }}
                 />
                 <Bar dataKey="amountCents" name="Total Gasto" fill="var(--mantine-color-red-6)" radius={[0, 4, 4, 0]} barSize={18}>
-                  {data.map((entry, index) => (
+                  {data.map((_, index) => (
                     <Cell
                       key={`cell-${index}`}
                       fill={`var(--mantine-color-red-${Math.min(9, Math.max(5, 9 - index))})`}
@@ -1158,7 +1130,7 @@ function MonthlyCategoryChart({
                     paddingAngle={3}
                     dataKey="value"
                   >
-                    {pieData.map((entry, index) => (
+                    {pieData.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={getPieColor(index)} />
                     ))}
                   </Pie>
@@ -1222,13 +1194,15 @@ function PaymentMethodsParticipationChart({
   year,
   timeframe,
   filterAccountId,
-  filterCategoryId
+  filterCategoryId,
+  view
 }: {
   month?: string;
   year?: string;
   timeframe: "monthly" | "annual";
   filterAccountId: string;
   filterCategoryId: string;
+  view: "competence" | "cash";
 }) {
   const [data, setData] = useState<{ paymentMethodId: string; paymentMethodName: string; amountCents: number }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1245,6 +1219,7 @@ function PaymentMethodsParticipationChart({
         }
         if (filterAccountId) queryParams.append("accountId", filterAccountId);
         if (filterCategoryId) queryParams.append("categoryId", filterCategoryId);
+        queryParams.append("view", view);
 
         const res = await fetch(`${apiBaseUrl}/reports/payment-methods-participation?${queryParams.toString()}`);
         if (!res.ok) throw new Error();
@@ -1256,7 +1231,7 @@ function PaymentMethodsParticipationChart({
       }
     }
     void loadData();
-  }, [month, year, timeframe, filterAccountId, filterCategoryId]);
+  }, [month, year, timeframe, filterAccountId, filterCategoryId, view]);
 
   const totalSumCents = data.reduce((sum, item) => sum + item.amountCents, 0);
 
@@ -1318,7 +1293,7 @@ function PaymentMethodsParticipationChart({
               paddingAngle={3}
               dataKey="value"
             >
-              {pieData.map((entry, index) => (
+              {pieData.map((_, index) => (
                 <Cell key={`cell-${index}`} fill={getPieColor(index)} />
               ))}
             </Pie>
@@ -1363,4 +1338,3 @@ function PaymentMethodsParticipationChart({
     </Stack>
   );
 }
-

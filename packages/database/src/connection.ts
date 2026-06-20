@@ -23,6 +23,8 @@ export function createDatabaseConnection(databasePath?: string) {
 
   const sqlite = new Database(resolvedPath);
   sqlite.pragma("foreign_keys = ON");
+  sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("synchronous = NORMAL");
 
   return {
     sqlite,

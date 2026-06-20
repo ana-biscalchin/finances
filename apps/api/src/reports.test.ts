@@ -100,7 +100,7 @@ describe("reports API", () => {
     });
     expect(t2.statusCode).toBe(201);
 
-    // 3.3 Planned Expense (committed) in Conta Corrente: R$ 50,00 on 2026-06-15 (should affect totalSpent but NOT balance)
+    // Legacy planned entries are treated as committed consumption, but do not move account balance.
     const t3 = await app.inject({
       method: "POST",
       url: "/transactions",
@@ -110,7 +110,7 @@ describe("reports API", () => {
         type: "expense",
         amountCents: 5000,
         eventDate: "2026-06-15",
-        description: "Previsão Frutas",
+        description: "Compromisso legado",
         status: "planned"
       }
     });
@@ -136,7 +136,6 @@ describe("reports API", () => {
     expect(daily[9].balance).toBe(140000);
     expect(daily[9].totalSpent).toBe(10000);
 
-    // Day 15: Planned fruits (- R$ 50,00) -> balance stays 140000 (status is planned, not confirmed), totalSpent = 15000 cents (realized + planned)
     expect(daily[14].balance).toBe(140000);
     expect(daily[14].totalSpent).toBe(15000);
 
@@ -166,7 +165,7 @@ describe("reports API", () => {
     const annualCat = annualCatRes.json();
     expect(annualCat).toHaveLength(1);
     expect(annualCat[0].categoryName).toBe("Alimentação");
-    expect(annualCat[0].amountCents).toBe(15000); // Both realized and planned expenses count towards category spending
+    expect(annualCat[0].amountCents).toBe(15000);
 
     // Test with category filter to see subcategories
     const annualSubCatRes = await app.inject({
@@ -265,6 +264,74 @@ describe("reports API", () => {
     expect(annual[5].expenseCents).toBe(12000);
   });
 
+  it("should include legacy card purchases without bill id in credit card summary", async () => {
+    const accountRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta pagamento",
+        type: "checking",
+        initialBalanceCents: 100000
+      }
+    });
+    expect(accountRes.statusCode).toBe(201);
+    const account = accountRes.json();
+
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão legado",
+        closingDay: 5,
+        dueDay: 12,
+        paymentAccountId: account.id
+      }
+    });
+    expect(cardRes.statusCode).toBe(201);
+    const card = cardRes.json();
+
+    const billRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${card.id}/bills?month=2026-06`
+    });
+    expect(billRes.statusCode).toBe(200);
+    const bill = billRes.json().bill;
+
+    const purchaseRes = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${card.id}/bills/${bill.id}/transactions`,
+      payload: {
+        description: "Compra sem vínculo legado",
+        amountCents: 9000,
+        eventDate: "2026-06-02",
+        status: "confirmed"
+      }
+    });
+    expect(purchaseRes.statusCode).toBe(201);
+
+    const conn = createDatabaseConnection(databasePath);
+    conn.db
+      .update(transactions)
+      .set({ creditCardBillId: null })
+      .where(eq(transactions.id, purchaseRes.json().id))
+      .run();
+    conn.sqlite.close();
+
+    const summaryRes = await app.inject({
+      method: "GET",
+      url: "/reports/credit-cards-summary?month=2026-06"
+    });
+    expect(summaryRes.statusCode).toBe(200);
+    const summary = summaryRes.json();
+    expect(summary).toContainEqual(
+      expect.objectContaining({
+        cardId: card.id,
+        billMonth: "2026-06",
+        amountCents: 9000
+      })
+    );
+  });
+
   it("should not count linked transfers as annual income or consumption", async () => {
     const accountARes = await app.inject({
       method: "POST",
@@ -317,5 +384,205 @@ describe("reports API", () => {
       .get();
     conn.sqlite.close();
     expect(createdTransfer?.linkedTransactionId).toBeTruthy();
+  });
+
+  it("should separate competence and cash views in reports", async () => {
+    // 1. Create checking account
+    const accountRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta Corrente",
+        type: "checking",
+        initialBalanceCents: 100000
+      }
+    });
+    const account = accountRes.json();
+
+    // 2. Create credit card
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Visa",
+        closingDay: 5,
+        dueDay: 12,
+        paymentAccountId: account.id
+      }
+    });
+    const card = cardRes.json();
+
+    // 3. Create credit card purchase (15000 cents, R$ 150,00) on 2026-06-02
+    // First, find the active bill for 2026-06
+    const billRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${card.id}/bills?month=2026-06`
+    });
+    const bill = billRes.json().bill;
+
+    const purchaseRes = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${card.id}/bills/${bill.id}/transactions`,
+      payload: {
+        description: "Supermercado Crédito",
+        amountCents: 15000,
+        eventDate: "2026-06-02",
+        status: "confirmed"
+      }
+    });
+    expect(purchaseRes.statusCode).toBe(201);
+
+    // 4. Create cash/checking expense (5000 cents, R$ 50,00) on 2026-06-10
+    const cashRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        accountId: account.id,
+        type: "expense",
+        amountCents: 5000,
+        eventDate: "2026-06-10",
+        description: "Almoço Débito",
+        status: "confirmed"
+      }
+    });
+    expect(cashRes.statusCode).toBe(201);
+
+    // 5. Test GET /reports/daily-evolution for competence (default)
+    const dailyCompRes = await app.inject({
+      method: "GET",
+      url: "/reports/daily-evolution?month=2026-06&view=competence"
+    });
+    expect(dailyCompRes.statusCode).toBe(200);
+    const dailyComp = dailyCompRes.json();
+    expect(dailyComp[29].totalSpent).toBe(20000); // 15000 + 5000
+
+    // 6. Test GET /reports/daily-evolution for cash
+    const dailyCashRes = await app.inject({
+      method: "GET",
+      url: "/reports/daily-evolution?month=2026-06&view=cash"
+    });
+    expect(dailyCashRes.statusCode).toBe(200);
+    const dailyCash = dailyCashRes.json();
+    expect(dailyCash[29].totalSpent).toBe(5000); // Only 5000, credit purchase ignored
+
+    // 7. Test GET /reports/annual-summary for competence
+    const annualCompRes = await app.inject({
+      method: "GET",
+      url: "/reports/annual-summary?year=2026&view=competence"
+    });
+    const annualComp = annualCompRes.json();
+    expect(annualComp[5].expenseCents).toBe(20000);
+
+    // 8. Test GET /reports/annual-summary for cash
+    const annualCashRes = await app.inject({
+      method: "GET",
+      url: "/reports/annual-summary?year=2026&view=cash"
+    });
+    const annualCash = annualCashRes.json();
+    expect(annualCash[5].expenseCents).toBe(5000);
+  });
+
+  it("should use bill month for competence reports when card purchase moves after closing", async () => {
+    const accountRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta Corrente",
+        type: "checking",
+        initialBalanceCents: 100000
+      }
+    });
+    const account = accountRes.json();
+
+    const categoryRes = await app.inject({
+      method: "POST",
+      url: "/categories",
+      payload: {
+        nature: "expense",
+        name: "Compras"
+      }
+    });
+    const category = categoryRes.json();
+
+    const subcategoryRes = await app.inject({
+      method: "POST",
+      url: "/subcategories",
+      payload: {
+        categoryId: category.id,
+        name: "Eletrônicos",
+        behavior: "extra"
+      }
+    });
+    const subcategory = subcategoryRes.json();
+
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Visa fechamento",
+        closingDay: 5,
+        dueDay: 12,
+        paymentAccountId: account.id
+      }
+    });
+    const card = cardRes.json();
+
+    const billRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${card.id}/bills?month=2026-06`
+    });
+    const bill = billRes.json().bill;
+
+    const purchaseRes = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${card.id}/bills/${bill.id}/transactions`,
+      payload: {
+        description: "Compra no fechamento",
+        amountCents: 20000,
+        eventDate: "2026-06-05",
+        subcategoryId: subcategory.id,
+        status: "confirmed"
+      }
+    });
+    expect(purchaseRes.statusCode).toBe(201);
+    expect(purchaseRes.json().budgetMonth).toBe("2026-07");
+
+    const juneDailyRes = await app.inject({
+      method: "GET",
+      url: "/reports/daily-evolution?month=2026-06&view=competence"
+    });
+    const juneDaily = juneDailyRes.json();
+    expect(juneDaily[29].totalSpent).toBe(0);
+
+    const julyDailyRes = await app.inject({
+      method: "GET",
+      url: "/reports/daily-evolution?month=2026-07&view=competence"
+    });
+    const julyDaily = julyDailyRes.json();
+    expect(julyDaily[30].totalSpent).toBe(20000);
+
+    const annualCategoriesRes = await app.inject({
+      method: "GET",
+      url: "/reports/annual-categories?year=2026&view=competence"
+    });
+    const annualCategories = annualCategoriesRes.json();
+    expect(annualCategories).toContainEqual(
+      expect.objectContaining({
+        categoryId: category.id,
+        amountCents: 20000
+      })
+    );
+
+    const paymentMethodRes = await app.inject({
+      method: "GET",
+      url: "/reports/payment-methods-participation?month=2026-07&view=competence"
+    });
+    const paymentMethods = paymentMethodRes.json();
+    expect(paymentMethods).toContainEqual(
+      expect.objectContaining({
+        paymentMethodId: "pm-credit-card",
+        amountCents: 20000
+      })
+    );
   });
 });

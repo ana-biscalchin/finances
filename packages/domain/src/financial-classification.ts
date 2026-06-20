@@ -65,6 +65,15 @@ export function isConsumptionExpense(transaction: FinancialTransactionLike) {
   );
 }
 
+export function isCashExpense(transaction: FinancialTransactionLike) {
+  return (
+    transaction.type === "expense" &&
+    !isCanceledTransaction(transaction) &&
+    !isInternalTransfer(transaction) &&
+    (isCreditCardPayment(transaction) || !transaction.creditCardId)
+  );
+}
+
 export function isReportableIncome(transaction: FinancialTransactionLike) {
   return (
     isPositiveAccountType(transaction.type) &&

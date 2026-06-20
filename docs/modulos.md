@@ -43,8 +43,9 @@ Funcoes principais:
 
 - Criar, editar, listar e excluir lancamentos.
 - Suportar receitas, despesas, reembolsos e estornos.
-- Suportar status previsto, confirmado, conciliado e cancelado.
-- Filtrar por mes, conta, meio de pagamento, categoria, tipo e status.
+- Criar novos lancamentos como realizados por padrao.
+- Manter status internos (`planned`, `confirmed`, `reconciled`, `canceled`) apenas para compatibilidade, importacoes e conciliacao.
+- Filtrar por mes, conta, meio de pagamento, categoria e tipo.
 - Criar transferencias entre contas por lancamentos vinculados.
 - Exportar CSV.
 - Importar CSV com previa, mapeamento de colunas, reconciliacao e prevencao de duplicatas.
@@ -118,7 +119,9 @@ Status: implementado dentro do modulo de controle mensal.
 Funcoes principais:
 
 - Criar e atualizar valores planejados por mes.
-- Planejar por subcategoria, categoria ou meio de pagamento.
+- Planejar por subcategoria, categoria, meio de pagamento e fonte/conta.
+- Criar alocacoes combinando subcategoria + conta/carteira + meio opcional.
+- Comparar planejado vs realizado por categoria, meio de pagamento e fonte.
 - Copiar orcamentos de um mes para outro.
 - Remover planejamento quando o valor informado e zero.
 

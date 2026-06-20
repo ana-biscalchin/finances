@@ -129,33 +129,14 @@ export const transactions = sqliteTable(
   (table) => [
     index("transactions_budget_month_idx").on(table.budgetMonth),
     index("transactions_event_date_idx").on(table.eventDate),
-    index("transactions_subcategory_idx").on(table.subcategoryId)
+    index("transactions_subcategory_idx").on(table.subcategoryId),
+    index("transactions_account_idx").on(table.accountId),
+    index("transactions_credit_card_idx").on(table.creditCardId),
+    index("transactions_credit_card_bill_idx").on(table.creditCardBillId)
   ]
 );
 
-export const transfers = sqliteTable(
-  "transfers",
-  {
-    id: text("id").primaryKey(),
-    fromAccountId: text("from_account_id")
-      .notNull()
-      .references(() => accounts.id),
-    toAccountId: text("to_account_id")
-      .notNull()
-      .references(() => accounts.id),
-    amountCents: integer("amount_cents").notNull(),
-    transferDate: text("transfer_date").notNull(),
-    paymentMethodId: text("payment_method_id").references(() => paymentMethods.id),
-    status: text("status").notNull().default("planned"),
-    notes: text("notes"),
-    ...timestamps
-  },
-  (table) => [
-    index("transfers_from_account_idx").on(table.fromAccountId),
-    index("transfers_to_account_idx").on(table.toAccountId),
-    index("transfers_date_idx").on(table.transferDate)
-  ]
-);
+
 
 export const installments = sqliteTable(
   "installments",
@@ -216,13 +197,16 @@ export const budgets = sqliteTable(
     budgetMonth: text("budget_month").notNull(),
     categoryId: text("category_id").references(() => categories.id),
     subcategoryId: text("subcategory_id").references(() => subcategories.id),
+    accountId: text("account_id").references(() => accounts.id),
     paymentMethodId: text("payment_method_id").references(() => paymentMethods.id),
     amountCents: integer("amount_cents").notNull(),
     ...timestamps
   },
   (table) => [
     index("budgets_month_idx").on(table.budgetMonth),
-    index("budgets_subcategory_idx").on(table.subcategoryId)
+    index("budgets_subcategory_idx").on(table.subcategoryId),
+    index("budgets_account_idx").on(table.accountId),
+    index("budgets_source_idx").on(table.budgetMonth, table.subcategoryId, table.accountId, table.paymentMethodId)
   ]
 );
 

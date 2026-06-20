@@ -55,7 +55,7 @@ const emptyForm: AccountFormState = {
   name: "",
   type: "checking",
   institution: "",
-  initialBalanceReais: 0,
+  initialBalanceReais: "",
   sortOrder: 0,
   isPrimary: false,
   defaultPaymentMethodId: emptySelectValue
@@ -144,7 +144,7 @@ export function AccountsPage() {
       name: account.name,
       type: account.type,
       institution: account.institution ?? "",
-      initialBalanceReais: account.initialBalanceCents / 100,
+      initialBalanceReais: account.initialBalanceCents === 0 ? "" : account.initialBalanceCents / 100,
       sortOrder: account.sortOrder,
       isPrimary: account.isPrimary,
       defaultPaymentMethodId: account.defaultPaymentMethodId ?? emptySelectValue
@@ -285,18 +285,18 @@ export function AccountsPage() {
           </Stack>
         ) : (
           <Table.ScrollContainer minWidth={860}>
-            <Table verticalSpacing="sm" highlightOnHover>
+            <Table verticalSpacing="sm" fz="sm" highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Nome</Table.Th>
-                  <Table.Th>Tipo</Table.Th>
-                  <Table.Th>Instituição</Table.Th>
-                  <Table.Th>Saldo inicial</Table.Th>
-                  <Table.Th>Saldo atual</Table.Th>
-                  <Table.Th>Ordem</Table.Th>
-                  <Table.Th>Padrões</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th>Ações</Table.Th>
+                  <Table.Th style={{ minWidth: 150 }}>Nome</Table.Th>
+                  <Table.Th style={{ width: 100 }}>Tipo</Table.Th>
+                  <Table.Th style={{ width: 120 }}>Instituição</Table.Th>
+                  <Table.Th style={{ width: 120 }}>Saldo inicial</Table.Th>
+                  <Table.Th style={{ width: 120 }}>Saldo atual</Table.Th>
+                  <Table.Th style={{ width: 80 }}>Ordem</Table.Th>
+                  <Table.Th style={{ width: 150 }}>Padrões</Table.Th>
+                  <Table.Th style={{ width: 100 }}>Status</Table.Th>
+                  <Table.Th style={{ width: 80 }}>Ações</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -410,12 +410,14 @@ export function AccountsPage() {
             prefix="R$ "
             value={form.initialBalanceReais}
             onChange={(value) => setForm((current) => ({ ...current, initialBalanceReais: value }))}
+            onFocus={(e) => e.currentTarget.select()}
           />
           <NumberInput
             label="Ordem"
             min={0}
             value={form.sortOrder}
             onChange={(value) => setForm((current) => ({ ...current, sortOrder: value }))}
+            onFocus={(e) => e.currentTarget.select()}
           />
           <Checkbox
             label="Usar como conta principal"

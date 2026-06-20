@@ -194,3 +194,19 @@ Observacao: servicos gratuitos podem ter limites, pausas, ausencia de backups au
 - Padrao de autenticacao local, caso exista.
 - Estrategia de leitura OFX.
 - Implementacao de reservas/caixinhas sobre as tabelas existentes.
+
+## Tabela `transfers` — Schema Legado (Removido)
+
+A tabela `transfers` existia no schema Drizzle original mas **nunca foi integrada à API ou ao frontend**. A implementação real de transferências usa pares de lançamentos (`transactions`) vinculados por `linkedTransactionId`.
+
+Decisão: A tabela foi completamente removida da base de dados e do schema na migration `0005` (junho de 2026), simplificando a modelagem e eliminando códigos órfãos.
+
+## Módulo Compartilhado de Frontend (`apps/web/src/app/shared/`)
+
+Criado em junho de 2026 para eliminar duplicação severa entre `TransactionsPage.tsx` e `BillsPage.tsx`.
+
+Arquivos criados:
+- `shared/csv-utils.ts` — `parseCsvHeaderLine`, `detectCsvDelimiter`, `countDelimiterOutsideQuotes`
+- `shared/transaction-ui.tsx` — `buildCategoryGroups`, `renderCategoryOption`, `renderStatusBadge`, `getAmountColor`, `getResponseError`, `getMonthOptions`
+
+Regra: qualquer nova funcionalidade de UI que se repita entre páginas de lançamentos deve ir para este módulo.

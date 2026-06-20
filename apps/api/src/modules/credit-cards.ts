@@ -4,11 +4,20 @@ import {
   creditCardBills,
   subcategories,
   transactions,
+  installments,
   type createDatabaseConnection
 } from "@finances/database";
-import { assertTransactionStatus, getCreditCardBillDates } from "@finances/domain";
+import {
+  assertTransactionStatus,
+  assertTransactionType,
+  assertBusinessDate,
+  getCreditCardBillDates,
+  assertYearMonth,
+  getCreditCardBillMonth
+} from "@finances/domain";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import crypto from "node:crypto";
 
 import {
   isRecord,
@@ -19,6 +28,7 @@ import {
   sendPayloadError,
   ValidationError
 } from "../http.js";
+import { buildCreditCardInstallmentTransactions, type TransactionData } from "./transactions.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 
@@ -230,8 +240,12 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     });
 
     const totalCents = allTransactions
-      .filter((t) => t.type === "expense" && t.status !== "canceled")
-      .reduce((sum, t) => sum + t.amountCents, 0);
+      .filter((t) => t.status !== "canceled")
+      .reduce((sum, t) => {
+        if (t.type === "expense") return sum + t.amountCents;
+        if (t.type === "refund" || t.type === "chargeback") return sum - t.amountCents;
+        return sum;
+      }, 0);
 
     return {
       bill,
@@ -288,8 +302,12 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       .all();
 
     const totalBillCents = billTransactions
-      .filter((transaction) => transaction.type === "expense" && transaction.status !== "canceled")
-      .reduce((sum, transaction) => sum + transaction.amountCents, 0);
+      .filter((transaction) => transaction.status !== "canceled")
+      .reduce((sum, transaction) => {
+        if (transaction.type === "expense") return sum + transaction.amountCents;
+        if (transaction.type === "refund" || transaction.type === "chargeback") return sum - transaction.amountCents;
+        return sum;
+      }, 0);
 
     const pagFaturaSub = db
       .select()
@@ -420,32 +438,69 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     try {
       const description = parseRequiredString(body.description, "description");
       const amountCents = parseRequiredInteger(body.amountCents, "amountCents");
-      const eventDate = parseRequiredString(body.eventDate, "eventDate");
+      const eventDate = assertBusinessDate(parseRequiredString(body.eventDate, "eventDate"));
       const subcategoryId = parseOptionalString(body.subcategoryId, "subcategoryId");
       const notes = parseOptionalString(body.notes, "notes");
       const status =
         typeof body.status === "string" && body.status.length > 0
           ? assertTransactionStatus(body.status)
-          : "planned";
+          : "confirmed";
+
+      const installmentCount = (() => {
+        const raw = parseOptionalInteger(body.installmentCount, "installmentCount");
+        if (raw === undefined || raw === null) return 1;
+        if (raw < 1 || raw > 48) throw new ValidationError("installmentCount deve estar entre 1 e 48.");
+        return raw;
+      })();
+
+      const type = typeof body.type === "string" && body.type.length > 0
+        ? assertTransactionType(body.type)
+        : "expense";
+
+      if (type !== "expense" && type !== "refund" && type !== "chargeback") {
+        throw new ValidationError("Lançamento de cartão de crédito deve ser despesa, reembolso ou estorno.");
+      }
 
       if (amountCents <= 0) {
         throw new ValidationError("amountCents deve ser maior que zero.");
       }
 
-      const transaction = {
-        id: crypto.randomUUID(),
-        type: "expense" as const,
+      const budgetMonth = getCreditCardBillMonth(eventDate, card.closingDay);
+      const targetBill = getOrCreateCreditCardBill(connection, card, budgetMonth);
+
+      const transactionData: TransactionData = {
+        type,
         description,
         amountCents,
         eventDate,
-        budgetMonth: bill.billMonth,
+        budgetMonth,
         accountId: null,
         paymentMethodId: null,
         subcategoryId: subcategoryId ?? null,
         creditCardId: id,
-        creditCardBillId: billId,
+        creditCardBillId: targetBill.id,
         status,
         notes: notes ?? null,
+        linkedTransactionId: null,
+      };
+
+      if (installmentCount > 1) {
+        const created = buildCreditCardInstallmentTransactions(
+          connection,
+          transactionData,
+          installmentCount
+        );
+
+        for (const t of created) {
+          db.insert(transactions).values(t).run();
+        }
+
+        return reply.code(201).send(created);
+      }
+
+      const transaction = {
+        id: crypto.randomUUID(),
+        ...transactionData,
         linkedTransactionId: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -490,7 +545,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     try {
       const description = parseRequiredString(body.description, "description");
       const amountCents = parseRequiredInteger(body.amountCents, "amountCents");
-      const eventDate = parseRequiredString(body.eventDate, "eventDate");
+      const eventDate = assertBusinessDate(parseRequiredString(body.eventDate, "eventDate"));
       const subcategoryId = parseOptionalString(body.subcategoryId, "subcategoryId");
       const notes = parseOptionalString(body.notes, "notes");
       const status =
@@ -498,20 +553,75 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           ? assertTransactionStatus(body.status)
           : assertTransactionStatus(current.status);
 
+      const installmentCount = (() => {
+        const raw = parseOptionalInteger(body.installmentCount, "installmentCount");
+        if (raw === undefined || raw === null) return 1;
+        if (raw < 1 || raw > 48) throw new ValidationError("installmentCount deve estar entre 1 e 48.");
+        return raw;
+      })();
+      const type = typeof body.type === "string" && body.type.length > 0
+        ? assertTransactionType(body.type)
+        : current.type;
+
+      if (type !== "expense" && type !== "refund" && type !== "chargeback") {
+        throw new ValidationError("Lançamento de cartão de crédito deve ser despesa, reembolso ou estorno.");
+      }
+
       if (amountCents <= 0) throw new ValidationError("amountCents deve ser maior que zero.");
+
+      const budgetMonth = getCreditCardBillMonth(eventDate, card.closingDay);
+      const targetBill = getOrCreateCreditCardBill(connection, card, budgetMonth);
+
+      const transactionData: TransactionData = {
+        type,
+        description,
+        amountCents,
+        eventDate,
+        budgetMonth,
+        accountId: null,
+        paymentMethodId: null,
+        subcategoryId: subcategoryId ?? null,
+        creditCardId: id,
+        creditCardBillId: targetBill.id,
+        status,
+        notes: notes ?? null,
+        linkedTransactionId: null,
+      };
+
+      if (installmentCount > 1) {
+        const created = buildCreditCardInstallmentTransactions(
+          connection,
+          transactionData,
+          installmentCount
+        );
+
+        const [first, ...rest] = created;
+        db.update(transactions)
+          .set({
+            description: first.description,
+            amountCents: first.amountCents,
+            eventDate: first.eventDate,
+            budgetMonth: first.budgetMonth,
+            subcategoryId: first.subcategoryId,
+            creditCardId: first.creditCardId,
+            creditCardBillId: first.creditCardBillId,
+            status: first.status,
+            notes: first.notes,
+            updatedAt: new Date().toISOString()
+          })
+          .where(eq(transactions.id, transactionId))
+          .run();
+
+        for (const t of rest) {
+          db.insert(transactions).values(t).run();
+        }
+
+        return db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
+      }
 
       db.update(transactions)
         .set({
-          description,
-          amountCents,
-          eventDate,
-          accountId: null,
-          paymentMethodId: null,
-          subcategoryId: subcategoryId ?? null,
-          creditCardId: id,
-          creditCardBillId: current.creditCardBillId ?? billId,
-          notes: notes ?? null,
-          status,
+          ...transactionData,
           updatedAt: new Date().toISOString()
         })
         .where(eq(transactions.id, transactionId))
@@ -548,7 +658,10 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       return reply.code(404).send({ message: "Lançamento não encontrado nesta fatura." });
     }
 
-    db.delete(transactions).where(eq(transactions.id, transactionId)).run();
+    db.transaction((tx) => {
+      tx.delete(installments).where(eq(installments.purchaseTransactionId, transactionId)).run();
+      tx.delete(transactions).where(eq(transactions.id, transactionId)).run();
+    });
     return reply.code(204).send();
   });
 }
@@ -612,4 +725,47 @@ function ensurePaymentAccountOrReply(
   }
 
   return true;
+}
+
+export function getOrCreateCreditCardBill(
+  connection: DatabaseConnection,
+  card: typeof creditCards.$inferSelect,
+  billMonth: string
+) {
+  const existingBill = connection.db
+    .select()
+    .from(creditCardBills)
+    .where(
+      and(
+        eq(creditCardBills.creditCardId, card.id),
+        eq(creditCardBills.billMonth, assertYearMonth(billMonth))
+      )
+    )
+    .get();
+
+  if (existingBill) {
+    return existingBill;
+  }
+
+  const { closingDate, dueDate } = getCreditCardBillDates(
+    billMonth,
+    card.closingDay,
+    card.dueDay
+  );
+  const now = new Date().toISOString();
+  const bill = {
+    id: crypto.randomUUID(),
+    creditCardId: card.id,
+    billMonth,
+    closingDate,
+    dueDate,
+    status: "open" as const,
+    paidAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  connection.db.insert(creditCardBills).values(bill).run();
+
+  return bill;
 }

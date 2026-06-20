@@ -67,4 +67,82 @@ describe("categories API", () => {
     expect(result).toHaveLength(1);
     expect(result[0].subcategories).toHaveLength(1);
   });
+
+  it("should consolidate equivalent budgets when merging subcategories", async () => {
+    const categoryRes = await app.inject({
+      method: "POST",
+      url: "/categories",
+      payload: {
+        nature: "expense",
+        name: "Casa"
+      }
+    });
+    expect(categoryRes.statusCode).toBe(201);
+    const category = categoryRes.json();
+
+    const sourceSubRes = await app.inject({
+      method: "POST",
+      url: "/subcategories",
+      payload: {
+        categoryId: category.id,
+        name: "Mercado antigo",
+        behavior: "variable"
+      }
+    });
+    expect(sourceSubRes.statusCode).toBe(201);
+    const sourceSubcategory = sourceSubRes.json();
+
+    const targetSubRes = await app.inject({
+      method: "POST",
+      url: "/subcategories",
+      payload: {
+        categoryId: category.id,
+        name: "Mercado",
+        behavior: "variable"
+      }
+    });
+    expect(targetSubRes.statusCode).toBe(201);
+    const targetSubcategory = targetSubRes.json();
+
+    await app.inject({
+      method: "PUT",
+      url: "/budgets",
+      payload: {
+        budgetMonth: "2026-06",
+        subcategoryId: sourceSubcategory.id,
+        amountCents: 30000
+      }
+    });
+
+    await app.inject({
+      method: "PUT",
+      url: "/budgets",
+      payload: {
+        budgetMonth: "2026-06",
+        subcategoryId: targetSubcategory.id,
+        amountCents: 50000
+      }
+    });
+
+    const mergeRes = await app.inject({
+      method: "POST",
+      url: `/subcategories/${sourceSubcategory.id}/merge`,
+      payload: {
+        targetSubcategoryId: targetSubcategory.id
+      }
+    });
+    expect(mergeRes.statusCode).toBe(204);
+
+    const budgetsRes = await app.inject({
+      method: "GET",
+      url: "/budgets?month=2026-06"
+    });
+    expect(budgetsRes.statusCode).toBe(200);
+    const rows = budgetsRes.json();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      subcategoryId: targetSubcategory.id,
+      amountCents: 80000
+    });
+  });
 });

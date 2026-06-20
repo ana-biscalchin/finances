@@ -13,10 +13,11 @@ import {
   advanceMonth,
   assertYearMonth,
   getAccountDelta,
+  isCashExpense,
   isConsumptionExpense,
   isReportableIncome
 } from "@finances/domain";
-import { and, eq, inArray, like, ne, or, lt } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, like, ne, or, lt } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
@@ -80,7 +81,8 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       const card = cardMap.get(bill.creditCardId);
       if (!card) continue;
 
-      // Calculate the sum of expenses linked to this bill
+      // Sum current and legacy purchases for this bill. Older/imported rows may
+      // only have creditCardId + budgetMonth, without creditCardBillId.
       const billTransactions = db
         .select({
           amountCents: transactions.amountCents
@@ -88,8 +90,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         .from(transactions)
         .where(
           and(
-            eq(transactions.creditCardBillId, bill.id),
             eq(transactions.creditCardId, bill.creditCardId),
+            or(
+              eq(transactions.creditCardBillId, bill.id),
+              eq(transactions.budgetMonth, bill.billMonth)
+            ),
             eq(transactions.type, "expense"),
             ne(transactions.status, "canceled")
           )
@@ -122,6 +127,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const paymentMethodId = typeof query.paymentMethodId === "string" && query.paymentMethodId ? query.paymentMethodId : undefined;
     const categoryId = typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
     const subcategoryId = typeof query.subcategoryId === "string" && query.subcategoryId ? query.subcategoryId : undefined;
+    const view = typeof query.view === "string" && query.view === "cash" ? "cash" : "competence";
 
     let month: string;
     try {
@@ -166,7 +172,9 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
     // 2.2 Retrieve all transactions for the month with filters
     const txFilters = [
-      like(transactions.eventDate, `${month}-%`),
+      view === "cash"
+        ? like(transactions.eventDate, `${month}-%`)
+        : eq(transactions.budgetMonth, month),
       ne(transactions.status, "canceled")
     ];
 
@@ -174,7 +182,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       txFilters.push(eq(transactions.accountId, accountId));
     }
     if (paymentMethodId) {
-      txFilters.push(eq(transactions.paymentMethodId, paymentMethodId));
+      txFilters.push(
+        paymentMethodId === "pm-credit-card" && view === "competence"
+          ? isNotNull(transactions.creditCardId)
+          : eq(transactions.paymentMethodId, paymentMethodId)
+      );
     }
     if (subcategoryId) {
       txFilters.push(eq(transactions.subcategoryId, subcategoryId));
@@ -241,8 +253,9 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
           }
         }
 
-        // Expense accumulation impact (realized + planned)
-        if (isConsumptionExpense(tx)) {
+        // Legacy planned transactions still count as committed consumption.
+        const isExpense = view === "cash" ? isCashExpense(tx) : isConsumptionExpense(tx);
+        if (isExpense) {
           cumulativeSpent += tx.amountCents;
         }
       }
@@ -270,13 +283,16 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const paymentMethodId = typeof query.paymentMethodId === "string" && query.paymentMethodId ? query.paymentMethodId : undefined;
     const categoryId = typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
     const subcategoryId = typeof query.subcategoryId === "string" && query.subcategoryId ? query.subcategoryId : undefined;
+    const view = typeof query.view === "string" && query.view === "cash" ? "cash" : "competence";
 
     if (!/^\d{4}$/.test(yearStr)) {
       return reply.code(400).send({ message: "Ano inválido. Use o formato YYYY." });
     }
 
     const txFilters = [
-      like(transactions.eventDate, `${yearStr}-%`),
+      view === "cash"
+        ? like(transactions.eventDate, `${yearStr}-%`)
+        : like(transactions.budgetMonth, `${yearStr}-%`),
       ne(transactions.status, "canceled")
     ];
 
@@ -284,7 +300,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       txFilters.push(eq(transactions.accountId, accountId));
     }
     if (paymentMethodId) {
-      txFilters.push(eq(transactions.paymentMethodId, paymentMethodId));
+      txFilters.push(
+        paymentMethodId === "pm-credit-card" && view === "competence"
+          ? isNotNull(transactions.creditCardId)
+          : eq(transactions.paymentMethodId, paymentMethodId)
+      );
     }
     if (subcategoryId) {
       txFilters.push(eq(transactions.subcategoryId, subcategoryId));
@@ -305,6 +325,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const yearTransactions = db
       .select({
         eventDate: transactions.eventDate,
+        budgetMonth: transactions.budgetMonth,
         type: transactions.type,
         amountCents: transactions.amountCents,
         status: transactions.status,
@@ -333,7 +354,8 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     });
 
     for (const tx of yearTransactions) {
-      const monthIdx = Number(tx.eventDate.split("-")[1]) - 1;
+      const referenceMonth = view === "cash" ? tx.eventDate.slice(0, 7) : tx.budgetMonth;
+      const monthIdx = Number(referenceMonth.split("-")[1]) - 1;
       if (monthIdx < 0 || monthIdx > 11) continue;
 
       const isRealized = tx.status === "confirmed" || tx.status === "reconciled";
@@ -341,8 +363,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
       if (isReportableIncome(tx)) {
         monthlyValues[monthIdx].incomeCents += tx.amountCents;
-      } else if (isConsumptionExpense(tx)) {
-        monthlyValues[monthIdx].expenseCents += tx.amountCents;
+      } else {
+        const isExpense = view === "cash" ? isCashExpense(tx) : isConsumptionExpense(tx);
+        if (isExpense) {
+          monthlyValues[monthIdx].expenseCents += tx.amountCents;
+        }
       }
     }
 
@@ -356,13 +381,16 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const accountId = typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
     const paymentMethodId = typeof query.paymentMethodId === "string" && query.paymentMethodId ? query.paymentMethodId : undefined;
     const categoryId = typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
+    const view = typeof query.view === "string" && query.view === "cash" ? "cash" : "competence";
 
     if (!/^\d{4}$/.test(yearStr)) {
       return reply.code(400).send({ message: "Ano inválido. Use o formato YYYY." });
     }
 
     const txFilters = [
-      like(transactions.eventDate, `${yearStr}-%`),
+      view === "cash"
+        ? like(transactions.eventDate, `${yearStr}-%`)
+        : like(transactions.budgetMonth, `${yearStr}-%`),
       eq(transactions.type, "expense"),
       ne(transactions.status, "canceled")
     ];
@@ -371,7 +399,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       txFilters.push(eq(transactions.accountId, accountId));
     }
     if (paymentMethodId) {
-      txFilters.push(eq(transactions.paymentMethodId, paymentMethodId));
+      txFilters.push(
+        paymentMethodId === "pm-credit-card" && view === "competence"
+          ? isNotNull(transactions.creditCardId)
+          : eq(transactions.paymentMethodId, paymentMethodId)
+      );
     }
 
     // If categoryId is NOT defined, we return sums grouped by Category (Macro)
@@ -405,7 +437,9 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       const categorySums = new Map<string, { name: string; sum: number }>();
 
       for (const tx of yearExpenses) {
-        if (!tx.subcategoryId || !isConsumptionExpense(tx)) continue;
+        if (!tx.subcategoryId) continue;
+        const isExpense = view === "cash" ? isCashExpense(tx) : isConsumptionExpense(tx);
+        if (!isExpense) continue;
         const catInfo = subToCatMap.get(tx.subcategoryId);
         if (!catInfo) continue;
 
@@ -456,7 +490,9 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       const subcategorySums = new Map<string, number>();
 
       for (const tx of yearExpenses) {
-        if (!tx.subcategoryId || !isConsumptionExpense(tx)) continue;
+        if (!tx.subcategoryId) continue;
+        const isExpense = view === "cash" ? isCashExpense(tx) : isConsumptionExpense(tx);
+        if (!isExpense) continue;
         subcategorySums.set(
           tx.subcategoryId,
           (subcategorySums.get(tx.subcategoryId) ?? 0) + tx.amountCents
@@ -481,6 +517,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const accountId = typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
     const categoryId = typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
     const subcategoryId = typeof query.subcategoryId === "string" && query.subcategoryId ? query.subcategoryId : undefined;
+    const view = typeof query.view === "string" && query.view === "cash" ? "cash" : "competence";
 
     if (!monthStr && !yearStr) {
       return reply.code(400).send({ message: "Defina o mês (month) ou o ano (year) para consulta." });
@@ -494,7 +531,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     if (monthStr) {
       try {
         const month = assertYearMonth(monthStr);
-        txFilters.push(like(transactions.eventDate, `${month}-%`));
+        txFilters.push(
+          view === "cash"
+            ? like(transactions.eventDate, `${month}-%`)
+            : eq(transactions.budgetMonth, month)
+        );
       } catch {
         return reply.code(400).send({ message: "Mês inválido. Use o formato YYYY-MM." });
       }
@@ -502,7 +543,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       if (!/^\d{4}$/.test(yearStr)) {
         return reply.code(400).send({ message: "Ano inválido. Use o formato YYYY." });
       }
-      txFilters.push(like(transactions.eventDate, `${yearStr}-%`));
+      txFilters.push(
+        view === "cash"
+          ? like(transactions.eventDate, `${yearStr}-%`)
+          : like(transactions.budgetMonth, `${yearStr}-%`)
+      );
     }
 
     if (accountId) {
@@ -544,8 +589,9 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const pmSums = new Map<string, number>();
 
     for (const tx of expenses) {
-      if (!isConsumptionExpense(tx)) continue;
-      const pmId = tx.paymentMethodId || "null";
+      const isExpense = view === "cash" ? isCashExpense(tx) : isConsumptionExpense(tx);
+      if (!isExpense) continue;
+      const pmId = tx.creditCardId ? "pm-credit-card" : (tx.paymentMethodId || "null");
       pmSums.set(pmId, (pmSums.get(pmId) ?? 0) + tx.amountCents);
     }
 

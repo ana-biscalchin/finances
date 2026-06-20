@@ -53,12 +53,15 @@ Este documento descreve as regras que o app aplica hoje. Ele deve ser a referenc
 ## Lancamentos
 
 - Tipos aceitos: `income`, `expense`, `refund`, `chargeback`.
-- Status aceitos: `planned`, `confirmed`, `reconciled`, `canceled`.
-- `planned` entra como comprometido.
-- `confirmed` e `reconciled` entram como realizado.
-- `canceled` nao entra no controle mensal nem no saldo.
+- Novos lancamentos manuais e importados entram como realizados (`confirmed`) por padrao.
+- A previsao de gastos pertence ao Controle mensal/orcamentos, nao ao cadastro de lancamentos.
+- Status aceitos internamente por compatibilidade: `planned`, `confirmed`, `reconciled`, `canceled`.
+- `confirmed` e `reconciled` aparecem como "Realizado" na interface e entram como realizado nas agregacoes.
+- `planned` e legado; uma migration converte lancamentos existentes para `confirmed`, e a UI normal nao cria novos lancamentos previstos.
+- Quando ainda existir dado legado com `status = planned`, o controle mensal e alguns relatorios de consumo o tratam como comprometido, nao como movimento realizado de conta.
+- `canceled` e legado/compatibilidade; nao aparece no fluxo normal e nao entra no controle mensal nem no saldo.
 - Se `budgetMonth` nao for informado, ele vem da data do evento.
-- Lancamentos podem ser filtrados por mes, tipo, status, conta, meio de pagamento e subcategoria.
+- Lancamentos podem ser filtrados por mes, tipo, conta, meio de pagamento e subcategoria.
 - Exportacao CSV usa os filtros de lancamentos e inclui IDs, datas, tipo, descricao, valor, conta, meio, subcategoria, cartao, status e observacoes.
 
 ## Transferencias
@@ -110,11 +113,15 @@ Este documento descreve as regras que o app aplica hoje. Ele deve ser a referenc
 
 - A tela central e `/controle-mensal`.
 - A consulta exige `month=YYYY-MM`.
-- Agrupamento padrao: natureza, comportamento, categoria, subcategoria.
+- Agrupamento padrao: natureza, categoria, subcategoria (o comportamento da subcategoria e exibido como etiqueta na frente do nome).
 - Agrupamento alternativo: meio de pagamento, natureza, categoria, subcategoria.
+- Agrupamento por fonte: conta/carteira, meio de pagamento, natureza, categoria, subcategoria.
 - Indicadores principais: planejado/alocado, realizado, comprometido e disponivel.
 - O disponivel de despesa e `planejado - realizado - comprometido`.
 - Para receita, o disponivel representa diferenca entre recebido/comprometido e planejado.
+- O planejamento pode ser feito por subcategoria, por subcategoria + conta/carteira, ou por subcategoria + conta/carteira + meio de pagamento.
+- Quando uma alocacao tem conta mas nao tem meio especifico, lancamentos reais daquela conta e subcategoria abatem essa alocacao independentemente do meio.
+- Quando uma alocacao tem conta e meio, apenas lancamentos reais com a mesma combinacao abatem essa alocacao.
 - O controle mensal tambem retorna resumo por conta com saldo inicial do mes, entradas, saidas e saldo projetado.
 - Compras de cartao entram no planejamento pelo mes da fatura, nao pelo mes da compra.
 - Pagamento de fatura aparece como movimento de conta quando pago, mas nao duplica o total da fatura nem as compras.
@@ -124,7 +131,9 @@ Este documento descreve as regras que o app aplica hoje. Ele deve ser a referenc
 
 - Orcamentos sao definidos por mes.
 - Podem apontar para categoria ou subcategoria.
-- Podem opcionalmente ser especificos de um meio de pagamento.
+- Podem opcionalmente ser especificos de uma conta/carteira (`accountId`) e de um meio de pagamento (`paymentMethodId`).
+- A chave logica atual e `budgetMonth + subcategoryId + accountId opcional + paymentMethodId opcional`.
+- Exemplos suportados: Flash alimentacao + Supermercado, Flash alimentacao + Delivery, Nubank + Delivery via PIX.
 - `PUT /budgets` cria, atualiza ou remove o orcamento do escopo informado.
 - Valor zero ou menor remove o orcamento existente.
 - `POST /budgets/copy` copia os orcamentos de um mes para outro, substituindo os valores equivalentes no destino.
@@ -148,10 +157,10 @@ Este documento descreve as regras que o app aplica hoje. Ele deve ser a referenc
 - Ha resumo de faturas de cartao, evolucao diaria, resumo anual, categorias anuais e participacao por meio de pagamento.
 - Filtros principais: mes, ano, conta, meio de pagamento, categoria e subcategoria.
 - Relatorios ignoram lancamentos cancelados.
+- Resumo anual considera apenas movimentos realizados; evolucao diaria acumulada, categorias anuais e participacao por meio de pagamento ainda incluem `planned` legado como consumo comprometido quando houver esse dado no banco.
 
 ## Reservas e backups
 
 - Reservas existem no schema (`reserve_goals` e `reserve_movements`), mas ainda nao possuem API/UI implementadas.
 - Backups ainda nao possuem API/UI implementadas.
 - OFX ainda nao esta implementado.
-

@@ -5,6 +5,7 @@ import {
   getCreditCardBillDates,
   getCreditCardBillMonth,
   getFinancialRole,
+  isCashExpense,
   isConsumptionExpense,
   isCreditCardPayment,
   isCreditCardPurchase
@@ -76,6 +77,50 @@ describe("transactions domain", () => {
 
     expect(
       isConsumptionExpense({
+        type: "expense",
+        status: "confirmed",
+        amountCents: 10000,
+        accountId: "acc-1",
+        linkedTransactionId: "tx-linked"
+      })
+    ).toBe(false);
+  });
+
+  it("separates cash expenses from credit purchases and transfers", () => {
+    // Normal consumption expense (cash)
+    expect(
+      isCashExpense({
+        type: "expense",
+        status: "confirmed",
+        amountCents: 10000,
+        accountId: "acc-1"
+      })
+    ).toBe(true);
+
+    // Credit card bill payment
+    expect(
+      isCashExpense({
+        type: "expense",
+        status: "confirmed",
+        amountCents: 10000,
+        accountId: "acc-1",
+        creditCardBillId: "bill-1"
+      })
+    ).toBe(true);
+
+    // Credit card purchase (not a cash flow yet)
+    expect(
+      isCashExpense({
+        type: "expense",
+        status: "confirmed",
+        amountCents: 10000,
+        creditCardId: "card-1"
+      })
+    ).toBe(false);
+
+    // Internal transfer
+    expect(
+      isCashExpense({
         type: "expense",
         status: "confirmed",
         amountCents: 10000,

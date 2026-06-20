@@ -5,7 +5,11 @@ build/
 
 data/*.sqlite
 data/*.sqlite-*
+apps/api/data/*.sqlite
+apps/api/data/*.sqlite-*
 backups/
+
+:memory:
 
 .env
 .env.*

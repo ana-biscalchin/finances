@@ -3,7 +3,8 @@ import {
   createDatabaseConnection,
   creditCardBills,
   subcategories,
-  transactions
+  transactions,
+  installments
 } from "@finances/database";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -330,6 +331,116 @@ describe("transactions & account balances business rules", () => {
     expect(resAccBRestored.json().currentBalanceCents).toBe(50000);
   });
 
+  it("should reject incomplete transfers and update transfer destination account", async () => {
+    const categoryRes = await app.inject({
+      method: "POST",
+      url: "/categories",
+      payload: {
+        name: "Movimentações Internas",
+        nature: "transfer"
+      }
+    });
+    expect(categoryRes.statusCode).toBe(201);
+    const categoryId = categoryRes.json().id;
+
+    const subcategoryRes = await app.inject({
+      method: "POST",
+      url: "/subcategories",
+      payload: {
+        categoryId,
+        name: "Transferência entre contas",
+        behavior: "variable"
+      }
+    });
+    expect(subcategoryRes.statusCode).toBe(201);
+    const subcategoryId = subcategoryRes.json().id;
+
+    const accountCRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta C",
+        type: "savings",
+        initialBalanceCents: 0
+      }
+    });
+    const accountCId = accountCRes.json().id;
+
+    const missingDestinationRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Transferência sem destino",
+        amountCents: 10000,
+        eventDate: "2026-06-10",
+        accountId: accountAId,
+        subcategoryId,
+        status: "confirmed"
+      }
+    });
+    expect(missingDestinationRes.statusCode).toBe(400);
+
+    const sameAccountRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Transferência mesma conta",
+        amountCents: 10000,
+        eventDate: "2026-06-10",
+        accountId: accountAId,
+        destinationAccountId: accountAId,
+        subcategoryId,
+        status: "confirmed"
+      }
+    });
+    expect(sameAccountRes.statusCode).toBe(400);
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Transferência para poupança",
+        amountCents: 10000,
+        eventDate: "2026-06-10",
+        accountId: accountAId,
+        destinationAccountId: accountBId,
+        subcategoryId,
+        status: "confirmed"
+      }
+    });
+    expect(createRes.statusCode).toBe(201);
+    const transfer = createRes.json();
+
+    const updateRes = await app.inject({
+      method: "PUT",
+      url: `/transactions/${transfer.id}`,
+      payload: {
+        type: "expense",
+        description: "Transferência redirecionada",
+        amountCents: 10000,
+        eventDate: "2026-06-10",
+        accountId: accountAId,
+        destinationAccountId: accountCId,
+        subcategoryId,
+        status: "confirmed"
+      }
+    });
+    expect(updateRes.statusCode).toBe(200);
+
+    const conn = createDatabaseConnection(databasePath);
+    const linked = conn.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transfer.linkedTransactionId))
+      .get();
+    conn.sqlite.close();
+
+    expect(linked?.accountId).toBe(accountCId);
+  });
+
   it("should export transactions as CSV with proper headers and data", async () => {
     // Add an income transaction
     await app.inject({
@@ -517,8 +628,8 @@ describe("transactions & account balances business rules", () => {
 
     const csvContent = [
       "\uFEFFData;Descrição;Valor",
-      "06/10/2026;Café antes do fechamento;-12.30",
-      "06/20/2026;Mercado depois do fechamento;-150.00"
+      "06/10/2026;Café antes do fechamento;12.30",
+      "06/20/2026;Mercado depois do fechamento;150.00"
     ].join("\n");
 
     const previewRes = await app.inject({
@@ -771,5 +882,414 @@ describe("transactions & account balances business rules", () => {
     const deleted = conn.db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
     expect(deleted).toBeUndefined();
     conn.sqlite.close();
+  });
+
+  it("should automatically resolve correct credit card bill based on eventDate when using bill-specific routes", async () => {
+    // 1. Create a credit card closing on 15th
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Inteligente",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+    const cardId = cardRes.json().id;
+
+    // Get June bill
+    const juneBillRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills?month=2026-06`
+    });
+    const juneBill = juneBillRes.json().bill;
+
+    // Get July bill
+    const julyBillRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills?month=2026-07`
+    });
+    const julyBill = julyBillRes.json().bill;
+
+    // 2. POST to July bill route, but date is June 10th (should go to June bill)
+    const postRes = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${cardId}/bills/${julyBill.id}/transactions`,
+      payload: {
+        description: "Almoço retroativo",
+        amountCents: 2500,
+        eventDate: "2026-06-10",
+        status: "confirmed"
+      }
+    });
+
+    expect(postRes.statusCode).toBe(201);
+    const createdTx = postRes.json();
+    expect(createdTx.budgetMonth).toBe("2026-06");
+    expect(createdTx.creditCardBillId).toBe(juneBill.id);
+
+    // 3. PUT transaction to June 20th (should move to July bill)
+    const putRes = await app.inject({
+      method: "PUT",
+      url: `/credit-cards/${cardId}/bills/${juneBill.id}/transactions/${createdTx.id}`,
+      payload: {
+        description: "Almoço retroativo editado",
+        amountCents: 2500,
+        eventDate: "2026-06-20",
+        status: "confirmed"
+      }
+    });
+
+    expect(putRes.statusCode).toBe(200);
+    const updatedTx = putRes.json();
+    expect(updatedTx.budgetMonth).toBe("2026-07");
+    expect(updatedTx.creditCardBillId).toBe(julyBill.id);
+  });
+
+  it("should cascade transaction deletion to the installments table", async () => {
+    // 1. Create a credit card
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Cascata",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+    const cardId = cardRes.json().id;
+
+    // 2. Create a credit card transaction
+    const txRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Compra parcelada cascata",
+        amountCents: 3000,
+        eventDate: "2026-06-10",
+        creditCardId: cardId,
+        status: "confirmed"
+      }
+    });
+    const transactionId = txRes.json().id;
+    const billId = txRes.json().creditCardBillId;
+
+    // 3. Manually insert installment records linked to this transaction to test foreign key constraints
+    const conn = createDatabaseConnection(databasePath);
+    conn.db.insert(installments).values({
+      id: crypto.randomUUID(),
+      purchaseTransactionId: transactionId,
+      creditCardBillId: billId,
+      installmentNumber: 1,
+      installmentCount: 2,
+      amountCents: 1500,
+      dueMonth: "2026-06"
+    }).run();
+
+    // Verify installment is inserted
+    const insBefore = conn.db.select().from(installments).where(eq(installments.purchaseTransactionId, transactionId)).all();
+    expect(insBefore).toHaveLength(1);
+    conn.sqlite.close();
+
+    // 4. Delete transaction via /transactions/:id and verify cascade
+    const deleteRes = await app.inject({
+      method: "DELETE",
+      url: `/transactions/${transactionId}`
+    });
+    expect(deleteRes.statusCode).toBe(204);
+
+    const conn2 = createDatabaseConnection(databasePath);
+    const txAfter = conn2.db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
+    const insAfter = conn2.db.select().from(installments).where(eq(installments.purchaseTransactionId, transactionId)).all();
+    conn2.sqlite.close();
+
+    expect(txAfter).toBeUndefined();
+    expect(insAfter).toHaveLength(0);
+  });
+
+  it("should cascade deletion to installments when using credit card bill deletion endpoint", async () => {
+    // 1. Create a credit card
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Cascata 2",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+    const cardId = cardRes.json().id;
+
+    // 2. Create a transaction
+    const txRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Compra parcelada cascata bill",
+        amountCents: 3000,
+        eventDate: "2026-06-10",
+        creditCardId: cardId,
+        status: "confirmed"
+      }
+    });
+    const transactionId = txRes.json().id;
+    const billId = txRes.json().creditCardBillId;
+
+    // 3. Manually insert installment
+    const conn = createDatabaseConnection(databasePath);
+    conn.db.insert(installments).values({
+      id: crypto.randomUUID(),
+      purchaseTransactionId: transactionId,
+      creditCardBillId: billId,
+      installmentNumber: 1,
+      installmentCount: 2,
+      amountCents: 1500,
+      dueMonth: "2026-06"
+    }).run();
+    conn.sqlite.close();
+
+    // 4. Delete via bill-specific route
+    const deleteRes = await app.inject({
+      method: "DELETE",
+      url: `/credit-cards/${cardId}/bills/${billId}/transactions/${transactionId}`
+    });
+    expect(deleteRes.statusCode).toBe(204);
+
+    const conn2 = createDatabaseConnection(databasePath);
+    const txAfter = conn2.db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
+    const insAfter = conn2.db.select().from(installments).where(eq(installments.purchaseTransactionId, transactionId)).all();
+    conn2.sqlite.close();
+
+    expect(txAfter).toBeUndefined();
+    expect(insAfter).toHaveLength(0);
+  });
+
+  it("should support converting credit card transactions to installments via PUT", async () => {
+    // 1. Create a credit card
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Parcelamento PUT",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+    const cardId = cardRes.json().id;
+
+    // 2. Create a normal card transaction
+    const txRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Compra Unica",
+        amountCents: 3000,
+        eventDate: "2026-06-10",
+        creditCardId: cardId,
+        status: "confirmed"
+      }
+    });
+    expect(txRes.statusCode).toBe(201);
+    const originalTx = txRes.json();
+
+    // 3. Edit it to be 3 installments via PUT /transactions/:id
+    const putRes = await app.inject({
+      method: "PUT",
+      url: `/transactions/${originalTx.id}`,
+      payload: {
+        type: "expense",
+        description: "Compra Unica",
+        amountCents: 3000,
+        eventDate: "2026-06-10",
+        creditCardId: cardId,
+        status: "confirmed",
+        installmentCount: 3
+      }
+    });
+    expect(putRes.statusCode).toBe(200);
+
+    // 4. Verify original transaction updated to first installment (1/3)
+    const conn = createDatabaseConnection(databasePath);
+    const firstTx = conn.db.select().from(transactions).where(eq(transactions.id, originalTx.id)).get();
+    expect(firstTx).toBeDefined();
+    expect(firstTx!.description).toBe("Compra Unica (1/3)");
+    expect(firstTx!.amountCents).toBe(1000); // 3000 / 3
+
+    // 5. Verify the other 2 installments were inserted in future months
+    const allTxs = conn.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.creditCardId, cardId))
+      .all();
+    conn.sqlite.close();
+
+    expect(allTxs).toHaveLength(3);
+    const sorted = allTxs.sort((a, b) => a.description.localeCompare(b.description));
+    expect(sorted[0].description).toBe("Compra Unica (1/3)");
+    expect(sorted[0].budgetMonth).toBe("2026-06");
+    expect(sorted[1].description).toBe("Compra Unica (2/3)");
+    expect(sorted[1].budgetMonth).toBe("2026-07");
+    expect(sorted[2].description).toBe("Compra Unica (3/3)");
+    expect(sorted[2].budgetMonth).toBe("2026-08");
+  });
+
+  it("should support importing and processing partial credit card chargebacks (estornos)", async () => {
+    // 1. Create card
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Estorno Teste",
+        institution: "Banco",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+    expect(cardRes.statusCode).toBe(201);
+    const cardId = cardRes.json().id;
+
+    // 2. Import CSV containing a purchase and a negative refund (partial estorno)
+    const csvContent = [
+      "Data;Descrição;Valor",
+      "10/06/2026;Compra Grande;100.00",
+      "11/06/2026;Estorno Parcial;-30.00"
+    ].join("\n");
+
+    const previewRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-preview",
+      payload: {
+        csvContent,
+        mappings: {
+          eventDate: "Data",
+          description: "Descrição",
+          amount: "Valor"
+        },
+        dateFormat: "DMY",
+        defaultCreditCardId: cardId
+      }
+    });
+    expect(previewRes.statusCode).toBe(200);
+    const preview = previewRes.json<ImportPreviewItem[]>();
+    expect(preview).toHaveLength(2);
+
+    // Purchase is positive -> expense
+    expect(preview[0]).toMatchObject({
+      description: "Compra Grande",
+      amountCents: 10000,
+      type: "expense",
+      creditCardId: cardId
+    });
+
+    // Refund/estorno is negative -> chargeback
+    expect(preview[1]).toMatchObject({
+      description: "Estorno Parcial",
+      amountCents: 3000,
+      type: "chargeback",
+      creditCardId: cardId
+    });
+
+    // Confirm import
+    const confirmRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-confirm",
+      payload: {
+        transactions: preview
+      }
+    });
+    expect(confirmRes.statusCode).toBe(201);
+    const confirmed = confirmRes.json<Array<{ creditCardBillId: string }>>();
+    const billId = confirmed[0].creditCardBillId;
+    expect(billId).toBeDefined();
+
+    // 3. Fetch credit card bill and verify total
+    const billRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills`,
+      query: {
+        month: "2026-06"
+      }
+    });
+    expect(billRes.statusCode).toBe(200);
+    const billData = billRes.json();
+    
+    // Total should be 100.00 - 30.00 = 70.00 (7000 cents)
+    expect(billData.totalCents).toBe(7000);
+  });
+
+  it("should support creating and updating transaction type on credit card bills manually", async () => {
+    // 1. Create card
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Manual Teste",
+        institution: "Banco",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+    const cardId = cardRes.json().id;
+
+    // 2. Fetch bill to get billId
+    const billRes1 = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills`,
+      query: { month: "2026-06" }
+    });
+    const billId = billRes1.json().bill.id;
+
+    // 3. Post a transaction via bill transactions endpoint
+    const postTxRes = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${cardId}/bills/${billId}/transactions`,
+      payload: {
+        description: "Compra manual",
+        amountCents: 15000,
+        eventDate: "2026-06-10",
+        type: "expense"
+      }
+    });
+    expect(postTxRes.statusCode).toBe(201);
+    const createdTx = postTxRes.json();
+    expect(createdTx.type).toBe("expense");
+
+    // 4. Update the transaction via PUT to change it to refund/chargeback
+    const putTxRes = await app.inject({
+      method: "PUT",
+      url: `/credit-cards/${cardId}/bills/${billId}/transactions/${createdTx.id}`,
+      payload: {
+        description: "Compra estornada",
+        amountCents: 15000,
+        eventDate: "2026-06-10",
+        type: "chargeback"
+      }
+    });
+    expect(putTxRes.statusCode).toBe(200);
+    const updatedTx = putTxRes.json();
+    expect(updatedTx.type).toBe("chargeback");
+
+    // 5. Verify bill total reflects the chargeback correctly (should be -150.00 since it is a single negative modifier)
+    const billRes2 = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills`,
+      query: { month: "2026-06" }
+    });
+    expect(billRes2.json().totalCents).toBe(-15000);
   });
 });

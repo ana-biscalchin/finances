@@ -68,7 +68,7 @@ const emptyForm: CardFormState = {
   closingDay: 1,
   dueDay: 10,
   paymentAccountId: emptySelectValue,
-  limitCents: 0
+  limitCents: ""
 };
 
 export function CreditCardsPage() {
@@ -140,7 +140,7 @@ export function CreditCardsPage() {
       closingDay: card.closingDay,
       dueDay: card.dueDay,
       paymentAccountId: card.paymentAccountId ?? emptySelectValue,
-      limitCents: card.limitCents != null ? card.limitCents / 100 : 0
+      limitCents: card.limitCents != null ? card.limitCents / 100 : ""
     });
     setIsDrawerOpen(true);
   }
@@ -434,6 +434,7 @@ export function CreditCardsPage() {
               max={31}
               value={form.closingDay}
               onChange={(v) => setForm((f) => ({ ...f, closingDay: v }))}
+              onFocus={(e) => e.currentTarget.select()}
               required
             />
             <NumberInput
@@ -442,6 +443,7 @@ export function CreditCardsPage() {
               max={31}
               value={form.dueDay}
               onChange={(v) => setForm((f) => ({ ...f, dueDay: v }))}
+              onFocus={(e) => e.currentTarget.select()}
               required
             />
           </Group>
@@ -462,6 +464,7 @@ export function CreditCardsPage() {
             step={0.01}
             value={form.limitCents}
             onChange={(v) => setForm((f) => ({ ...f, limitCents: v }))}
+            onFocus={(e) => e.currentTarget.select()}
           />
 
           <Group justify="flex-end">

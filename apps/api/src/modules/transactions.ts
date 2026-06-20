@@ -6,6 +6,7 @@ import {
   subcategories,
   paymentMethods,
   transactions,
+  installments,
   type createDatabaseConnection
 } from "@finances/database";
 import {
@@ -33,7 +34,7 @@ import {
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 type ParsedTransactionPayload = ReturnType<typeof parseTransactionPayload>;
-type TransactionData = Omit<ParsedTransactionPayload, "destinationAccountId" | "installmentCount">;
+export type TransactionData = Omit<ParsedTransactionPayload, "destinationAccountId" | "installmentCount">;
 
 type TransactionPayload = {
   type?: unknown;
@@ -120,6 +121,10 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     }
 
     const { destinationAccountId, installmentCount, ...rawTransactionData } = payload;
+    const transferValidation = validateTransferPayload(connection, payload);
+    if (transferValidation) {
+      return reply.code(400).send({ message: transferValidation });
+    }
     const transactionId = crypto.randomUUID();
 
     // ── Installments (card purchases split into N months) ──────────────
@@ -192,13 +197,58 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply;
     }
 
-    const rawTransactionData = getTransactionData(payload);
+    const transferValidation = validateTransferPayload(connection, payload, current);
+    if (transferValidation) {
+      return reply.code(400).send({ message: transferValidation });
+    }
+
+    const { destinationAccountId, installmentCount, ...rawTransactionData } = payload;
+
+    // Handle installment conversion for card transaction
+    if (installmentCount > 1 && rawTransactionData.creditCardId) {
+      const created = buildCreditCardInstallmentTransactions(
+        connection,
+        rawTransactionData,
+        installmentCount
+      );
+
+      const [first, ...rest] = created;
+      db.update(transactions)
+        .set({
+          description: first.description,
+          amountCents: first.amountCents,
+          eventDate: first.eventDate,
+          budgetMonth: first.budgetMonth,
+          subcategoryId: first.subcategoryId,
+          creditCardId: first.creditCardId,
+          creditCardBillId: first.creditCardBillId,
+          status: first.status,
+          notes: first.notes,
+          updatedAt: new Date().toISOString()
+        })
+        .where(eq(transactions.id, id))
+        .run();
+
+      for (const t of rest) {
+        db.insert(transactions).values(t).run();
+      }
+
+      const updated = db.select().from(transactions).where(eq(transactions.id, id)).get();
+      return reply.code(200).send(updated);
+    }
+
     const transactionData = normalizeTransactionForStorage(connection, rawTransactionData);
 
     if (current.linkedTransactionId && transactionData.creditCardId) {
       return reply
         .code(400)
         .send({ message: "Transferência não pode ser convertida em compra de cartão." });
+    }
+
+    if (!current.linkedTransactionId && destinationAccountId) {
+      return reply
+        .code(400)
+        .send({ message: "Para transformar um lançamento em transferência, crie uma nova transferência vinculada." });
     }
 
     // Update main transaction
@@ -228,6 +278,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
             status: transactionData.status,
             notes: transactionData.notes,
             type: linkedType,
+            accountId: destinationAccountId ?? linked.accountId,
             updatedAt: new Date().toISOString()
           })
           .where(eq(transactions.id, current.linkedTransactionId))
@@ -246,16 +297,24 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply.code(404).send({ message: "Lançamento não encontrado." });
     }
 
-    // If it is linked, delete the other one as well
-    if (current.linkedTransactionId) {
-      db.delete(transactions)
-        .where(eq(transactions.id, current.linkedTransactionId))
-        .run();
-    }
+    db.transaction((tx) => {
+      // If it is linked, delete the other one as well (and its potential installments)
+      if (current.linkedTransactionId) {
+        tx.delete(installments)
+          .where(eq(installments.purchaseTransactionId, current.linkedTransactionId))
+          .run();
+        tx.delete(transactions)
+          .where(eq(transactions.id, current.linkedTransactionId))
+          .run();
+      }
 
-    db.delete(transactions)
-      .where(eq(transactions.id, id))
-      .run();
+      tx.delete(installments)
+        .where(eq(installments.purchaseTransactionId, id))
+        .run();
+      tx.delete(transactions)
+        .where(eq(transactions.id, id))
+        .run();
+    });
 
     return reply.code(204).send();
   });
@@ -450,9 +509,12 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
           : null;
         const baseDescription = installmentInfo?.baseDescription ?? description;
 
-        const type: "income" | "expense" = card
-          ? "expense"
-          : parseImportedTransactionType(rawType, amountResult.detectedType);
+        let type: "income" | "expense" | "refund" | "chargeback" = "expense";
+        if (card) {
+          type = amountResult.detectedType === "expense" ? "chargeback" : "expense";
+        } else {
+          type = parseImportedTransactionType(rawType, amountResult.detectedType);
+        }
         const subcategoryId = resolveImportedSubcategoryId(rawSubcategory, type, categoryLookup);
 
         let calculatedBudgetMonth: string | null = null;
@@ -575,7 +637,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         eventDate: string;
         description: string;
         amountCents: number;
-        type: "income" | "expense";
+        type: "income" | "expense" | "refund" | "chargeback";
         accountId?: string | null;
         paymentMethodId?: string | null;
         creditCardId?: string | null;
@@ -711,8 +773,8 @@ function parseTransactionPayload(body: unknown) {
     throw new ValidationError("Compra no cartão não pode ser transferência entre contas.");
   }
 
-  if (creditCardId && type !== "expense") {
-    throw new ValidationError("Lançamento de cartão de crédito deve ser despesa.");
+  if (creditCardId && type !== "expense" && type !== "refund" && type !== "chargeback") {
+    throw new ValidationError("Lançamento de cartão de crédito deve ser despesa, reembolso ou estorno.");
   }
 
   return {
@@ -730,7 +792,7 @@ function parseTransactionPayload(body: unknown) {
     creditCardBillId: null as string | null,
     status:
       payload.status === undefined || payload.status === null || payload.status === ""
-        ? "planned"
+        ? "confirmed"
         : assertTransactionStatus(parseRequiredString(payload.status, "status")),
     notes: parseOptionalString(payload.notes, "notes"),
     destinationAccountId,
@@ -739,12 +801,53 @@ function parseTransactionPayload(body: unknown) {
   };
 }
 
-function getTransactionData(payload: ParsedTransactionPayload): TransactionData {
-  const { destinationAccountId, installmentCount, ...transactionData } = payload;
-  void destinationAccountId;
-  void installmentCount;
 
-  return transactionData;
+function validateTransferPayload(
+  connection: DatabaseConnection,
+  payload: ParsedTransactionPayload,
+  current?: typeof transactions.$inferSelect
+) {
+  const isTransferSubcategory = isTransferSubcategoryId(connection, payload.subcategoryId);
+  const hasDestination = Boolean(payload.destinationAccountId);
+  const isExistingTransfer = Boolean(current?.linkedTransactionId);
+
+  if (payload.creditCardId && (isTransferSubcategory || hasDestination || isExistingTransfer)) {
+    return "Compra no cartão não pode ser transferência entre contas.";
+  }
+
+  if ((isTransferSubcategory || hasDestination) && !payload.accountId) {
+    return "Transferência precisa de uma conta de origem.";
+  }
+
+  if (isTransferSubcategory && !hasDestination && !isExistingTransfer) {
+    return "Transferência precisa de uma conta de destino.";
+  }
+
+  if (
+    payload.destinationAccountId &&
+    payload.accountId === payload.destinationAccountId
+  ) {
+    return "Conta de origem e conta de destino devem ser diferentes.";
+  }
+
+  return null;
+}
+
+function isTransferSubcategoryId(connection: DatabaseConnection, subcategoryId: string | null) {
+  if (!subcategoryId) {
+    return false;
+  }
+
+  const subcategory = connection.db
+    .select({
+      categoryNature: dbCategories.nature
+    })
+    .from(subcategories)
+    .leftJoin(dbCategories, eq(subcategories.categoryId, dbCategories.id))
+    .where(eq(subcategories.id, subcategoryId))
+    .get();
+
+  return subcategory?.categoryNature === "transfer";
 }
 
 function normalizeTransactionForStorage(
@@ -768,7 +871,7 @@ function normalizeTransactionForStorage(
   };
 }
 
-function buildCreditCardInstallmentTransactions(
+export function buildCreditCardInstallmentTransactions(
   connection: DatabaseConnection,
   transactionData: TransactionData,
   installmentCount: number
@@ -1238,7 +1341,7 @@ type ImportedCategoryLookupItem = {
 
 function resolveImportedSubcategoryId(
   rawCategory: string,
-  transactionType: "income" | "expense",
+  transactionType: "income" | "expense" | "refund" | "chargeback",
   categoryLookup: ImportedCategoryLookupItem[]
 ): string | null {
   const normalizedCategory = normalizeImportedCategoryText(rawCategory);

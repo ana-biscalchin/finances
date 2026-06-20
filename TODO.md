@@ -85,6 +85,12 @@ Backlog e status do projeto.
 - [x] Corrigir input do valor planejado para aceitar decimais com vírgula (formato brasileiro) e remover placeholders.
 - [x] Otimizar fluxo de cliques: adicionar foco automático e seleção completa do texto ao abrir o input para digitação imediata.
 - [x] Evitar recarga/scroll para o topo e manter categorias colapsadas após salvar um planejamento (atualização in-place).
+- [x] Permitir colapsar a área de Resumo e de Saldos no Controle Mensal (Competência e Caixa).
+- [x] Iniciar categorias macros e subcategorias colapsadas por padrão em todos os níveis.
+- [x] Persistir os estados de abertura/fechamento das seções de resumo e categorias no `localStorage` do usuário.
+- [x] Fazer a visualização mensal acompanhar o mês mais antigo registrado no banco de dados.
+- [x] Simplificar lançamentos como realizados e mover previsões para alocações mensais por fonte/conta.
+- [x] Permitir orçamento mensal por subcategoria + conta/carteira + meio de pagamento opcional.
 
 ## Importação, Exportação E Backups
 
@@ -151,6 +157,37 @@ Backlog e status do projeto.
   - [x] Ignorar lancamentos cancelados no saldo de contas.
   - [x] Proteger relatorios contra duplicidade de pagamento de fatura.
   - [x] Proteger relatorios contra transferencias como consumo/receita.
-- [ ] Separar API do controle mensal por visao de competencia e caixa.
-- [ ] Criar abas de competencia e caixa no Controle mensal.
-- [ ] Revisar relatorios e textos da UI com a nova linguagem financeira.
+- [x] Separar API do controle mensal por visao de competencia e caixa.
+- [x] Criar abas de competencia e caixa no Controle mensal.
+- [x] Revisar relatorios e textos da UI com a nova linguagem financeira (Bloco 4 do plano).
+- [x] Conciliação Financeira Automática (Bloco 5):
+  - [x] Motor de pontuação de matching por proximidade, descrição e valor exato em `packages/domain/src/reconciliation.ts`.
+  - [x] Endpoints `/reconciliation/match-preview` e `/reconciliation/confirm` na API em `apps/api/src/modules/reconciliation.ts`.
+  - [x] Interface visual de conciliação (Wizard lado a lado) no frontend em `apps/web/src/app/transactions/ReconciliationWizard.tsx`.
+- [x] Correção de Categorização Dupla de Movimentações Internas no Controle Mensal
+- [x] Criação do Guia Completo de Features e Fluxos Visuais (`docs/guia-features-fluxos.md`)
+- [x] Auditoria completa de performance e diagnóstico de lentidão (`docs/auditoria-performance.md`)
+- [x] Habilitar modo WAL e sincronismo NORMAL no SQLite para escritas instantâneas
+- [x] Otimização das queries de cálculo de saldo no Controle Mensal (Removido carregamento total do banco de dados na RAM)
+- [x] Adicionar índices compostos nas chaves estrangeiras (`accountId`, `creditCardBillId`, `creditCardId`) em `transactions`
+- [x] Corrigir exclusão de transações de cartão de crédito e cascade com tabela `installments` na API
+- [x] Otimizar carregamento de referências de contas e meios de pagamento eliminando o gargalo N+1 de saldo de contas
+- [x] Padronizar todos os campos de valor financeiro (Saldo Inicial, Limite, Valor) sem placeholder e com seleção automática no foco.
+- [x] Implementar o seletor flexível de data com digitação de dia + calendário oculto na tela de Faturas.
+- [x] Implementar busca textual (descrição, observação, data, categoria) na tela de Lançamentos.
+- [x] Corrigir relatórios de competência para usarem `budgetMonth` em compras de cartão.
+- [x] Bloquear transferências incompletas e atualizar conta de destino ao editar transferência.
+- [x] Consolidar orçamentos equivalentes ao fundir subcategorias.
+- [x] Remover edição manual enganosa do mês da fatura no formulário de lançamentos.
+- [x] Incluir compras legadas sem `creditCardBillId` no resumo de faturas dos relatórios.
+- [x] Padronizar todos os seletores de categoria utilizando o componente unificado `CategorySelect` em todo o aplicativo.
+- [x] Implementar busca inteligente com pontuação (score por prefixo de subcategoria, prefixo de categoria pai e substring) no `CategorySelect`.
+- [x] Eliminar nível intermediário de comportamento (Fixa/Variável/Extra) da árvore de controle mensal no backend e frontend, substituindo-o por tags/badges inline nas subcategorias.
+- [x] Limpar código órfão, imports não utilizados e adequar a documentação de regras financeiras à nova arquitetura da árvore.
+- [x] Corrigir a lógica de soma no agrupamento "Por Fonte" do controle mensal usando regras de fluxo de caixa líquido (sinais corretos de receitas/despesas) e eliminar a visualização "Por Meio".
+- [x] Permitir e gerenciar estornos (`chargeback`) e reembolsos (`refund`) de compras de cartão de crédito nas faturas:
+  - [x] Atualizar validações da API para aceitar esses tipos em lançamentos associados a cartão de crédito.
+  - [x] Liberar seletor de Tipo (Despesa/Reembolso/Estorno) nos drawers de criação e edição da tela de faturas.
+  - [x] Garantir que estornos e reembolsos compensem corretamente o valor total da fatura.
+  - [x] Habilitar detecção automática de estorno no preview e confirmação de importação de fatura via CSV.
+

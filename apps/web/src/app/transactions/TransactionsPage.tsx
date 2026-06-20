@@ -25,10 +25,8 @@ import {
 } from "@mantine/core";
 import {
   formatMoney,
-  getCategoryColor,
   moneyFromCents,
   parseMoneyToCents,
-  transactionStatuses,
   transactionTypes
 } from "@finances/domain";
 import {
@@ -41,11 +39,27 @@ import {
   IconDownload,
   IconUpload,
   IconAlertTriangle,
-  IconCheck
+  IconCheck,
+  IconSearch,
+  IconCopy
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useClipboard } from "@mantine/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { formatBusinessDateForDisplay } from "../date-format";
+import {
+  formatBusinessDateForDisplay,
+  getTodayBusinessDate
+} from "../date-format";
+import { ReconciliationWizard } from "./ReconciliationWizard";
+import { BusinessDateInput } from "../shared/BusinessDateInput";
+import { parseCsvHeaderLine } from "../shared/csv-utils";
+import {
+  getAmountColor,
+  getResponseError
+} from "../shared/transaction-ui";
+import { CategorySelect, QuickCategoryEdit } from "../shared/CategorySelect";
+import { MonthSelector } from "../shared/MonthSelector";
+import { QuickAmountEdit, QuickDateEdit, QuickTextEdit } from "../shared/QuickEditFields";
 
 type Transaction = {
   id: string;
@@ -138,7 +152,7 @@ type TransactionFormState = {
 };
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-const today = new Date().toISOString().slice(0, 10);
+const today = getTodayBusinessDate();
 const currentMonth = today.slice(0, 7);
 const emptySelectValue = "__none__";
 const transactionTypeOptions = transactionTypes.map((transactionType) => ({
@@ -149,13 +163,13 @@ const transactionTypeOptions = transactionTypes.map((transactionType) => ({
 const emptyForm: TransactionFormState = {
   type: "expense",
   description: "",
-  amountReais: 0,
+  amountReais: "",
   eventDate: today,
   budgetMonth: currentMonth,
   accountId: emptySelectValue,
   paymentMethodId: emptySelectValue,
   subcategoryId: emptySelectValue,
-  status: "planned",
+  status: "confirmed",
   notes: "",
   destinationAccountId: emptySelectValue,
   paymentMode: "account",
@@ -171,10 +185,10 @@ export function TransactionsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [filterType, setFilterType] = useState<string>(emptySelectValue);
-  const [filterStatus, setFilterStatus] = useState<string>(emptySelectValue);
   const [filterAccountId, setFilterAccountId] = useState<string>(emptySelectValue);
   const [filterPaymentMethodId, setFilterPaymentMethodId] = useState<string>(emptySelectValue);
   const [filterSubcategoryId, setFilterSubcategoryId] = useState<string>(emptySelectValue);
+  const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -182,13 +196,11 @@ export function TransactionsPage() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [form, setForm] = useState<TransactionFormState>(emptyForm);
-  const [eventDateText, setEventDateText] = useState(formatDateForDisplay(emptyForm.eventDate));
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set());
   const [bulkAccountId, setBulkAccountId] = useState<string>(emptySelectValue);
   const [bulkPaymentMethodId, setBulkPaymentMethodId] = useState<string>(emptySelectValue);
   const [bulkSubcategoryId, setBulkSubcategoryId] = useState<string>(emptySelectValue);
   const [isBulkSaving, setIsBulkSaving] = useState(false);
-  const calendarInputRef = useRef<HTMLInputElement>(null);
   const descriptionInputRef = useRef<HTMLInputElement>(null);
 
   // Import/Export CSV state
@@ -215,6 +227,43 @@ export function TransactionsPage() {
   const [isImportPreviewLoading, setIsImportPreviewLoading] = useState(false);
   const [isImportConfirming, setIsImportConfirming] = useState(false);
   const [importModalError, setImportModalError] = useState<string | null>(null);
+  const [isReconciliationModalOpen, setIsReconciliationModalOpen] = useState(false);
+
+  const clipboard = useClipboard({ timeout: 2000 });
+
+  const statementPromptText = useMemo(() => {
+    const incomes: string[] = [];
+    const expenses: string[] = [];
+    const transfers: string[] = [];
+
+    for (const cat of categories) {
+      for (const sub of cat.subcategories) {
+        if (cat.nature === "income") {
+          incomes.push(sub.name);
+        } else if (cat.nature === "expense") {
+          expenses.push(sub.name);
+        } else if (cat.nature === "transfer") {
+          transfers.push(sub.name);
+        }
+      }
+    }
+
+    return `Por favor, formate o seguinte extrato bancário em um arquivo CSV estruturado para importação.
+Use como separador o ponto e vírgula (;). O cabeçalho deve ser exatamente: Data;Descricao;Valor;Tipo;Categoria
+
+Siga rigorosamente estas regras:
+1. Data: Converta todas as datas para o formato DD/MM/AAAA.
+2. Descrição: Simplifique e limpe a descrição do lançamento (remova códigos, IDs de transação longos, etc., mantendo o nome do estabelecimento ou do remetente/destinatário de forma clara).
+3. Valor: Escreva no formato decimal brasileiro (usando vírgula para centavos, ex: 150,50 ou -32,00). Não use pontos para milhares. Despesas/saídas devem começar com sinal de menos (-) e receitas/entradas devem ser positivas.
+4. Tipo: Preencha com 'Receita' para entradas ou 'Despesa' para saídas.
+5. Categoria: Tente inferir a categoria correta com base na descrição, escolhendo uma das categorias abaixo:
+   - Receitas: ${incomes.join(", ")}
+   - Despesas: ${expenses.join(", ")}
+   - Movimentações Internas (Transferências): ${transfers.join(", ")}
+
+Extrato a ser convertido:
+[Cole seu extrato aqui]`;
+  }, [categories]);
 
   const accountOptions = useMemo(
     () => accounts.map((account) => ({ value: account.id, label: account.name })),
@@ -242,13 +291,17 @@ export function TransactionsPage() {
     [creditCards]
   );
   const hasDraft = useMemo(
-    () => isTransactionDraftDirty(form, buildEmptyFormWithDefaults(accounts, selectedMonth, creditCards)),
-    [accounts, form, selectedMonth, creditCards]
+    () => isTransactionDraftDirty(form, buildEmptyFormWithDefaults(accounts, creditCards)),
+    [accounts, form, creditCards]
   );
   const hasCreateDraft = !editingTransaction && hasDraft;
+  const visibleTransactions = useMemo(
+    () => transactions.filter((transaction) => transaction.status !== "canceled" && transaction.status !== "planned"),
+    [transactions]
+  );
   const selectedTransactions = useMemo(
-    () => transactions.filter((transaction) => selectedTransactionIds.has(transaction.id)),
-    [selectedTransactionIds, transactions]
+    () => visibleTransactions.filter((transaction) => selectedTransactionIds.has(transaction.id)),
+    [selectedTransactionIds, visibleTransactions]
   );
   const selectedAccountTransactions = useMemo(
     () => selectedTransactions.filter((transaction) => !transaction.creditCardId),
@@ -266,20 +319,7 @@ export function TransactionsPage() {
 
   const isTransferCategory = selectedSubcategory?.category.nature === "transfer";
 
-  const filteredCategoryOptions = useMemo(() => {
-    let filtered = categories;
-    
-    let natureFilters: string[] = [];
-    if (form.type === "income") natureFilters = ["income", "transfer"];
-    if (form.type === "expense") natureFilters = ["expense", "transfer"];
-    if (form.type === "refund" || form.type === "chargeback") natureFilters = ["expense"];
 
-    if (natureFilters.length > 0) {
-      filtered = categories.filter((c) => natureFilters.includes(c.nature));
-    }
-    
-    return buildCategoryGroups(filtered);
-  }, [categories, form.type]);
 
   async function loadReferences() {
     const [accountsResponse, paymentMethodsResponse, categoriesResponse, creditCardsResponse] =
@@ -310,14 +350,13 @@ export function TransactionsPage() {
     setCreditCards(nextCreditCards);
   }
 
-  async function loadTransactions() {
+  const loadTransactions = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
     try {
       const params = new URLSearchParams({ budgetMonth: selectedMonth });
       if (filterType !== emptySelectValue) params.set("type", filterType);
-      if (filterStatus !== emptySelectValue) params.set("status", filterStatus);
       if (filterAccountId !== emptySelectValue) params.set("accountId", filterAccountId);
       if (filterPaymentMethodId !== emptySelectValue) {
         params.set("paymentMethodId", filterPaymentMethodId);
@@ -339,12 +378,17 @@ export function TransactionsPage() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [
+    selectedMonth,
+    filterType,
+    filterAccountId,
+    filterPaymentMethodId,
+    filterSubcategoryId
+  ]);
 
   function handleExportCsv() {
     const params = new URLSearchParams({ budgetMonth: selectedMonth });
     if (filterType !== emptySelectValue) params.set("type", filterType);
-    if (filterStatus !== emptySelectValue) params.set("status", filterStatus);
     if (filterAccountId !== emptySelectValue) params.set("accountId", filterAccountId);
     if (filterPaymentMethodId !== emptySelectValue) {
       params.set("paymentMethodId", filterPaymentMethodId);
@@ -598,7 +642,6 @@ export function TransactionsPage() {
   }, [
     selectedMonth,
     filterType,
-    filterStatus,
     filterAccountId,
     filterPaymentMethodId,
     filterSubcategoryId
@@ -609,10 +652,9 @@ export function TransactionsPage() {
       return;
     }
 
-    const nextForm = buildEmptyFormWithDefaults(accounts, selectedMonth);
+    const nextForm = buildEmptyFormWithDefaults(accounts);
     setForm((current) => {
       if (isPristineTransactionDraft(current)) {
-        setEventDateText(formatDateForDisplay(nextForm.eventDate));
         return nextForm;
       }
 
@@ -671,14 +713,13 @@ export function TransactionsPage() {
         return current;
       }
 
-      const nextForm = buildEmptyFormWithDefaults(accounts, selectedMonth, creditCards);
-      setEventDateText(formatDateForDisplay(nextForm.eventDate));
+      const nextForm = buildEmptyFormWithDefaults(accounts, creditCards);
       return nextForm;
     });
     setIsDrawerOpen(true);
   }
 
-  function openEditDrawer(transaction: Transaction) {
+  const openEditDrawer = useCallback((transaction: Transaction) => {
     setEditingTransaction(transaction);
     setDrawerError(null);
 
@@ -694,7 +735,7 @@ export function TransactionsPage() {
     setForm({
       type: transaction.type,
       description: transaction.description,
-      amountReais: transaction.amountCents / 100,
+      amountReais: transaction.amountCents === 0 ? "" : transaction.amountCents / 100,
       eventDate: transaction.eventDate,
       budgetMonth: transaction.budgetMonth,
       accountId: transaction.accountId ?? emptySelectValue,
@@ -707,16 +748,14 @@ export function TransactionsPage() {
       creditCardId: transaction.creditCardId ?? emptySelectValue,
       installmentCount: 1
     });
-    setEventDateText(formatDateForDisplay(transaction.eventDate));
     setIsDrawerOpen(true);
-  }
+  }, [transactions]);
 
   function discardDraft() {
-    const nextForm = buildEmptyFormWithDefaults(accounts, selectedMonth);
+    const nextForm = buildEmptyFormWithDefaults(accounts);
     setEditingTransaction(null);
     setDrawerError(null);
     setForm(nextForm);
-    setEventDateText(formatDateForDisplay(nextForm.eventDate));
     window.setTimeout(() => descriptionInputRef.current?.focus(), 120);
   }
 
@@ -730,40 +769,6 @@ export function TransactionsPage() {
       eventDate: value,
       budgetMonth: value.slice(0, 7)
     }));
-    setEventDateText(formatDateForDisplay(value));
-  }
-
-  function updateEventDateText(value: string) {
-    const nextText = formatDayMonthInput(value);
-    const nextDate = parseFlexibleDateToIso(nextText, selectedMonth);
-
-    setEventDateText(nextDate ? formatDateForDisplay(nextDate) : nextText);
-
-    if (nextDate) {
-      setForm((current) => ({
-        ...current,
-        eventDate: nextDate,
-        budgetMonth: nextDate.slice(0, 7)
-      }));
-    }
-  }
-
-  function openCalendarPicker() {
-    const calendarInput = calendarInputRef.current;
-
-    if (!calendarInput) {
-      return;
-    }
-
-    const showPicker = (calendarInput as HTMLInputElement & { showPicker?: () => void }).showPicker;
-
-    if (showPicker) {
-      showPicker.call(calendarInput);
-      return;
-    }
-
-    calendarInput.focus();
-    calendarInput.click();
   }
 
   function updateAccount(accountId: string) {
@@ -790,6 +795,19 @@ export function TransactionsPage() {
       if (isCardMode && !creditCardId) {
         throw new Error("Selecione um cartão de crédito.");
       }
+      if (isTransferCategory) {
+        const originAccountId = toNullableSelectValue(form.accountId);
+        const destinationAccountId = toNullableSelectValue(form.destinationAccountId);
+        if (!originAccountId) {
+          throw new Error("Selecione a conta de origem da transferência.");
+        }
+        if (!destinationAccountId) {
+          throw new Error("Selecione a conta de destino da transferência.");
+        }
+        if (originAccountId === destinationAccountId) {
+          throw new Error("Conta de origem e conta de destino devem ser diferentes.");
+        }
+      }
 
       const response = await fetch(
         editingTransaction
@@ -808,11 +826,11 @@ export function TransactionsPage() {
             paymentMethodId: isCardMode ? null : toNullableSelectValue(form.paymentMethodId),
             subcategoryId: toNullableSelectValue(form.subcategoryId),
             creditCardId,
-            status: form.status,
+            status: editingTransaction ? form.status : "confirmed",
             notes: form.notes,
             destinationAccountId:
               isTransferCategory ? toNullableSelectValue(form.destinationAccountId) : null,
-            installmentCount: !editingTransaction && isCardMode ? form.installmentCount : 1
+            installmentCount: isCardMode ? form.installmentCount : 1
           })
         }
       );
@@ -821,10 +839,9 @@ export function TransactionsPage() {
         throw new Error(await getResponseError(response, "Não foi possível salvar o lançamento."));
       }
 
-      const nextForm = buildEmptyFormWithDefaults(accounts, selectedMonth, creditCards);
+      const nextForm = buildEmptyFormWithDefaults(accounts, creditCards);
       setEditingTransaction(null);
       setForm(nextForm);
-      setEventDateText(formatDateForDisplay(nextForm.eventDate));
       setIsDrawerOpen(true);
       window.setTimeout(() => descriptionInputRef.current?.focus(), 120);
       await loadTransactions();
@@ -835,7 +852,7 @@ export function TransactionsPage() {
     }
   }
 
-  async function deleteTransaction(transaction: Transaction) {
+  const deleteTransaction = useCallback(async (transaction: Transaction) => {
     const confirmed = window.confirm(`Excluir o lançamento "${transaction.description}"?`);
 
     if (!confirmed) {
@@ -859,45 +876,60 @@ export function TransactionsPage() {
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Erro inesperado.");
     }
-  }
+  }, [loadTransactions]);
 
-  async function updateTransactionCategoryInline(transaction: Transaction, newSubcategoryId: string) {
-    const value = newSubcategoryId === emptySelectValue ? null : newSubcategoryId;
-    if (transaction.subcategoryId === value) return;
+  const updateTransactionInline = useCallback(
+    async (transaction: Transaction, changes: Partial<Transaction>) => {
+      const nextTransaction: Transaction = { ...transaction, ...changes };
 
-    setTransactions((current) =>
-      current.map((t) => (t.id === transaction.id ? { ...t, subcategoryId: value } : t))
-    );
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/transactions/${transaction.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: transaction.type,
-          description: transaction.description,
-          amountCents: transaction.amountCents,
-          eventDate: transaction.eventDate,
-          budgetMonth: transaction.budgetMonth,
-          accountId: transaction.accountId,
-          paymentMethodId: transaction.paymentMethodId,
-          subcategoryId: value,
-          creditCardId: transaction.creditCardId,
-          status: transaction.status,
-          notes: transaction.notes
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(await getResponseError(response, "Não foi possível atualizar a categoria."));
+      if (changes.eventDate) {
+        const card = nextTransaction.creditCardId
+          ? creditCards.find((currentCard) => currentCard.id === nextTransaction.creditCardId)
+          : null;
+        nextTransaction.budgetMonth = card
+          ? calcBillMonth(changes.eventDate, card.closingDay)
+          : changes.eventDate.slice(0, 7);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro inesperado.");
-      void loadTransactions();
-    }
-  }
 
-  function toggleTransactionSelection(transactionId: string) {
+      setTransactions((current) =>
+        current.map((item) => (item.id === transaction.id ? nextTransaction : item))
+      );
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/transactions/${transaction.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: nextTransaction.type,
+            description: nextTransaction.description,
+            amountCents: nextTransaction.amountCents,
+            eventDate: nextTransaction.eventDate,
+            budgetMonth: nextTransaction.budgetMonth,
+            accountId: nextTransaction.creditCardId ? null : nextTransaction.accountId,
+            paymentMethodId: nextTransaction.creditCardId ? null : nextTransaction.paymentMethodId,
+            subcategoryId: nextTransaction.subcategoryId,
+            creditCardId: nextTransaction.creditCardId,
+            status: nextTransaction.status,
+            notes: nextTransaction.notes
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(await getResponseError(response, "Não foi possível atualizar o lançamento."));
+        }
+
+        if (nextTransaction.budgetMonth !== selectedMonth) {
+          await loadTransactions();
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Erro inesperado.");
+        void loadTransactions();
+      }
+    },
+    [creditCards, loadTransactions, selectedMonth]
+  );
+
+  const toggleTransactionSelection = useCallback((transactionId: string) => {
     setSelectedTransactionIds((current) => {
       const next = new Set(current);
       if (next.has(transactionId)) {
@@ -907,17 +939,199 @@ export function TransactionsPage() {
       }
       return next;
     });
-  }
+  }, []);
 
-  function toggleSelectAllTransactions() {
-    setSelectedTransactionIds((current) => {
-      if (current.size === transactions.length) {
-        return new Set();
+  const filteredTransactions = useMemo(() => {
+    if (!searchQuery.trim()) return visibleTransactions;
+    const query = searchQuery.toLowerCase().trim();
+    return visibleTransactions.filter((transaction) => {
+      // 1. Descrição
+      const matchesDescription = transaction.description.toLowerCase().includes(query);
+      // 2. Observação/notas
+      const matchesNotes = transaction.notes?.toLowerCase().includes(query) ?? false;
+      // 3. Data
+      const formattedDate = formatBusinessDateForDisplay(transaction.eventDate);
+      const matchesDate = transaction.eventDate.includes(query) || formattedDate.includes(query);
+      // 4. Categoria
+      let matchesCategory = false;
+      if (transaction.subcategoryId) {
+        for (const cat of categories) {
+          const sub = cat.subcategories.find((s) => s.id === transaction.subcategoryId);
+          if (sub) {
+            const fullCategoryString = `${cat.name} ${sub.name}`.toLowerCase();
+            if (fullCategoryString.includes(query)) {
+              matchesCategory = true;
+              break;
+            }
+          }
+        }
       }
 
-      return new Set(transactions.map((transaction) => transaction.id));
+      return matchesDescription || matchesNotes || matchesDate || matchesCategory;
     });
-  }
+  }, [visibleTransactions, searchQuery, categories]);
+
+  const toggleSelectAllTransactions = useCallback(() => {
+    setSelectedTransactionIds((current) => {
+      const allFilteredIds = filteredTransactions.map((t) => t.id);
+      const allSelected = allFilteredIds.every((id) => current.has(id));
+      const next = new Set(current);
+      if (allSelected) {
+        for (const id of allFilteredIds) {
+          next.delete(id);
+        }
+      } else {
+        for (const id of allFilteredIds) {
+          next.add(id);
+        }
+      }
+      return next;
+    });
+  }, [filteredTransactions]);
+
+  const renderedRows = useMemo(() => {
+    return filteredTransactions.map((transaction) => (
+      <Table.Tr key={transaction.id} style={{ verticalAlign: "middle" }}>
+        <Table.Td>
+          <Checkbox
+            aria-label={`Selecionar lançamento ${transaction.description}`}
+            checked={selectedTransactionIds.has(transaction.id)}
+            onChange={() => toggleTransactionSelection(transaction.id)}
+          />
+        </Table.Td>
+        <Table.Td>
+          <QuickDateEdit
+            value={transaction.eventDate}
+            referenceMonth={transaction.eventDate.slice(0, 7) || selectedMonth}
+            onSave={(eventDate) => updateTransactionInline(transaction, { eventDate })}
+          />
+        </Table.Td>
+        <Table.Td style={{ maxWidth: 350, wordBreak: "break-word" }}>
+          <Group gap="xs" wrap="nowrap">
+            <QuickTextEdit
+              value={transaction.description}
+              fw={600}
+              placeholder="Descrição"
+              onSave={(description) => updateTransactionInline(transaction, { description })}
+            />
+            {transaction.linkedTransactionId && (
+              <Badge variant="light" color="blue" size="xs">
+                Transferência
+              </Badge>
+            )}
+          </Group>
+          {transaction.notes ? (
+            <Text size="xs" c="dimmed">
+              {transaction.notes}
+            </Text>
+          ) : null}
+        </Table.Td>
+        <Table.Td>
+          <Badge variant="light" color={getAmountColor(transaction.type)}>
+            {getTransactionTypeLabel(transaction.type)}
+          </Badge>
+        </Table.Td>
+        <Table.Td>
+          <QuickAmountEdit
+            valueCents={transaction.amountCents}
+            color={getAmountColor(transaction.type)}
+            prefix={`${getTransactionSignal(transaction)} `}
+            onSave={(amountCents) => updateTransactionInline(transaction, { amountCents })}
+          />
+        </Table.Td>
+        <Table.Td>
+          {transaction.creditCardId ? (
+            creditCards.find((c) => c.id === transaction.creditCardId)?.name || "Cartão"
+          ) : (
+            <Select
+              size="xs"
+              variant="unstyled"
+              data={[{ value: emptySelectValue, label: "Sem conta" }, ...accountOptions]}
+              value={transaction.accountId ?? emptySelectValue}
+              onChange={(value) =>
+                void updateTransactionInline(transaction, {
+                  accountId: value === emptySelectValue ? null : value
+                })
+              }
+              searchable
+              styles={{
+                input: { cursor: "pointer", fontWeight: 500, padding: 0, minHeight: "unset", height: "auto" },
+                root: { minWidth: 140 }
+              }}
+            />
+          )}
+        </Table.Td>
+        <Table.Td>
+          {transaction.creditCardId ? (
+            "Cartão de Crédito"
+          ) : (
+            <Select
+              size="xs"
+              variant="unstyled"
+              data={paymentMethodOptions}
+              value={transaction.paymentMethodId ?? emptySelectValue}
+              onChange={(value) =>
+                void updateTransactionInline(transaction, {
+                  paymentMethodId: value === emptySelectValue ? null : value
+                })
+              }
+              searchable
+              styles={{
+                input: { cursor: "pointer", fontWeight: 500, padding: 0, minHeight: "unset", height: "auto" },
+                root: { minWidth: 150 }
+              }}
+            />
+          )}
+        </Table.Td>
+        <Table.Td>
+          <QuickCategoryEdit
+            categories={categories}
+            value={transaction.subcategoryId ?? emptySelectValue}
+            onChange={(value) =>
+              void updateTransactionInline(transaction, {
+                subcategoryId: value
+              })
+            }
+            emptyOptionLabel="Sem categoria"
+          />
+        </Table.Td>
+        <Table.Td>
+          <Group gap={4} wrap="nowrap">
+            <Tooltip label="Editar lançamento">
+              <ActionIcon
+                variant="subtle"
+                aria-label={`Editar lançamento ${transaction.description}`}
+                onClick={() => openEditDrawer(transaction)}
+              >
+                <IconEdit size={16} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Excluir lançamento">
+              <ActionIcon
+                variant="subtle"
+                color="red"
+                aria-label={`Excluir lançamento ${transaction.description}`}
+                onClick={() => void deleteTransaction(transaction)}
+              >
+                <IconTrash size={16} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        </Table.Td>
+      </Table.Tr>
+    ));
+  }, [
+    filteredTransactions,
+    selectedTransactionIds,
+    categories,
+    accounts,
+    creditCards,
+    paymentMethods,
+    toggleTransactionSelection,
+    openEditDrawer,
+    deleteTransaction,
+    updateTransactionInline
+  ]);
 
   async function applyBulkTransactionEdits() {
     if (selectedTransactionIds.size === 0) {
@@ -1060,6 +1274,16 @@ export function TransactionsPage() {
             >
               Importar CSV
             </Button>
+            <Button
+              variant="light"
+              color="teal"
+              leftSection={<IconCheck size={18} />}
+              onClick={() => {
+                setIsReconciliationModalOpen(true);
+              }}
+            >
+              Conciliar Extrato
+            </Button>
             <Button leftSection={<IconPlus size={18} />} onClick={openCreateDrawer}>
               Novo lançamento
             </Button>
@@ -1067,24 +1291,10 @@ export function TransactionsPage() {
         </Group>
       </Paper>
 
-      <Paper withBorder p="md" radius="md">
-        <Stack gap="sm">
-          <Text fw={700}>Mês dos lançamentos</Text>
-          <SimpleGrid cols={{ base: 3, xs: 4, sm: 6, md: 12 }} spacing="xs">
-            {getMonthOptions().map((month) => (
-              <Button
-                key={month.value}
-                fullWidth
-                size="xs"
-                variant={selectedMonth === month.value ? "filled" : "light"}
-                onClick={() => setSelectedMonth(month.value)}
-              >
-                {month.label}
-              </Button>
-            ))}
-          </SimpleGrid>
-        </Stack>
-      </Paper>
+      <MonthSelector
+        selectedMonth={selectedMonth}
+        onChange={setSelectedMonth}
+      />
 
       <Paper withBorder p="md" radius="md">
         <Stack gap="sm">
@@ -1095,16 +1305,23 @@ export function TransactionsPage() {
               size="xs"
               onClick={() => {
                 setFilterType(emptySelectValue);
-                setFilterStatus(emptySelectValue);
                 setFilterAccountId(emptySelectValue);
                 setFilterPaymentMethodId(emptySelectValue);
                 setFilterSubcategoryId(emptySelectValue);
+                setSearchQuery("");
               }}
             >
               Limpar filtros
             </Button>
           </Group>
           <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="sm">
+            <TextInput
+              label="Buscar"
+              placeholder="Descrição, obs, data, cat..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+              leftSection={<IconSearch size={16} />}
+            />
             <Select
               label="Tipo"
               data={[
@@ -1116,12 +1333,6 @@ export function TransactionsPage() {
               ]}
               value={filterType}
               onChange={(value) => setFilterType(value ?? emptySelectValue)}
-            />
-            <Select
-              label="Status"
-              data={[{ value: emptySelectValue, label: "Todos" }, ...transactionStatuses]}
-              value={filterStatus}
-              onChange={(value) => setFilterStatus(value ?? emptySelectValue)}
             />
             <Select
               label="Conta"
@@ -1139,12 +1350,13 @@ export function TransactionsPage() {
               onChange={(value) => setFilterPaymentMethodId(value ?? emptySelectValue)}
               searchable
             />
-            <Select
+            <CategorySelect
               label="Categoria"
-              data={[{ value: emptySelectValue, label: "Todas" }, ...buildCategoryGroups(categories)]}
+              categories={categories}
               value={filterSubcategoryId}
-              onChange={(value) => setFilterSubcategoryId(value ?? emptySelectValue)}
-              searchable
+              onChange={(value) => setFilterSubcategoryId(value)}
+              emptyOptionLabel="Todas"
+              placeholder="Todas"
             />
           </SimpleGrid>
         </Stack>
@@ -1161,7 +1373,7 @@ export function TransactionsPage() {
           <Group justify="center" p="xl">
             <Loader />
           </Group>
-        ) : transactions.length === 0 ? (
+        ) : visibleTransactions.length === 0 ? (
           <Stack align="center" p="xl" gap="xs">
             <Title order={4}>Nenhum lançamento neste mês</Title>
             <Text c="dimmed">Crie o primeiro lançamento para acompanhar o mês.</Text>
@@ -1208,17 +1420,13 @@ export function TransactionsPage() {
                       onChange={(value) => setBulkPaymentMethodId(value ?? emptySelectValue)}
                       searchable
                     />
-                    <Select
+                    <CategorySelect
                       label="Categoria"
-                      placeholder="Manter"
-                      data={[
-                        { value: emptySelectValue, label: "Manter categoria atual" },
-                        { value: "__clear__", label: "Sem categoria" },
-                        ...buildCategoryGroups(categories)
-                      ]}
+                      categories={categories}
                       value={bulkSubcategoryId}
-                      onChange={(value) => setBulkSubcategoryId(value ?? emptySelectValue)}
-                      searchable
+                      onChange={(value) => setBulkSubcategoryId(value)}
+                      emptyOptionLabel="Manter categoria atual"
+                      placeholder="Manter"
                     />
                     <Group align="flex-end">
                       <Button
@@ -1233,122 +1441,36 @@ export function TransactionsPage() {
                 </Stack>
               </Box>
             ) : null}
-            <Table.ScrollContainer minWidth={940}>
-            <Table verticalSpacing="sm" highlightOnHover>
+            <Table.ScrollContainer minWidth={1080}>
+            <Table verticalSpacing="xs" fz="sm" highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th style={{ width: 44 }}>
                     <Checkbox
                       aria-label="Selecionar todos os lançamentos"
-                      checked={selectedTransactionIds.size === transactions.length}
+                      checked={
+                        filteredTransactions.length > 0 &&
+                        filteredTransactions.every((t) => selectedTransactionIds.has(t.id))
+                      }
                       indeterminate={
-                        selectedTransactionIds.size > 0 &&
-                        selectedTransactionIds.size < transactions.length
+                        filteredTransactions.some((t) => selectedTransactionIds.has(t.id)) &&
+                        !filteredTransactions.every((t) => selectedTransactionIds.has(t.id))
                       }
                       onChange={toggleSelectAllTransactions}
                     />
                   </Table.Th>
-                  <Table.Th>Data</Table.Th>
-                  <Table.Th>Descrição</Table.Th>
-                  <Table.Th>Tipo</Table.Th>
-                  <Table.Th>Valor</Table.Th>
-                  <Table.Th>Conta</Table.Th>
-                  <Table.Th>Meio</Table.Th>
-                  <Table.Th>Categoria</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th>Ações</Table.Th>
+                  <Table.Th style={{ width: 95 }}>Data</Table.Th>
+                  <Table.Th style={{ minWidth: 160 }}>Descrição</Table.Th>
+                  <Table.Th style={{ width: 115 }}>Tipo</Table.Th>
+                  <Table.Th style={{ width: 110 }}>Valor</Table.Th>
+                  <Table.Th style={{ width: 140 }}>Conta</Table.Th>
+                  <Table.Th style={{ width: 150 }}>Meio</Table.Th>
+                  <Table.Th style={{ width: 170 }}>Categoria</Table.Th>
+                  <Table.Th style={{ width: 80 }}>Ações</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {transactions.map((transaction) => (
-                  <Table.Tr key={transaction.id}>
-                    <Table.Td>
-                      <Checkbox
-                        aria-label={`Selecionar lançamento ${transaction.description}`}
-                        checked={selectedTransactionIds.has(transaction.id)}
-                        onChange={() => toggleTransactionSelection(transaction.id)}
-                      />
-                    </Table.Td>
-                    <Table.Td>{formatBusinessDateForDisplay(transaction.eventDate)}</Table.Td>
-                    <Table.Td>
-                      <Group gap="xs" wrap="nowrap">
-                        <Text fw={600}>{transaction.description}</Text>
-                        {transaction.linkedTransactionId && (
-                          <Badge variant="light" color="blue" size="xs">
-                            Transferência
-                          </Badge>
-                        )}
-                      </Group>
-                      {transaction.notes ? (
-                        <Text size="xs" c="dimmed">
-                          {transaction.notes}
-                        </Text>
-                      ) : null}
-                    </Table.Td>
-                    <Table.Td>
-                      <Badge variant="light" color={getAmountColor(transaction.type)}>
-                        {getTransactionTypeLabel(transaction.type)}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text fw={700} c={getAmountColor(transaction.type)}>
-                        {formatTransactionAmount(transaction)}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>{getAccountLabel(transaction.accountId, accounts)}</Table.Td>
-                    <Table.Td>
-                      {getPaymentMethodLabel(transaction.paymentMethodId, paymentMethods)}
-                    </Table.Td>
-                    <Table.Td>
-                      <Select
-                        size="xs"
-                        variant="unstyled"
-                        placeholder="Sem categoria"
-                        data={[{ value: emptySelectValue, label: "Sem categoria" }, ...buildCategoryGroups(categories)]}
-                        value={transaction.subcategoryId ?? emptySelectValue}
-                        onChange={(value) => void updateTransactionCategoryInline(transaction, value ?? emptySelectValue)}
-                        searchable
-                        styles={{ 
-                          input: { cursor: 'pointer', fontWeight: 500, padding: 0, minHeight: 'unset', height: 'auto' },
-                          root: { minWidth: 160 }
-                        }}
-                        renderOption={({ option }) => {
-                          const text = option.label.includes(" > ") ? option.label.split(" > ")[1] : option.label;
-                          const itemColor = (option as unknown as { color?: string }).color;
-                          if (itemColor) {
-                            return (
-                              <Badge variant="light" color={itemColor} size="md" fw={600} style={{ textTransform: 'none' }}>
-                                {text}
-                              </Badge>
-                            );
-                          }
-                          return <Text size="sm">{text}</Text>;
-                        }}
-                      />
-                    </Table.Td>
-                    <Table.Td>{renderStatusBadge(transaction.status)}</Table.Td>
-                    <Table.Td>
-                      <Group gap="xs">
-                        <ActionIcon
-                          variant="subtle"
-                          aria-label="Editar lançamento"
-                          onClick={() => openEditDrawer(transaction)}
-                        >
-                          <IconEdit size={18} />
-                        </ActionIcon>
-                        <ActionIcon
-                          variant="subtle"
-                          color="red"
-                          aria-label="Excluir lançamento"
-                          title="Excluir lançamento"
-                          onClick={() => void deleteTransaction(transaction)}
-                        >
-                          <IconTrash size={18} />
-                        </ActionIcon>
-                      </Group>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
+                {renderedRows}
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
@@ -1436,44 +1558,18 @@ export function TransactionsPage() {
             onChange={(value) =>
               setForm((current) => ({ ...current, amountReais: normalizeAmountInput(value) }))
             }
+            onFocus={(e) => e.currentTarget.select()}
             required
           />
-          <TextInput
+          <BusinessDateInput
             label="Data da compra"
-            inputMode="numeric"
-            placeholder="dd"
-            value={eventDateText}
-            onChange={(event) => {
-              const { value } = event.currentTarget;
-              updateEventDateText(value);
-            }}
-            onBlur={() => setEventDateText(formatDateForDisplay(form.eventDate))}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") {
-                return;
-              }
-              event.preventDefault();
-              openCalendarPicker();
-            }}
-            required
-          />
-          <input
-            ref={calendarInputRef}
-            aria-hidden="true"
-            tabIndex={-1}
-            type="date"
             value={form.eventDate}
-            onChange={(event) => updateEventDate(event.currentTarget.value)}
-            style={{
-              height: 0,
-              opacity: 0,
-              pointerEvents: "none",
-              position: "absolute",
-              width: 0
-            }}
+            onChange={updateEventDate}
+            referenceMonth={form.eventDate.slice(0, 7) || selectedMonth}
+            required
           />
 
-          {form.type === "expense" && (
+          {(form.type === "expense" || form.type === "refund" || form.type === "chargeback") && (
             <Stack gap={6}>
               <Text size="sm" fw={500}>Forma de pagamento</Text>
               <SegmentedControl
@@ -1544,16 +1640,14 @@ export function TransactionsPage() {
               />
               <TextInput
                 label="Mês da fatura"
-                description="Auto-calculado pelo fechamento. Edite se necessário."
+                description="Calculado automaticamente pela data da compra e fechamento do cartão."
                 value={form.budgetMonth}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, budgetMonth: event.currentTarget.value }))
-                }
                 placeholder="YYYY-MM"
+                readOnly
               />
 
               {/* Installments — only for new card transactions */}
-              {!editingTransaction && (
+              {form.type === "expense" && form.paymentMode === "card" && (
                 <Stack gap={6}>
                   <Text size="sm" fw={500}>Parcelamento</Text>
                   <SegmentedControl
@@ -1584,6 +1678,7 @@ export function TransactionsPage() {
                             installmentCount: Math.max(2, Math.min(48, Number(v) || 2))
                           }))
                         }
+                        onFocus={(e) => e.currentTarget.select()}
                       />
                       <Text size="sm" c="teal" fw={600} pb={6}>
                         {form.installmentCount}x de{" "}
@@ -1596,33 +1691,19 @@ export function TransactionsPage() {
             </>
           )}
 
-          <Select
+          <CategorySelect
             label="Categoria"
-            data={[{ value: emptySelectValue, label: "Sem categoria" }, ...filteredCategoryOptions]}
+            categories={categories}
+            filterNatures={
+              form.type === "income" ? ["income", "transfer"]
+                : form.type === "expense" ? ["expense", "transfer"]
+                : form.type === "refund" || form.type === "chargeback" ? ["expense"]
+                : undefined
+            }
             value={form.subcategoryId}
             onChange={(value) =>
-              setForm((current) => ({ ...current, subcategoryId: value ?? emptySelectValue }))
+              setForm((current) => ({ ...current, subcategoryId: value }))
             }
-            searchable
-            renderOption={({ option }) => {
-              const text = option.label.includes(" > ") ? option.label.split(" > ")[1] : option.label;
-              const itemColor = (option as unknown as { color?: string }).color;
-              if (itemColor) {
-                return (
-                  <Badge variant="light" color={itemColor} size="md" fw={600} style={{ textTransform: 'none' }}>
-                    {text}
-                  </Badge>
-                );
-              }
-              return <Text size="sm">{text}</Text>;
-            }}
-          />
-          <Select
-            label="Status"
-            data={transactionStatuses}
-            value={form.status}
-            onChange={(value) => setForm((current) => ({ ...current, status: value ?? "planned" }))}
-            required
           />
           <TextInput
             label="Observação"
@@ -1724,6 +1805,38 @@ export function TransactionsPage() {
               <Text size="sm" c="dimmed">
                 Faça o upload do seu arquivo de extrato bancário ou planilha no formato CSV para importar suas transações.
               </Text>
+
+              <Paper
+                withBorder
+                p="md"
+                radius="md"
+                style={{
+                  background: "linear-gradient(135deg, rgba(224, 242, 254, 0.35) 0%, rgba(238, 242, 255, 0.35) 100%)",
+                  borderColor: "var(--mantine-color-blue-light-color)",
+                  borderLeft: "4px solid var(--mantine-color-blue-filled)",
+                }}
+              >
+                <Group justify="space-between" align="center" wrap="nowrap">
+                  <Box style={{ flex: 1 }}>
+                    <Text size="sm" fw={700} c="blue.8">
+                      Dica: Converta extratos com IA
+                    </Text>
+                    <Text size="xs" c="dimmed" mt={2}>
+                      Copie o prompt estruturado e envie para uma IA (como ChatGPT, Gemini ou Claude) para formatar seu extrato PDF ou texto em um CSV pronto para importação.
+                    </Text>
+                  </Box>
+                  <Button
+                    size="xs"
+                    variant={clipboard.copied ? "filled" : "light"}
+                    color={clipboard.copied ? "teal" : "blue"}
+                    leftSection={clipboard.copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                    onClick={() => clipboard.copy(statementPromptText)}
+                    style={{ flexShrink: 0 }}
+                  >
+                    {clipboard.copied ? "Copiado!" : "Copiar prompt IA"}
+                  </Button>
+                </Group>
+              </Paper>
 
               <FileInput
                 label="Selecione o arquivo CSV"
@@ -1901,17 +2014,13 @@ export function TransactionsPage() {
                       onChange={(value) => setBulkImportPaymentMethodId(value ?? emptySelectValue)}
                       searchable
                     />
-                    <Select
+                    <CategorySelect
                       label="Categoria"
-                      placeholder="Manter"
-                      data={[
-                        { value: emptySelectValue, label: "Manter categoria atual" },
-                        { value: "__clear__", label: "Sem categoria" },
-                        ...buildCategoryGroups(categories)
-                      ]}
+                      categories={categories}
                       value={bulkImportSubcategoryId}
-                      onChange={(value) => setBulkImportSubcategoryId(value ?? emptySelectValue)}
-                      searchable
+                      onChange={(value) => setBulkImportSubcategoryId(value)}
+                      emptyOptionLabel="Manter categoria atual"
+                      placeholder="Manter"
                     />
                   </SimpleGrid>
                   <Group justify="flex-end">
@@ -1923,7 +2032,7 @@ export function TransactionsPage() {
               </Paper>
 
               <Box style={{ maxHeight: 350, overflowY: "auto", border: "1px solid var(--mantine-color-gray-3)", borderRadius: "var(--mantine-radius-md)" }}>
-                <Table verticalSpacing="xs" striped highlightOnHover>
+                <Table verticalSpacing="xs" fz="sm" striped highlightOnHover>
                   <Table.Thead style={{ position: "sticky", top: 0, background: "var(--mantine-color-body)", zIndex: 1 }}>
                     <Table.Tr>
                       <Table.Th style={{ width: 40 }}></Table.Th>
@@ -1970,11 +2079,17 @@ export function TransactionsPage() {
                             </Badge>
                           </Table.Td>
                           <Table.Td style={{ verticalAlign: "middle" }}>
-                            <Text size="xs">{getAccountLabel(item.accountId, accounts)}</Text>
+                            <Text size="xs">
+                              {item.creditCardId
+                                ? (creditCards.find((c) => c.id === item.creditCardId)?.name || "Cartão")
+                                : getAccountLabel(item.accountId, accounts)}
+                            </Text>
                           </Table.Td>
                           <Table.Td style={{ verticalAlign: "middle" }}>
                             <Text size="xs">
-                              {getPaymentMethodLabel(item.paymentMethodId, paymentMethods)}
+                              {item.creditCardId
+                                ? "Cartão de Crédito"
+                                : getPaymentMethodLabel(item.paymentMethodId, paymentMethods)}
                             </Text>
                           </Table.Td>
                           <Table.Td style={{ textAlign: "right", verticalAlign: "middle" }}>
@@ -1983,13 +2098,14 @@ export function TransactionsPage() {
                             </Text>
                           </Table.Td>
                           <Table.Td style={{ verticalAlign: "middle", minWidth: 150 }}>
-                            <Select
+                            <CategorySelect
                               size="xs"
-                              placeholder="Categoria"
-                              data={[{ value: emptySelectValue, label: "Sem categoria" }, ...buildCategoryGroups(categories)]}
+                              categories={categories}
                               value={item.subcategoryId ?? emptySelectValue}
                               onChange={(val) => updateImportItemSubcategory(item.tempId, val === emptySelectValue ? null : val)}
-                              searchable
+                              emptyOptionLabel="Sem categoria"
+                              placeholder="Categoria"
+                              label=""
                             />
                           </Table.Td>
                         </Table.Tr>
@@ -2021,96 +2137,31 @@ export function TransactionsPage() {
           )}
         </Stack>
       </Modal>
+
+      <ReconciliationWizard
+        isOpen={isReconciliationModalOpen}
+        onClose={() => setIsReconciliationModalOpen(false)}
+        onSuccess={loadTransactions}
+        accounts={accounts}
+        creditCards={creditCards}
+        categories={categories}
+      />
     </Stack>
   );
 }
 
-function buildCategoryGroups(categories: Category[]) {
-  return categories.map((category) => ({
-    group: category.name,
-    items: category.subcategories.map((sub) => ({
-      value: sub.id,
-      label: `${category.name} > ${sub.name}`,
-      color: getCategoryColor(category.id)
-    } as unknown as { value: string; label: string; color: string }))
-  })).filter(g => g.items.length > 0);
-}
-
-function parseCsvHeaderLine(headerLine: string): string[] {
-  const delimiter = detectCsvDelimiter(headerLine);
-  const fields: string[] = [];
-  let currentField = "";
-  let insideQuotes = false;
-
-  for (let i = 0; i < headerLine.length; i++) {
-    const char = headerLine[i];
-    if (char === '"') {
-      if (insideQuotes && headerLine[i + 1] === '"') {
-        currentField += '"';
-        i++;
-      } else {
-        insideQuotes = !insideQuotes;
-      }
-    } else if (char === delimiter && !insideQuotes) {
-      fields.push(cleanCsvField(currentField));
-      currentField = "";
-    } else {
-      currentField += char;
-    }
-  }
-
-  fields.push(cleanCsvField(currentField));
-  return fields;
-}
-
-function detectCsvDelimiter(headerLine: string): "," | ";" | "\t" {
-  const candidates = [",", ";", "\t"] as const;
-
-  return candidates
-    .map((delimiter) => ({
-      delimiter,
-      count: countDelimiterOutsideQuotes(headerLine, delimiter)
-    }))
-    .sort((a, b) => b.count - a.count)[0].delimiter;
-}
-
-function countDelimiterOutsideQuotes(line: string, delimiter: "," | ";" | "\t"): number {
-  let count = 0;
-  let insideQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      if (insideQuotes && line[i + 1] === '"') {
-        i++;
-      } else {
-        insideQuotes = !insideQuotes;
-      }
-    } else if (char === delimiter && !insideQuotes) {
-      count++;
-    }
-  }
-
-  return count;
-}
-
-function cleanCsvField(value: string): string {
-  return value.trim().replace(/^\uFEFF/, "");
-}
-
 function buildEmptyFormWithDefaults(
   accounts: Account[],
-  budgetMonth: string,
   creditCards?: CreditCard[]
 ): TransactionFormState {
   const primaryAccount = accounts.find((account) => account.isPrimary);
   const defaultCard = creditCards?.find((card) => card.isDefault && card.isActive);
-  const eventDate = getDefaultEventDateForMonth(budgetMonth);
+  const eventDate = today;
 
   return {
     ...emptyForm,
     eventDate,
-    budgetMonth,
+    budgetMonth: eventDate.slice(0, 7),
     accountId: primaryAccount?.id ?? emptySelectValue,
     paymentMethodId: primaryAccount?.defaultPaymentMethodId ?? emptySelectValue,
     paymentMode: "account",
@@ -2132,7 +2183,7 @@ function isPristineTransactionDraft(form: TransactionFormState) {
     form.description.trim() === "" &&
     isEmptyAmount(form.amountReais) &&
     form.subcategoryId === emptySelectValue &&
-    form.status === "planned" &&
+    form.status === "confirmed" &&
     form.notes.trim() === "" &&
     form.paymentMode === "account" &&
     form.creditCardId === emptySelectValue &&
@@ -2188,28 +2239,6 @@ function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
   );
 }
 
-function getDefaultEventDateForMonth(budgetMonth: string) {
-  if (budgetMonth === currentMonth) {
-    return today;
-  }
-
-  return `${budgetMonth}-01`;
-}
-
-function getMonthOptions() {
-  const baseYear = new Date().getFullYear();
-
-  return Array.from({ length: 12 }, (_, index) => {
-    const date = new Date(baseYear, index, 1);
-    const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-
-    return {
-      value,
-      label: new Intl.DateTimeFormat("pt-BR", { month: "short" }).format(date).replace(".", "")
-    };
-  });
-}
-
 function validateTransactionForm(form: TransactionFormState) {
   if (!form.description.trim()) {
     throw new Error("Informe a descrição do lançamento.");
@@ -2222,48 +2251,6 @@ function validateTransactionForm(form: TransactionFormState) {
   if (!form.eventDate) {
     throw new Error("Informe a data do lançamento.");
   }
-}
-
-function formatDayMonthInput(value: string) {
-  const digits = value.replace(/\D/g, "").slice(0, 8);
-
-  if (digits.length <= 2) {
-    return digits;
-  }
-
-  if (digits.length <= 4) {
-    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  }
-
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
-
-function parseFlexibleDateToIso(value: string, selectedYearMonth: string) {
-  const digits = value.replace(/\D/g, "");
-  const [selectedYear, selectedMonthNumber] = selectedYearMonth.split("-").map(Number);
-
-  if (![2, 4, 8].includes(digits.length)) {
-    return null;
-  }
-
-  const day = Number(digits.slice(0, 2));
-  const month = digits.length >= 4 ? Number(digits.slice(2, 4)) : selectedMonthNumber;
-  const year = digits.length === 8 ? Number(digits.slice(4, 8)) : selectedYear;
-  const candidate = new Date(year, month - 1, day);
-
-  if (
-    candidate.getFullYear() !== year ||
-    candidate.getMonth() !== month - 1 ||
-    candidate.getDate() !== day
-  ) {
-    return null;
-  }
-
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-function formatDateForDisplay(value: string) {
-  return formatBusinessDateForDisplay(value);
 }
 
 function parseTransactionAmount(value: number | string) {
@@ -2292,22 +2279,8 @@ function toNullableSelectValue(value: string) {
   return value === emptySelectValue ? null : value;
 }
 
-function formatTransactionAmount(transaction: Transaction) {
-  const signal = transaction.type === "expense" ? "-" : "+";
-
-  return `${signal} ${formatMoney(moneyFromCents(transaction.amountCents))}`;
-}
-
-function getAmountColor(type: string) {
-  if (type === "expense") {
-    return "red";
-  }
-
-  if (type === "income" || type === "refund") {
-    return "teal";
-  }
-
-  return "gray";
+function getTransactionSignal(transaction: Transaction) {
+  return transaction.type === "expense" ? "−" : "+";
 }
 
 function getTransactionTypeLabel(type: string) {
@@ -2320,35 +2293,4 @@ function getAccountLabel(accountId: string | null, accounts: Account[]) {
 
 function getPaymentMethodLabel(paymentMethodId: string | null, paymentMethods: PaymentMethod[]) {
   return paymentMethods.find((paymentMethod) => paymentMethod.id === paymentMethodId)?.name ?? "-";
-}
-
-
-function renderStatusBadge(status: string) {
-  const colors: Record<string, string> = {
-    planned: "gray",
-    confirmed: "blue",
-    reconciled: "teal",
-    canceled: "red"
-  };
-
-  return (
-    <Badge color={colors[status] ?? "gray"} variant="light">
-      {transactionStatuses.find((transactionStatus) => transactionStatus.value === status)?.label ??
-        status}
-    </Badge>
-  );
-}
-
-async function getResponseError(response: Response, fallback: string) {
-  try {
-    const body = (await response.json()) as { message?: unknown };
-
-    if (typeof body.message === "string") {
-      return body.message;
-    }
-  } catch {
-    return fallback;
-  }
-
-  return fallback;
 }

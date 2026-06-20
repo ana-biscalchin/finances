@@ -1,6 +1,6 @@
 import { accounts, paymentMethods, transactions, type createDatabaseConnection } from "@finances/database";
-import { assertAccountType, getAccountDelta } from "@finances/domain";
-import { asc, eq } from "drizzle-orm";
+import { assertAccountType } from "@finances/domain";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -40,10 +40,13 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
           .orderBy(asc(accounts.sortOrder), asc(accounts.name))
           .all();
 
+    const balancesMap = getAccountBalancesMap(connection);
+
     return rows.map((account) => {
+      const delta = balancesMap.get(account.id) ?? 0;
       return {
         ...account,
-        currentBalanceCents: getCurrentAccountBalance(connection, account)
+        currentBalanceCents: account.initialBalanceCents + delta
       };
     });
   });
@@ -56,9 +59,24 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
       return reply.code(404).send({ message: "Account not found." });
     }
 
+    const balanceRow = db
+      .select({
+        delta: sql<number>`SUM(CASE WHEN ${transactions.type} IN ('income', 'refund', 'chargeback') THEN ${transactions.amountCents} ELSE -${transactions.amountCents} END)`
+      })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.accountId, id),
+          inArray(transactions.status, ["confirmed", "reconciled"])
+        )
+      )
+      .get();
+
+    const delta = Number(balanceRow?.delta || 0);
+
     return {
       ...account,
-      currentBalanceCents: getCurrentAccountBalance(connection, account)
+      currentBalanceCents: account.initialBalanceCents + delta
     };
   });
 
@@ -154,25 +172,29 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
   });
 }
 
-function getCurrentAccountBalance(
-  connection: DatabaseConnection,
-  account: typeof accounts.$inferSelect
-) {
-  const accountTransactions = connection.db
+function getAccountBalancesMap(connection: DatabaseConnection): Map<string, number> {
+  const rows = connection.db
     .select({
-      type: transactions.type,
-      status: transactions.status,
-      amountCents: transactions.amountCents,
-      accountId: transactions.accountId
+      accountId: transactions.accountId,
+      delta: sql<number>`SUM(CASE WHEN ${transactions.type} IN ('income', 'refund', 'chargeback') THEN ${transactions.amountCents} ELSE -${transactions.amountCents} END)`
     })
     .from(transactions)
-    .where(eq(transactions.accountId, account.id))
+    .where(
+      and(
+        inArray(transactions.status, ["confirmed", "reconciled"]),
+        isNotNull(transactions.accountId)
+      )
+    )
+    .groupBy(transactions.accountId)
     .all();
 
-  return accountTransactions.reduce(
-    (balance, transaction) => balance + getAccountDelta(transaction),
-    account.initialBalanceCents
-  );
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    if (row.accountId) {
+      map.set(row.accountId, Number(row.delta || 0));
+    }
+  }
+  return map;
 }
 
 function parseAccountPayload(body: unknown) {

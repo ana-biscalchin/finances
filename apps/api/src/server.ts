@@ -10,6 +10,7 @@ import { registerPaymentMethodRoutes } from "./modules/payment-methods.js";
 import { registerTransactionRoutes } from "./modules/transactions.js";
 import { registerBudgetRoutes } from "./modules/budgets.js";
 import { registerReportRoutes } from "./modules/reports.js";
+import { registerReconciliationRoutes } from "./modules/reconciliation.js";
 
 
 const port = Number(process.env.PORT ?? 3000);
@@ -54,6 +55,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   registerCreditCardRoutes(app, connection);
   registerBudgetRoutes(app, connection);
   registerReportRoutes(app, connection);
+  registerReconciliationRoutes(app, connection);
 
 
   return app;

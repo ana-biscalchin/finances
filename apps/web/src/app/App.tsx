@@ -1,6 +1,5 @@
 import {
   AppShell,
-  Badge,
   Box,
   Group,
   NavLink,
@@ -119,18 +118,10 @@ export function App() {
 
 
   return (
-    <AppShell header={{ height: 64 }} navbar={{ width: 280, breakpoint: "sm" }} padding="lg">
+    <AppShell header={{ height: 44 }} navbar={{ width: 280, breakpoint: "sm" }} padding="lg">
       <AppShell.Header>
-        <Group h="100%" px="lg" justify="space-between">
-          <Box>
-            <Title order={3}>Finanças Pessoais</Title>
-            <Text size="sm" c="dimmed">
-              Web app local em desenvolvimento
-            </Text>
-          </Box>
-          <Badge variant="light" color="teal">
-            Local MVP
-          </Badge>
+        <Group h="100%" px="md" justify="space-between">
+          <Title order={4}>Finanças Pessoais</Title>
         </Group>
       </AppShell.Header>
 
