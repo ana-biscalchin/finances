@@ -60,13 +60,13 @@ const pages: Array<{
   {
     key: "bills",
     label: "Faturas",
-    description: "Cartões, compras, parcelas e vencimentos.",
+    description: "Compras, parcelas e vencimentos dos cartões.",
     icon: IconCreditCard
   },
   {
     key: "accounts",
     label: "Contas",
-    description: "Contas, carteiras e locais onde o dinheiro passa.",
+    description: "Contas, carteiras, benefícios e cartões de crédito.",
     icon: IconBuildingBank
   },
   {

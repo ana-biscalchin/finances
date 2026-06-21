@@ -18,7 +18,6 @@ import {
   SimpleGrid,
   Stack,
   Table,
-  Tabs,
   Text,
   Textarea,
   TextInput,
@@ -61,8 +60,6 @@ import {
 import { CategorySelect, QuickCategoryEdit } from "../shared/CategorySelect";
 import { MonthSelector } from "../shared/MonthSelector";
 import { QuickAmountEdit, QuickDateEdit, QuickTextEdit } from "../shared/QuickEditFields";
-
-import { CreditCardsPage } from "./CreditCardsPage";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -173,26 +170,7 @@ function getNextMonth(monthStr: string): string {
 const defaultSelectedMonth = getNextMonth(currentMonth);
 
 export function BillsPage() {
-  return (
-    <Tabs defaultValue="faturas">
-      <Tabs.List mb="lg">
-        <Tabs.Tab value="faturas" leftSection={<IconCreditCard size={16} />}>
-          Faturas
-        </Tabs.Tab>
-        <Tabs.Tab value="cartoes" leftSection={<IconEdit size={16} />}>
-          Gerenciar cartões
-        </Tabs.Tab>
-      </Tabs.List>
-
-      <Tabs.Panel value="faturas">
-        <FaturasView />
-      </Tabs.Panel>
-
-      <Tabs.Panel value="cartoes">
-        <CreditCardsPage />
-      </Tabs.Panel>
-    </Tabs>
-  );
+  return <FaturasView />;
 }
 
 function FaturasView() {
@@ -354,7 +332,7 @@ function FaturasView() {
             <IconCreditCard size={40} opacity={0.3} />
             <Title order={4}>Nenhum cartão ativo</Title>
             <Text c="dimmed">
-              Cadastre um cartão na aba "Gerenciar cartões" para ver as faturas aqui.
+              Cadastre um cartão em Contas para ver as faturas aqui.
             </Text>
           </Stack>
         </Paper>

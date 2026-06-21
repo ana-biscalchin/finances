@@ -522,10 +522,16 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         let paymentMethodId: string | null = null;
         let creditCardId: string | null = null;
 
+        const installmentNumber = installmentInfo?.installmentNumber ?? 1;
+        const installmentCount = installmentInfo?.installmentCount ?? 1;
+
         if (card) {
           creditCardId = card.id;
           accountId = null;
           calculatedBudgetMonth = getCreditCardBillMonth(eventDate, card.closingDay);
+          if (targetBillMonth && installmentCount > 1) {
+            calculatedBudgetMonth = targetBillMonth;
+          }
           if (targetBillMonth && calculatedBudgetMonth !== targetBillMonth) {
             return [];
           }
@@ -535,8 +541,6 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
           creditCardId = null;
         }
 
-        const installmentNumber = installmentInfo?.installmentNumber ?? 1;
-        const installmentCount = installmentInfo?.installmentCount ?? 1;
         const installmentRange =
           isCreditCardBillImport && card && installmentCount > 1
             ? Array.from(

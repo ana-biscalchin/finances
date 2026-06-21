@@ -829,6 +829,113 @@ describe("transactions & account balances business rules", () => {
     conn.sqlite.close();
   });
 
+  it("should mark already projected future installments as duplicates on the next bill import", async () => {
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Parcelas Futuras",
+        institution: "Banco Cartão",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+
+    expect(cardRes.statusCode).toBe(201);
+    const cardId = cardRes.json().id as string;
+
+    const januaryPreviewRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-preview",
+      payload: {
+        csvContent: [
+          "Data;Descrição;Valor;Parcela;TotalParcelas",
+          "10/01/2026;Compra Recorrente;100,00;1;3"
+        ].join("\n"),
+        mappings: {
+          eventDate: "Data",
+          description: "Descrição",
+          amount: "Valor",
+          installmentNumber: "Parcela",
+          installmentCount: "TotalParcelas"
+        },
+        dateFormat: "DMY",
+        defaultCreditCardId: cardId,
+        importMode: "credit_card_bill",
+        billMonth: "2026-01"
+      }
+    });
+
+    expect(januaryPreviewRes.statusCode).toBe(200);
+    const januaryPreview = januaryPreviewRes.json<ImportPreviewItem[]>();
+    expect(januaryPreview).toEqual([
+      expect.objectContaining({ description: "Compra Recorrente (1/3)", budgetMonth: "2026-01" }),
+      expect.objectContaining({ description: "Compra Recorrente (2/3)", budgetMonth: "2026-02" }),
+      expect.objectContaining({ description: "Compra Recorrente (3/3)", budgetMonth: "2026-03" })
+    ]);
+
+    const januaryConfirmRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-confirm",
+      payload: {
+        transactions: januaryPreview.map((item) => ({
+          eventDate: item.eventDate,
+          description: item.description,
+          amountCents: item.amountCents,
+          type: item.type,
+          creditCardId: item.creditCardId,
+          budgetMonth: item.budgetMonth,
+          installmentNumber: item.installmentNumber,
+          installmentCount: item.installmentCount,
+          status: "confirmed"
+        })),
+        preventDuplicates: true
+      }
+    });
+
+    expect(januaryConfirmRes.statusCode).toBe(201);
+    expect(januaryConfirmRes.json()).toHaveLength(3);
+
+    const februaryPreviewRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-preview",
+      payload: {
+        csvContent: [
+          "Data;Descrição;Valor;Parcela;TotalParcelas",
+          "10/01/2026;Compra Recorrente;100,00;2;3"
+        ].join("\n"),
+        mappings: {
+          eventDate: "Data",
+          description: "Descrição",
+          amount: "Valor",
+          installmentNumber: "Parcela",
+          installmentCount: "TotalParcelas"
+        },
+        dateFormat: "DMY",
+        defaultCreditCardId: cardId,
+        importMode: "credit_card_bill",
+        billMonth: "2026-02"
+      }
+    });
+
+    expect(februaryPreviewRes.statusCode).toBe(200);
+    const februaryPreview = februaryPreviewRes.json<ImportPreviewItem[]>();
+    expect(februaryPreview).toEqual([
+      expect.objectContaining({
+        description: "Compra Recorrente (2/3)",
+        budgetMonth: "2026-02",
+        isDuplicate: true
+      }),
+      expect.objectContaining({
+        description: "Compra Recorrente (3/3)",
+        budgetMonth: "2026-03",
+        isDuplicate: true
+      })
+    ]);
+  });
+
   it("should expand remaining credit card bill installments when mapped to installment and installmentCount (separate columns case)", async () => {
     const cardRes = await app.inject({
       method: "POST",
