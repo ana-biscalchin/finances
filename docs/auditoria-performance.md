@@ -34,7 +34,9 @@ Este documento resume a investigação sobre os fatores que podem deixar a aplic
 - Sem links quebrados em transferências modeladas por `linkedTransactionId`.
 - Sem violações de chave estrangeira.
 - Uma subcategoria arquivada ainda possui histórico de transações, o que está correto pela regra de negócio de arquivamento sem exclusão.
-- Uma despesa ativa está sem subcategoria. Isso não quebra integridade e aparece como "Sem subcategoria", mas pode ser revisada manualmente se a categorização completa for desejada.
+- Resolvido em 2026-06-21: uma despesa ativa de cartão chamada `ajuste`, no valor de R$ 0,04, estava sem subcategoria e foi classificada como `Tarifas e juros`.
+- `installments` está vazia no banco atual, mas é usada pelo fluxo de parcelamento e pelos testes de remoção segura; deve ser mantida.
+- `reserve_goals` e `reserve_movements` estão vazias porque a API/UI de reservas ainda é melhoria futura; o schema foi confirmado como intencional.
 
 ### Limpeza segura executada
 

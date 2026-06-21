@@ -124,7 +124,7 @@ Backlog e status do projeto.
 ## Reservas (Caixinhas)
 
 - [ ] **Modelagem e Banco**:
-  - [ ] Confirmar tabelas de reservas (`reserve_goals` e `reserve_movements`) no schema Drizzle.
+  - [x] Confirmar tabelas de reservas (`reserve_goals` e `reserve_movements`) no schema Drizzle.
 - [ ] **Backend (API)**:
   - [ ] Criar CRUD para caixinhas de reserva (nome, valor alvo, data limite, conta).
   - [ ] Criar rotas para registrar movimentações (Aporte, Resgate, Rendimento, Ajuste).
@@ -191,5 +191,4 @@ Backlog e status do projeto.
   - [x] Garantir que estornos e reembolsos compensem corretamente o valor total da fatura.
   - [x] Habilitar detecção automática de estorno no preview e confirmação de importação de fatura via CSV.
 - [x] Melhorar o modal de edição de limites no Controle Mensal para exibir e gerenciar planejamentos por fonte-método e visualizar os lançamentos correspondentes agrupados.
-
 
