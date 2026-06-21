@@ -91,12 +91,15 @@ Este documento descreve as regras que o app aplica hoje. Ele deve ser a referenc
 
 ## Parcelamentos
 
+- Parcelamentos possuem metadados estruturados: uma compra parcelada agrupa parcelas individuais.
+- Cada parcela continua sendo um lancamento separado para entrar corretamente em faturas, controle mensal e relatorios.
+- O sufixo `(n/total)` na descricao e apresentacao/compatibilidade; a UI deve preferir os metadados de parcela quando existirem.
 - Em lancamento manual com `installmentCount > 1`, a API divide o valor em parcelas mensais.
 - A ultima parcela recebe eventual diferenca de centavos.
-- A descricao recebe sufixo `(n/total)`.
 - Cada parcela avanca um mes a partir do `budgetMonth` inicial.
 - Na importacao de fatura, uma linha `2/3` gera a parcela atual `2/3` na fatura aberta e as futuras restantes, sem criar a `1/3`.
 - Duplicatas de parcelas futuras sao evitadas na confirmacao da importacao.
+- Editar uma parcela existente nao deve recriar a serie nem mover automaticamente a parcela para outro mes de fatura.
 
 ## Pagamento de fatura
 

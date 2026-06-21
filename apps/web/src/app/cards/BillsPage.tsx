@@ -102,6 +102,11 @@ type CardTransaction = {
   subcategoryId: string | null;
   status: string;
   notes: string | null;
+  installmentPurchaseId?: string | null;
+  installmentNumber?: number | null;
+  installmentCount?: number | null;
+  installmentAmountCents?: number | null;
+  installmentDueMonth?: string | null;
 };
 
 type CardTransactionEditForm = {
@@ -639,7 +644,10 @@ Texto da fatura a ser convertido:
   async function updateCardTransaction(
     transaction: CardTransaction,
     changes: Partial<
-      Pick<CardTransaction, "type" | "description" | "amountCents" | "eventDate" | "subcategoryId" | "status" | "notes"> & { installmentCount?: number }
+      Pick<CardTransaction, "type" | "description" | "amountCents" | "eventDate" | "subcategoryId" | "status" | "notes"> & {
+        installmentCount?: number;
+        preserveBillMonth?: boolean;
+      }
     >
   ) {
     if (!billData) {
@@ -660,7 +668,8 @@ Texto da fatura a ser convertido:
             changes.subcategoryId === undefined ? transaction.subcategoryId : changes.subcategoryId,
           notes: changes.notes === undefined ? transaction.notes : changes.notes,
           status: changes.status ?? transaction.status,
-          installmentCount: changes.installmentCount
+          installmentCount: changes.installmentCount,
+          preserveBillMonth: changes.preserveBillMonth
         })
       }
     );
@@ -766,7 +775,7 @@ Texto da fatura a ser convertido:
 
     setPanelError(null);
     try {
-      await updateCardTransaction(transaction, { subcategoryId });
+      await updateCardTransaction(transaction, { subcategoryId, preserveBillMonth: true });
       onReload();
     } catch (error) {
       setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
@@ -782,7 +791,10 @@ Texto da fatura a ser convertido:
   ) {
     setPanelError(null);
     try {
-      await updateCardTransaction(transaction, changes);
+      await updateCardTransaction(transaction, {
+        ...changes,
+        preserveBillMonth: changes.eventDate === undefined
+      });
       onReload();
     } catch (error) {
       setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
@@ -824,7 +836,8 @@ Texto da fatura a ser convertido:
         subcategoryId: editForm.subcategoryId === emptySelectValue ? null : editForm.subcategoryId,
         status: editForm.status,
         notes: editForm.notes.trim() || null,
-        installmentCount: editForm.installmentCount
+        installmentCount: editingTransaction.installmentNumber ? undefined : editForm.installmentCount,
+        preserveBillMonth: Boolean(editingTransaction.installmentNumber)
       });
       setEditingTransaction(null);
       onReload();
@@ -1332,6 +1345,11 @@ Texto da fatura a ser convertido:
                           {transaction.type === "chargeback" && (
                             <Badge variant="light" color="teal" size="xs">Estorno</Badge>
                           )}
+                          {transaction.installmentNumber && transaction.installmentCount ? (
+                            <Badge variant="light" color="grape" size="xs">
+                              {transaction.installmentNumber}/{transaction.installmentCount}
+                            </Badge>
+                          ) : null}
                         </Group>
                         {transaction.notes ? (
                           <Text size="xs" c="dimmed">{transaction.notes}</Text>
@@ -2115,41 +2133,54 @@ Texto da fatura a ser convertido:
           {editForm.type === "expense" && (
             <Stack gap={6}>
               <Text size="sm" fw={500}>Parcelamento</Text>
-              <SegmentedControl
-                fullWidth
-                data={[
-                  { value: "1", label: "À vista" },
-                  { value: "n", label: "Parcelado" }
-                ]}
-                value={editForm.installmentCount === 1 ? "1" : "n"}
-                onChange={(v) =>
-                  setEditForm((current) => ({
-                    ...current,
-                    installmentCount: v === "1" ? 1 : 2
-                  }))
-                }
-              />
-              {editForm.installmentCount > 1 && (
-                <Group align="flex-end" gap="sm">
-                  <NumberInput
-                    label="Número de parcelas"
-                    min={2}
-                    max={48}
-                    style={{ flex: 1 }}
-                    value={editForm.installmentCount}
+              {editingTransaction?.installmentNumber && editingTransaction.installmentCount ? (
+                <Group gap="xs">
+                  <Badge variant="light" color="grape">
+                    Parcela {editingTransaction.installmentNumber} de {editingTransaction.installmentCount}
+                  </Badge>
+                  <Text size="xs" c="dimmed">
+                    Edição altera apenas esta parcela.
+                  </Text>
+                </Group>
+              ) : (
+                <>
+                  <SegmentedControl
+                    fullWidth
+                    data={[
+                      { value: "1", label: "À vista" },
+                      { value: "n", label: "Parcelado" }
+                    ]}
+                    value={editForm.installmentCount === 1 ? "1" : "n"}
                     onChange={(v) =>
                       setEditForm((current) => ({
                         ...current,
-                        installmentCount: Math.max(2, Math.min(48, Number(v) || 2))
+                        installmentCount: v === "1" ? 1 : 2
                       }))
                     }
-                    onFocus={(e) => e.currentTarget.select()}
                   />
-                  <Text size="sm" c="teal" fw={600} pb={6}>
-                    {editForm.installmentCount}x de{" "}
-                    {formatInstallmentPreview(editForm.amountReais, editForm.installmentCount)}
-                  </Text>
-                </Group>
+                  {editForm.installmentCount > 1 && (
+                    <Group align="flex-end" gap="sm">
+                      <NumberInput
+                        label="Número de parcelas"
+                        min={2}
+                        max={48}
+                        style={{ flex: 1 }}
+                        value={editForm.installmentCount}
+                        onChange={(v) =>
+                          setEditForm((current) => ({
+                            ...current,
+                            installmentCount: Math.max(2, Math.min(48, Number(v) || 2))
+                          }))
+                        }
+                        onFocus={(e) => e.currentTarget.select()}
+                      />
+                      <Text size="sm" c="teal" fw={600} pb={6}>
+                        {editForm.installmentCount}x de{" "}
+                        {formatInstallmentPreview(editForm.amountReais, editForm.installmentCount)}
+                      </Text>
+                    </Group>
+                  )}
+                </>
               )}
             </Stack>
           )}
@@ -2210,7 +2241,7 @@ function buildEditForm(transaction: CardTransaction | null): CardTransactionEdit
     subcategoryId: transaction?.subcategoryId ?? emptySelectValue,
     status: transaction?.status ?? "confirmed",
     notes: transaction?.notes ?? "",
-    installmentCount: 1
+    installmentCount: transaction?.installmentCount ?? 1
   };
 }
 

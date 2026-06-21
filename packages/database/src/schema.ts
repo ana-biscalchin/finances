@@ -144,12 +144,39 @@ export const transactions = sqliteTable(
   ]
 );
 
+export const installmentPurchases = sqliteTable(
+  "installment_purchases",
+  {
+    id: text("id").primaryKey(),
+    creditCardId: text("credit_card_id")
+      .notNull()
+      .references(() => creditCards.id),
+    originalDescription: text("original_description").notNull(),
+    normalizedDescription: text("normalized_description").notNull(),
+    originalEventDate: text("original_event_date").notNull(),
+    installmentCount: integer("installment_count").notNull(),
+    totalAmountCents: integer("total_amount_cents"),
+    source: text("source").notNull().default("manual"),
+    status: text("status").notNull().default("active"),
+    ...timestamps
+  },
+  (table) => [
+    index("installment_purchases_card_idx").on(table.creditCardId),
+    index("installment_purchases_lookup_idx").on(
+      table.creditCardId,
+      table.normalizedDescription,
+      table.installmentCount
+    )
+  ]
+);
+
 
 
 export const installments = sqliteTable(
   "installments",
   {
     id: text("id").primaryKey(),
+    installmentPurchaseId: text("installment_purchase_id").references(() => installmentPurchases.id),
     purchaseTransactionId: text("purchase_transaction_id")
       .notNull()
       .references(() => transactions.id),
@@ -161,6 +188,10 @@ export const installments = sqliteTable(
     ...timestamps
   },
   (table) => [
+    uniqueIndex("installments_purchase_group_number_unique").on(
+      table.installmentPurchaseId,
+      table.installmentNumber
+    ),
     uniqueIndex("installments_purchase_number_unique").on(
       table.purchaseTransactionId,
       table.installmentNumber

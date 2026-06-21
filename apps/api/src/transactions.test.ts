@@ -827,6 +827,22 @@ describe("transactions & account balances business rules", () => {
       ])
     );
     conn.sqlite.close();
+
+    const billRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills?month=2026-06`
+    });
+    const billTransactions = billRes.json().transactions;
+    expect(billTransactions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          description: "Compra Parcelada (2/3)",
+          installmentNumber: 2,
+          installmentCount: 3,
+          installmentPurchaseId: expect.any(String)
+        })
+      ])
+    );
   });
 
   it("should mark already projected future installments as duplicates on the next bill import", async () => {
@@ -836,8 +852,8 @@ describe("transactions & account balances business rules", () => {
       payload: {
         name: "Cartão Parcelas Futuras",
         institution: "Banco Cartão",
-        closingDay: 15,
-        dueDay: 10,
+        closingDay: 6,
+        dueDay: 13,
         paymentAccountId: accountAId,
         limitCents: 500000
       }
@@ -852,7 +868,7 @@ describe("transactions & account balances business rules", () => {
       payload: {
         csvContent: [
           "Data;Descrição;Valor;Parcela;TotalParcelas",
-          "10/01/2026;Compra Recorrente;100,00;1;3"
+          "10/12/2025;Compra Recorrente;100,00;1;3"
         ].join("\n"),
         mappings: {
           eventDate: "Data",
@@ -904,7 +920,7 @@ describe("transactions & account balances business rules", () => {
       payload: {
         csvContent: [
           "Data;Descrição;Valor;Parcela;TotalParcelas",
-          "10/01/2026;Compra Recorrente;100,00;2;3"
+          "06/01/2026;Compra Recorrente;99,99;2;3"
         ].join("\n"),
         mappings: {
           eventDate: "Data",
@@ -934,6 +950,28 @@ describe("transactions & account balances business rules", () => {
         isDuplicate: true
       })
     ]);
+
+    const februaryConfirmRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-confirm",
+      payload: {
+        transactions: februaryPreview.map((item) => ({
+          eventDate: item.eventDate,
+          description: item.description,
+          amountCents: item.amountCents,
+          type: item.type,
+          creditCardId: item.creditCardId,
+          budgetMonth: item.budgetMonth,
+          installmentNumber: item.installmentNumber,
+          installmentCount: item.installmentCount,
+          status: "confirmed"
+        })),
+        preventDuplicates: true
+      }
+    });
+
+    expect(februaryConfirmRes.statusCode).toBe(201);
+    expect(februaryConfirmRes.json()).toHaveLength(0);
   });
 
   it("should expand remaining credit card bill installments when mapped to installment and installmentCount (separate columns case)", async () => {
@@ -1112,6 +1150,87 @@ describe("transactions & account balances business rules", () => {
     const updatedTx = putRes.json();
     expect(updatedTx.budgetMonth).toBe("2026-07");
     expect(updatedTx.creditCardBillId).toBe(julyBill.id);
+  });
+
+  it("should preserve a future installment bill month when quick editing without changing the date", async () => {
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Edição Rápida",
+        closingDay: 6,
+        dueDay: 13,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+    const cardId = cardRes.json().id as string;
+
+    const februaryBillRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills?month=2026-02`
+    });
+    const februaryBill = februaryBillRes.json().bill;
+
+    const conn = createDatabaseConnection(databasePath);
+    const transactionId = crypto.randomUUID();
+    conn.db.insert(transactions).values({
+      id: transactionId,
+      type: "expense",
+      description: "Parcela futura (2/3)",
+      amountCents: 10000,
+      eventDate: "2025-12-20",
+      budgetMonth: "2026-02",
+      accountId: null,
+      paymentMethodId: null,
+      subcategoryId: null,
+      creditCardId: cardId,
+      creditCardBillId: februaryBill.id,
+      status: "confirmed",
+      notes: null,
+      linkedTransactionId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }).run();
+    conn.sqlite.close();
+
+    const putRes = await app.inject({
+      method: "PUT",
+      url: `/credit-cards/${cardId}/bills/${februaryBill.id}/transactions/${transactionId}`,
+      payload: {
+        description: "Parcela futura (2/3)",
+        amountCents: 9999,
+        eventDate: "2025-12-20",
+        status: "confirmed",
+        installmentCount: 3,
+        preserveBillMonth: true
+      }
+    });
+
+    expect(putRes.statusCode).toBe(200);
+    const updated = putRes.json();
+    expect(updated.amountCents).toBe(9999);
+    expect(updated.eventDate).toBe("2025-12-20");
+    expect(updated.budgetMonth).toBe("2026-02");
+    expect(updated.creditCardBillId).toBe(februaryBill.id);
+
+    const januaryBillRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills?month=2026-01`
+    });
+    expect(januaryBillRes.json().transactions).toHaveLength(0);
+
+    const reloadedFebruaryBillRes = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills?month=2026-02`
+    });
+    expect(reloadedFebruaryBillRes.json().transactions).toEqual([
+      expect.objectContaining({
+        id: transactionId,
+        amountCents: 9999,
+        budgetMonth: "2026-02"
+      })
+    ]);
   });
 
   it("should cascade transaction deletion to the installments table", async () => {

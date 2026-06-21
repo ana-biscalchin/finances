@@ -15,7 +15,7 @@ import {
   assertYearMonth,
   getCreditCardBillMonth
 } from "@finances/domain";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import crypto from "node:crypto";
 
@@ -28,7 +28,11 @@ import {
   sendPayloadError,
   ValidationError
 } from "../http.js";
-import { buildCreditCardInstallmentTransactions, type TransactionData } from "./transactions.js";
+import {
+  buildCreditCardInstallmentTransactions,
+  createInstallmentMetadataForTransactions,
+  type TransactionData
+} from "./transactions.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 
@@ -239,7 +243,34 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       return true;
     });
 
-    const totalCents = allTransactions
+    const transactionIds = allTransactions.map((transaction) => transaction.id);
+    const installmentRows = transactionIds.length > 0
+      ? db
+          .select()
+          .from(installments)
+          .where(inArray(installments.purchaseTransactionId, transactionIds))
+          .all()
+      : [];
+    const installmentsByTransactionId = new Map(
+      installmentRows.map((installment) => [installment.purchaseTransactionId, installment])
+    );
+    const transactionsWithInstallments = allTransactions.map((transaction) => {
+      const installment = installmentsByTransactionId.get(transaction.id);
+      const parsedInstallment = installment
+        ? null
+        : parseInstallmentMarker(transaction.description);
+
+      return {
+        ...transaction,
+        installmentPurchaseId: installment?.installmentPurchaseId ?? null,
+        installmentNumber: installment?.installmentNumber ?? parsedInstallment?.installmentNumber ?? null,
+        installmentCount: installment?.installmentCount ?? parsedInstallment?.installmentCount ?? null,
+        installmentAmountCents: installment?.amountCents ?? null,
+        installmentDueMonth: installment?.dueMonth ?? null
+      };
+    });
+
+    const totalCents = transactionsWithInstallments
       .filter((t) => t.status !== "canceled")
       .reduce((sum, t) => {
         if (t.type === "expense") return sum + t.amountCents;
@@ -249,7 +280,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
 
     return {
       bill,
-      transactions: allTransactions,
+      transactions: transactionsWithInstallments,
       totalCents
     };
   });
@@ -495,6 +526,19 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           db.insert(transactions).values(t).run();
         }
 
+        createInstallmentMetadataForTransactions(connection, {
+          creditCardId: id,
+          originalDescription: description,
+          originalEventDate: eventDate,
+          installmentCount,
+          totalAmountCents: amountCents,
+          source: "manual",
+          transactions: created.map((transaction, index) => ({
+            transaction,
+            installmentNumber: index + 1
+          }))
+        });
+
         return reply.code(201).send(created);
       }
 
@@ -548,6 +592,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       const eventDate = assertBusinessDate(parseRequiredString(body.eventDate, "eventDate"));
       const subcategoryId = parseOptionalString(body.subcategoryId, "subcategoryId");
       const notes = parseOptionalString(body.notes, "notes");
+      const preserveBillMonth = body.preserveBillMonth === true;
       const status =
         typeof body.status === "string" && body.status.length > 0
           ? assertTransactionStatus(body.status)
@@ -569,7 +614,9 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
 
       if (amountCents <= 0) throw new ValidationError("amountCents deve ser maior que zero.");
 
-      const budgetMonth = getCreditCardBillMonth(eventDate, card.closingDay);
+      const budgetMonth = preserveBillMonth
+        ? assertYearMonth(current.budgetMonth)
+        : getCreditCardBillMonth(eventDate, card.closingDay);
       const targetBill = getOrCreateCreditCardBill(connection, card, budgetMonth);
 
       const transactionData: TransactionData = {
@@ -588,7 +635,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         linkedTransactionId: null,
       };
 
-      if (installmentCount > 1) {
+      if (installmentCount > 1 && !preserveBillMonth) {
         const created = buildCreditCardInstallmentTransactions(
           connection,
           transactionData,
@@ -615,6 +662,19 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         for (const t of rest) {
           db.insert(transactions).values(t).run();
         }
+
+        createInstallmentMetadataForTransactions(connection, {
+          creditCardId: id,
+          originalDescription: description,
+          originalEventDate: eventDate,
+          installmentCount,
+          totalAmountCents: amountCents,
+          source: "manual",
+          transactions: created.map((transaction, index) => ({
+            transaction: index === 0 ? { ...transaction, id: transactionId } : transaction,
+            installmentNumber: index + 1
+          }))
+        });
 
         return db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
       }
@@ -725,6 +785,27 @@ function ensurePaymentAccountOrReply(
   }
 
   return true;
+}
+
+function parseInstallmentMarker(description: string) {
+  const match = description.match(/(?:^|\D)(\d{1,2})\s*\/\s*(\d{1,2})(?:\D|$)/);
+  if (!match) {
+    return null;
+  }
+
+  const installmentNumber = Number(match[1]);
+  const installmentCount = Number(match[2]);
+
+  if (
+    installmentNumber < 1 ||
+    installmentCount < 2 ||
+    installmentNumber > installmentCount ||
+    installmentCount > 48
+  ) {
+    return null;
+  }
+
+  return { installmentNumber, installmentCount };
 }
 
 export function getOrCreateCreditCardBill(

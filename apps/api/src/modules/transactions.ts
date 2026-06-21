@@ -3,6 +3,7 @@ import {
   categories as dbCategories,
   creditCards,
   creditCardBills,
+  installmentPurchases,
   subcategories,
   paymentMethods,
   transactions,
@@ -19,7 +20,7 @@ import {
   getCreditCardBillMonth,
   yearMonthFromDate
 } from "@finances/domain";
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -139,6 +140,19 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         db.insert(transactions).values(t).run();
       }
 
+      createInstallmentMetadataForTransactions(connection, {
+        creditCardId: rawTransactionData.creditCardId,
+        originalDescription: rawTransactionData.description,
+        originalEventDate: rawTransactionData.eventDate,
+        installmentCount,
+        totalAmountCents: rawTransactionData.amountCents,
+        source: "manual",
+        transactions: created.map((transaction, index) => ({
+          transaction,
+          installmentNumber: index + 1
+        }))
+      });
+
       return reply.code(201).send(created);
     }
 
@@ -232,6 +246,19 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       for (const t of rest) {
         db.insert(transactions).values(t).run();
       }
+
+      createInstallmentMetadataForTransactions(connection, {
+        creditCardId: rawTransactionData.creditCardId,
+        originalDescription: rawTransactionData.description,
+        originalEventDate: rawTransactionData.eventDate,
+        installmentCount,
+        totalAmountCents: rawTransactionData.amountCents,
+        source: "manual",
+        transactions: created.map((transaction, index) => ({
+          transaction: index === 0 ? { ...transaction, id } : transaction,
+          installmentNumber: index + 1
+        }))
+      });
 
       const updated = db.select().from(transactions).where(eq(transactions.id, id)).get();
       return reply.code(200).send(updated);
@@ -584,7 +611,16 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     const minDateStr = new Date(minTime - 3 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
     const maxDateStr = new Date(maxTime + 3 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-    // Fetch existing transactions in range
+    const budgetMonths = [
+      ...new Set(
+        parsedItems
+          .filter((item) => item.creditCardId && item.budgetMonth)
+          .map((item) => item.budgetMonth as string)
+      )
+    ];
+
+    // Fetch existing transactions in range. Card installments may keep the
+    // original purchase date, so compare by bill month instead of date window.
     const existingTx = db
       .select({
         id: transactions.id,
@@ -598,12 +634,17 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       })
       .from(transactions)
       .leftJoin(accounts, eq(transactions.accountId, accounts.id))
-      .where(and(gte(transactions.eventDate, minDateStr), lte(transactions.eventDate, maxDateStr)))
+      .where(
+        budgetMonths.length > 0
+          ? inArray(transactions.budgetMonth, budgetMonths)
+          : and(gte(transactions.eventDate, minDateStr), lte(transactions.eventDate, maxDateStr))
+      )
       .all();
 
     const parsedItemsWithDuplicates = parsedItems.map((item) => {
       const match = existingTx.find((tx) => {
-        const sameAmount = tx.amountCents === item.amountCents;
+        const isInstallment = Boolean(item.installmentNumber && item.installmentCount);
+        const sameAmount = isImportedAmountMatch(tx.amountCents, item.amountCents, isInstallment);
         const sameAccount = item.creditCardId
           ? tx.creditCardId === item.creditCardId
           : (!tx.accountId || !item.accountId || tx.accountId === item.accountId);
@@ -612,7 +653,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         const nearDate = daysDiff <= 3;
         const sameImportedDescription =
           normalizeImportedText(tx.description) === normalizeImportedText(item.description);
-        return sameAmount && sameAccount && sameBillMonth && nearDate && (item.creditCardId ? sameImportedDescription : true);
+        if (item.creditCardId) {
+          return sameAmount && sameAccount && sameBillMonth && sameImportedDescription && (isInstallment || nearDate);
+        }
+
+        return sameAmount && sameAccount && sameBillMonth && nearDate;
       });
 
       return {
@@ -658,6 +703,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     }
 
     const created: Array<typeof transactions.$inferSelect> = [];
+    const createdInstallmentMetadata: Array<{
+      transaction: typeof transactions.$inferSelect;
+      installmentNumber: number;
+      installmentCount: number;
+    }> = [];
 
     db.transaction((tx) => {
       for (const t of body.transactions!) {
@@ -736,8 +786,17 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
         tx.insert(transactions).values(newTx).run();
         created.push(newTx);
+        if (newTx.creditCardId && t.installmentNumber && t.installmentCount) {
+          createdInstallmentMetadata.push({
+            transaction: newTx,
+            installmentNumber: t.installmentNumber,
+            installmentCount: t.installmentCount
+          });
+        }
       }
     });
+
+    createInstallmentMetadataGroupsForImportedTransactions(connection, createdInstallmentMetadata);
 
     return reply.code(201).send(created);
   });
@@ -1319,10 +1378,140 @@ function formatImportedInstallmentDescription(
   return `${baseDescription} (${installmentNumber}/${installmentCount})`;
 }
 
+type InstallmentMetadataTransaction = {
+  transaction: Pick<
+    typeof transactions.$inferInsert,
+    "id" | "amountCents" | "budgetMonth" | "creditCardBillId"
+  >;
+  installmentNumber: number;
+};
+
+export function createInstallmentMetadataForTransactions(
+  connection: DatabaseConnection,
+  params: {
+    creditCardId: string;
+    originalDescription: string;
+    originalEventDate: string;
+    installmentCount: number;
+    totalAmountCents: number | null;
+    source: "manual" | "csv_import";
+    transactions: InstallmentMetadataTransaction[];
+  }
+) {
+  if (params.installmentCount <= 1 || params.transactions.length === 0) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const installmentPurchaseId = crypto.randomUUID();
+  const baseDescription = stripInstallmentMarker(params.originalDescription);
+
+  connection.db.insert(installmentPurchases).values({
+    id: installmentPurchaseId,
+    creditCardId: params.creditCardId,
+    originalDescription: baseDescription,
+    normalizedDescription: normalizeImportedText(baseDescription),
+    originalEventDate: params.originalEventDate,
+    installmentCount: params.installmentCount,
+    totalAmountCents: params.totalAmountCents,
+    source: params.source,
+    status: "active",
+    createdAt: now,
+    updatedAt: now
+  }).run();
+
+  for (const { transaction, installmentNumber } of params.transactions) {
+    connection.db.insert(installments).values({
+      id: crypto.randomUUID(),
+      installmentPurchaseId,
+      purchaseTransactionId: transaction.id,
+      creditCardBillId: transaction.creditCardBillId,
+      installmentNumber,
+      installmentCount: params.installmentCount,
+      amountCents: transaction.amountCents,
+      dueMonth: transaction.budgetMonth,
+      createdAt: now,
+      updatedAt: now
+    }).run();
+  }
+
+  return installmentPurchaseId;
+}
+
+function createInstallmentMetadataGroupsForImportedTransactions(
+  connection: DatabaseConnection,
+  items: Array<{
+    transaction: typeof transactions.$inferSelect;
+    installmentNumber: number;
+    installmentCount: number;
+  }>
+) {
+  const groups = new Map<string, typeof items>();
+
+  for (const item of items) {
+    if (!item.transaction.creditCardId || item.installmentCount <= 1) {
+      continue;
+    }
+
+    const baseDescription = stripInstallmentMarker(item.transaction.description);
+    const key = [
+      item.transaction.creditCardId,
+      normalizeImportedText(baseDescription),
+      item.installmentCount,
+      item.transaction.eventDate
+    ].join("|");
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+
+  for (const group of groups.values()) {
+    const first = group[0];
+    if (!first.transaction.creditCardId) {
+      continue;
+    }
+
+    createInstallmentMetadataForTransactions(connection, {
+      creditCardId: first.transaction.creditCardId,
+      originalDescription: stripInstallmentMarker(first.transaction.description),
+      originalEventDate: first.transaction.eventDate,
+      installmentCount: first.installmentCount,
+      totalAmountCents: group.reduce((sum, item) => sum + item.transaction.amountCents, 0),
+      source: "csv_import",
+      transactions: group.map((item) => ({
+        transaction: item.transaction,
+        installmentNumber: item.installmentNumber
+      }))
+    });
+  }
+}
+
 function isDuplicateImportedTransaction(
   db: Pick<DatabaseConnection["db"], "select">,
   candidate: typeof transactions.$inferInsert
 ) {
+  if (candidate.creditCardId) {
+    const existingCardTransactions = db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.budgetMonth, candidate.budgetMonth))
+      .all();
+
+    return existingCardTransactions.some((transaction) => {
+      const candidateInstallment = parseImportedInstallmentInfo({
+        description: candidate.description,
+        installment: "",
+        installmentNumber: "",
+        installmentCount: ""
+      });
+      const isInstallment = Boolean(candidateInstallment);
+
+      return (
+        transaction.creditCardId === candidate.creditCardId &&
+        isImportedAmountMatch(transaction.amountCents, candidate.amountCents, isInstallment) &&
+        normalizeImportedText(transaction.description) === normalizeImportedText(candidate.description)
+      );
+    });
+  }
+
   const existing = db
     .select()
     .from(transactions)
@@ -1337,10 +1526,6 @@ function isDuplicateImportedTransaction(
     .all();
 
   return existing.some((transaction) => {
-    if (candidate.creditCardId) {
-      return transaction.creditCardId === candidate.creditCardId;
-    }
-
     return transaction.accountId === candidate.accountId;
   });
 }
@@ -1396,6 +1581,11 @@ function normalizeImportedCategoryText(value: string): string {
     .replace(/\b(receita|income|entrada|credito|credit|cr|despesa|expense|saida|debito|debit|db)\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function isImportedAmountMatch(existingAmountCents: number, importedAmountCents: number, isInstallment: boolean) {
+  const differenceInCents = Math.abs(existingAmountCents - importedAmountCents);
+  return isInstallment ? differenceInCents <= 2 : differenceInCents === 0;
 }
 
 function normalizeImportedText(value: string): string {
