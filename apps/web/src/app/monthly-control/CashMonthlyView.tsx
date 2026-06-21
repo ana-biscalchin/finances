@@ -5,6 +5,7 @@ import {
   Card,
   Collapse,
   Group,
+  HoverCard,
   Loader,
   Paper,
   SimpleGrid,
@@ -16,9 +17,11 @@ import {
 } from "@mantine/core";
 import {
   IconAlertCircle,
+  IconAlertTriangle,
   IconChevronDown,
   IconChevronUp,
   IconCreditCard,
+  IconInfoCircle,
   IconTrendingDown,
   IconTrendingUp,
   IconWallet,
@@ -41,6 +44,16 @@ interface AccountMonthlySummary {
   realizedOutflow: number;
   realizedBalance: number;
   projectedBalance: number;
+  plannedInflow?: number;
+  plannedOutflow?: number;
+  openCardBills?: number;
+  linkedCards?: string[];
+  linkedBillsDetail?: {
+    cardName: string;
+    billMonth: string;
+    amountCents: number;
+    dueDate: string;
+  }[];
 }
 
 interface CashSummary {
@@ -409,11 +422,12 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                     return (
                       <Table.Tr key={account.id}>
                         <Table.Td>
-                          <Group gap="xs" wrap="nowrap">
+                          <Group gap="xs" wrap="nowrap" align="flex-start">
                             <ThemeIcon
                               variant="light"
                               color={projectedVal >= 0 ? "teal" : "red"}
                               size="sm"
+                              mt={3}
                             >
                               <IconWallet size={14} />
                             </ThemeIcon>
@@ -423,6 +437,22 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                                 {account.institution || getAccountTypeLabel(account.type)}
                                 {!account.isActive ? " · arquivada" : ""}
                               </Text>
+                              {account.linkedCards && account.linkedCards.length > 0 && (
+                                <Group gap={4} mt={4}>
+                                  {account.linkedCards.map((cardName) => (
+                                    <Badge
+                                      key={cardName}
+                                      variant="light"
+                                      color="grape"
+                                      size="xs"
+                                      leftSection={<IconCreditCard size={10} />}
+                                      style={{ textTransform: "none" }}
+                                    >
+                                      {cardName}
+                                    </Badge>
+                                  ))}
+                                </Group>
+                              )}
                             </div>
                           </Group>
                         </Table.Td>
@@ -467,9 +497,108 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                           </Text>
                         </Table.Td>
                         <Table.Td style={{ textAlign: "right" }}>
-                          <Text size="sm" fw={700} c={projectedVal >= 0 ? "teal" : "red"}>
-                            {formatMoney(moneyFromCents(projectedVal))}
-                          </Text>
+                          <HoverCard width={320} shadow="md" withArrow openDelay={100} position="left">
+                            <HoverCard.Target>
+                              <Group gap={4} justify="flex-end" style={{ cursor: "help", display: "inline-flex" }} wrap="nowrap">
+                                <Text size="sm" fw={700} c={projectedVal >= 0 ? "teal" : "red"}>
+                                  {formatMoney(moneyFromCents(projectedVal))}
+                                </Text>
+                                <IconInfoCircle size={14} style={{ opacity: 0.6 }} />
+                                {projectedVal < 0 && (
+                                  <IconAlertTriangle size={14} color="var(--mantine-color-red-6)" />
+                                )}
+                              </Group>
+                            </HoverCard.Target>
+                            <HoverCard.Dropdown p="sm">
+                              <Stack gap="xs" style={{ textAlign: "left" }}>
+                                <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+                                  Detalhamento da Projeção {useBudgetSimulation ? "(Simulada)" : ""}
+                                </Text>
+                                
+                                <Group justify="space-between" wrap="nowrap">
+                                  <Text size="xs">Saldo realizado (atual):</Text>
+                                  <Text size="xs" fw={600} c={account.realizedBalance >= 0 ? "teal" : "red"}>
+                                    {formatMoney(moneyFromCents(account.realizedBalance))}
+                                  </Text>
+                                </Group>
+
+                                {account.plannedInflow ? account.plannedInflow > 0 && (
+                                  <Group justify="space-between" wrap="nowrap">
+                                    <Text size="xs">(+) Entradas planejadas:</Text>
+                                    <Text size="xs" fw={600} c="teal">
+                                      +{formatMoney(moneyFromCents(account.plannedInflow))}
+                                    </Text>
+                                  </Group>
+                                ) : null}
+
+                                {account.plannedOutflow ? account.plannedOutflow > 0 && (
+                                  <Group justify="space-between" wrap="nowrap">
+                                    <Text size="xs">(-) Saídas planejadas:</Text>
+                                    <Text size="xs" fw={600} c="red">
+                                      -{formatMoney(moneyFromCents(account.plannedOutflow))}
+                                    </Text>
+                                  </Group>
+                                ) : null}
+
+                                {account.openCardBills ? account.openCardBills > 0 && (
+                                  <>
+                                    <Group justify="space-between" wrap="nowrap">
+                                      <Text size="xs" fw={600}>(-) Faturas em aberto:</Text>
+                                      <Text size="xs" fw={700} c="orange">
+                                        -{formatMoney(moneyFromCents(account.openCardBills))}
+                                      </Text>
+                                    </Group>
+                                    <Stack gap={2} pl="xs" style={{ borderLeft: "2px solid var(--mantine-color-orange-2)" }}>
+                                      {account.linkedBillsDetail?.map((bill, index) => (
+                                        <Group key={index} justify="space-between" wrap="nowrap">
+                                          <Text size="10px" c="dimmed">
+                                            {bill.cardName} ({bill.billMonth})
+                                          </Text>
+                                          <Text size="10px" fw={600} c="dimmed">
+                                            -{formatMoney(moneyFromCents(bill.amountCents))}
+                                          </Text>
+                                        </Group>
+                                      ))}
+                                    </Stack>
+                                  </>
+                                ) : null}
+
+                                {useBudgetSimulation && pendingBudgetInflow > 0 && (
+                                  <Group justify="space-between" wrap="nowrap">
+                                    <Text size="xs">(+) Receitas orçadas pendentes:</Text>
+                                    <Text size="xs" fw={600} c="teal">
+                                      +{formatMoney(moneyFromCents(pendingBudgetInflow))}
+                                    </Text>
+                                  </Group>
+                                )}
+
+                                {useBudgetSimulation && pendingBudgetOutflow > 0 && (
+                                  <Group justify="space-between" wrap="nowrap">
+                                    <Text size="xs">(-) Despesas orçadas pendentes:</Text>
+                                    <Text size="xs" fw={600} c="red">
+                                      -{formatMoney(moneyFromCents(pendingBudgetOutflow))}
+                                    </Text>
+                                  </Group>
+                                )}
+
+                                <Group justify="space-between" wrap="nowrap" pt="xs" style={{ borderTop: "1px solid var(--mantine-color-gray-2)" }}>
+                                  <Text size="xs" fw={700}>Saldo projetado final:</Text>
+                                  <Text size="xs" fw={700} c={projectedVal >= 0 ? "teal" : "red"}>
+                                    {formatMoney(moneyFromCents(projectedVal))}
+                                  </Text>
+                                </Group>
+
+                                {projectedVal < 0 && (
+                                  <Group gap={4} wrap="nowrap" mt="xs" p={6} style={{ borderRadius: 4, backgroundColor: "var(--mantine-color-red-0)" }}>
+                                    <IconAlertTriangle size={14} color="var(--mantine-color-red-6)" />
+                                    <Text size="10px" c="red.9" fw={500}>
+                                      Atenção: Saldo projetado negativo!
+                                    </Text>
+                                  </Group>
+                                )}
+                              </Stack>
+                            </HoverCard.Dropdown>
+                          </HoverCard>
                         </Table.Td>
                       </Table.Tr>
                     );

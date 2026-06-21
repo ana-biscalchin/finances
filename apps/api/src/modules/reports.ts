@@ -17,7 +17,7 @@ import {
   isConsumptionExpense,
   isReportableIncome
 } from "@finances/domain";
-import { and, eq, inArray, isNotNull, like, ne, or, lt } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, lt, ne, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
@@ -38,6 +38,8 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     }
 
     const nextMonth = advanceMonth(month, 1);
+    const monthStart = `${month}-01`;
+    const monthAfterNextStart = `${advanceMonth(nextMonth, 1)}-01`;
 
     // Get active credit cards
     const activeCards = db
@@ -67,10 +69,8 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       .where(
         and(
           inArray(creditCardBills.creditCardId, cardIds),
-          or(
-            like(creditCardBills.dueDate, `${month}-%`),
-            like(creditCardBills.dueDate, `${nextMonth}-%`)
-          )
+          gte(creditCardBills.dueDate, monthStart),
+          lt(creditCardBills.dueDate, monthAfterNextStart)
         )
       )
       .all();
@@ -171,9 +171,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     }
 
     // 2.2 Retrieve all transactions for the month with filters
+    const nextMonthStart = `${advanceMonth(month, 1)}-01`;
     const txFilters = [
       view === "cash"
-        ? like(transactions.eventDate, `${month}-%`)
+        ? and(gte(transactions.eventDate, `${month}-01`), lt(transactions.eventDate, nextMonthStart))
         : eq(transactions.budgetMonth, month),
       ne(transactions.status, "canceled")
     ];
@@ -289,10 +290,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       return reply.code(400).send({ message: "Ano inválido. Use o formato YYYY." });
     }
 
+    const yearRange = getYearRange(yearStr);
     const txFilters = [
       view === "cash"
-        ? like(transactions.eventDate, `${yearStr}-%`)
-        : like(transactions.budgetMonth, `${yearStr}-%`),
+        ? and(gte(transactions.eventDate, yearRange.startDate), lt(transactions.eventDate, yearRange.endDate))
+        : and(gte(transactions.budgetMonth, yearRange.startMonth), lt(transactions.budgetMonth, yearRange.endMonth)),
       ne(transactions.status, "canceled")
     ];
 
@@ -387,10 +389,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       return reply.code(400).send({ message: "Ano inválido. Use o formato YYYY." });
     }
 
+    const yearRange = getYearRange(yearStr);
     const txFilters = [
       view === "cash"
-        ? like(transactions.eventDate, `${yearStr}-%`)
-        : like(transactions.budgetMonth, `${yearStr}-%`),
+        ? and(gte(transactions.eventDate, yearRange.startDate), lt(transactions.eventDate, yearRange.endDate))
+        : and(gte(transactions.budgetMonth, yearRange.startMonth), lt(transactions.budgetMonth, yearRange.endMonth)),
       eq(transactions.type, "expense"),
       ne(transactions.status, "canceled")
     ];
@@ -531,9 +534,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     if (monthStr) {
       try {
         const month = assertYearMonth(monthStr);
+        const nextMonth = advanceMonth(month, 1);
         txFilters.push(
           view === "cash"
-            ? like(transactions.eventDate, `${month}-%`)
+            ? and(gte(transactions.eventDate, `${month}-01`), lt(transactions.eventDate, `${nextMonth}-01`))!
             : eq(transactions.budgetMonth, month)
         );
       } catch {
@@ -543,10 +547,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       if (!/^\d{4}$/.test(yearStr)) {
         return reply.code(400).send({ message: "Ano inválido. Use o formato YYYY." });
       }
+      const yearRange = getYearRange(yearStr);
       txFilters.push(
         view === "cash"
-          ? like(transactions.eventDate, `${yearStr}-%`)
-          : like(transactions.budgetMonth, `${yearStr}-%`)
+          ? and(gte(transactions.eventDate, yearRange.startDate), lt(transactions.eventDate, yearRange.endDate))!
+          : and(gte(transactions.budgetMonth, yearRange.startMonth), lt(transactions.budgetMonth, yearRange.endMonth))!
       );
     }
 
@@ -606,4 +611,14 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
     return result.sort((a, b) => b.amountCents - a.amountCents);
   });
+}
+
+function getYearRange(year: string) {
+  const nextYear = String(Number(year) + 1);
+  return {
+    startDate: `${year}-01-01`,
+    endDate: `${nextYear}-01-01`,
+    startMonth: `${year}-01`,
+    endMonth: `${nextYear}-01`
+  };
 }

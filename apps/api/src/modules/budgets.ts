@@ -10,7 +10,7 @@ import {
   type createDatabaseConnection
 } from "@finances/database";
 import { advanceMonth, assertYearMonth } from "@finances/domain";
-import { and, asc, eq, isNull, inArray, lt, ne, like } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, inArray, lt, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
 import {
@@ -49,6 +49,14 @@ interface TreeNode {
   subcategoryId?: string;
   accountId?: string | null;
   paymentMethodId?: string | null;
+  byPaymentMethod?: {
+    accountId: string | null;
+    creditCardId: string | null;
+    paymentMethodId: string | null;
+    budgeted: number;
+    realized: number;
+    committed: number;
+  }[];
   children?: TreeNode[];
 }
 
@@ -63,6 +71,16 @@ interface AccountMonthlySummary {
   realizedOutflow: number;
   realizedBalance: number;
   projectedBalance: number;
+  plannedInflow: number;
+  plannedOutflow: number;
+  openCardBills: number;
+  linkedCards: string[];
+  linkedBillsDetail: {
+    cardName: string;
+    billMonth: string;
+    amountCents: number;
+    dueDate: string;
+  }[];
 }
 
 export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseConnection) {
@@ -112,7 +130,6 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
   app.get("/controle-mensal", async (req, reply) => {
     const query = req.query as Record<string, unknown>;
     const monthStr = typeof query.month === "string" ? query.month : "";
-    const groupBy = typeof query.groupBy === "string" ? query.groupBy : "category";
     const view = typeof query.view === "string" ? query.view : "competence";
 
     let month: string;
@@ -125,7 +142,6 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
 
     const allCategories = db.select().from(dbCategories).all();
     const allSubcategories = db.select().from(dbSubcategories).all();
-    const allPaymentMethods = db.select().from(dbPaymentMethods).all();
     const allCards = db.select().from(dbCreditCards).all();
     const allAccounts = db.select().from(dbAccounts).all();
 
@@ -145,7 +161,6 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
 
     const categoryMap = new Map(allCategories.map((c) => [c.id, c]));
     const subcategoryMap = new Map(allSubcategories.map((s) => [s.id, s]));
-    const paymentMethodMap = new Map(allPaymentMethods.map((p) => [p.id, p]));
     const cardMap = new Map(allCards.map((c) => [c.id, c]));
     const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
 
@@ -158,11 +173,12 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
     );
 
     // Calculate total bills due in the month
+    const nextMonthStart = `${advanceMonth(month, 1)}-01`;
     const billsDueInMonth = db
       .select()
       .from(dbCreditCardBills)
-      .all()
-      .filter((b) => b.dueDate.startsWith(month));
+      .where(and(gte(dbCreditCardBills.dueDate, `${month}-01`), lt(dbCreditCardBills.dueDate, nextMonthStart)))
+      .all();
 
     const billIds = billsDueInMonth.map((b) => b.id);
     const billPayments = billIds.length > 0
@@ -319,17 +335,6 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       return transaction.creditCardId ? "pm-credit-card" : transaction.paymentMethodId;
     }
 
-    function getAccountName(accountId: string | null) {
-      if (!accountId) return "Sem conta";
-      const account = accountMap.get(accountId);
-      return account?.name ?? "Conta desconhecida";
-    }
-
-    function getSourcePaymentMethodName(paymentMethodId: string | null) {
-      if (!paymentMethodId) return "Todos os meios";
-      return paymentMethodMap.get(paymentMethodId)?.name ?? "Meio desconhecido";
-    }
-
     const monthStart = `${month}-01`;
 
     const pastTx = db
@@ -352,7 +357,8 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       .from(dbTransactions)
       .where(
         and(
-          like(dbTransactions.eventDate, `${month}-%`),
+          gte(dbTransactions.eventDate, `${month}-01`),
+          lt(dbTransactions.eventDate, nextMonthStart),
           ne(dbTransactions.status, "canceled")
         )
       )
@@ -370,6 +376,8 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
         let openingBalance = account.initialBalanceCents;
         let realizedInflow = 0;
         let realizedOutflow = 0;
+        let plannedInflow = 0;
+        let plannedOutflow = 0;
 
         for (const transaction of accountPastTransactions) {
           openingBalance += getAccountDelta(transaction);
@@ -379,15 +387,49 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
           const delta = getAccountDelta(transaction);
 
           const isRealized = transaction.status === "confirmed" || transaction.status === "reconciled";
+          const isPlanned = transaction.status === "planned";
 
           if (isRealized && delta > 0) {
             realizedInflow += delta;
           } else if (isRealized && delta < 0) {
             realizedOutflow += Math.abs(delta);
+          } else if (isPlanned && delta > 0) {
+            plannedInflow += delta;
+          } else if (isPlanned && delta < 0) {
+            plannedOutflow += Math.abs(delta);
+          }
+        }
+
+        let openCardBills = 0;
+        const linkedBillsDetail: { cardName: string; billMonth: string; amountCents: number; dueDate: string }[] = [];
+        const linkedCards: string[] = [];
+
+        // Find active cards linked to this account
+        const accountCards = allCards.filter(
+          (c) => c.paymentAccountId === account.id && c.isActive
+        );
+        for (const card of accountCards) {
+          linkedCards.push(card.name);
+        }
+
+        for (const bill of billsDueInMonth) {
+          const card = cardMap.get(bill.creditCardId);
+          if (card && card.paymentAccountId === account.id) {
+            const amountCents = billTotalCentsMap.get(bill.id) ?? 0;
+            if (bill.status === "open") {
+              openCardBills += amountCents;
+              linkedBillsDetail.push({
+                cardName: card.name,
+                billMonth: bill.billMonth,
+                amountCents,
+                dueDate: bill.dueDate
+              });
+            }
           }
         }
 
         const realizedBalance = openingBalance + realizedInflow - realizedOutflow;
+        const projectedBalance = realizedBalance + plannedInflow - plannedOutflow - openCardBills;
 
         return {
           id: account.id,
@@ -399,13 +441,21 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
           realizedInflow,
           realizedOutflow,
           realizedBalance,
-          projectedBalance: realizedBalance
+          projectedBalance,
+          plannedInflow,
+          plannedOutflow,
+          openCardBills,
+          linkedCards,
+          linkedBillsDetail
         };
       })
       .filter((account) => {
         const hasMovement =
           account.realizedInflow > 0 ||
-          account.realizedOutflow > 0;
+          account.realizedOutflow > 0 ||
+          account.plannedInflow > 0 ||
+          account.plannedOutflow > 0 ||
+          account.openCardBills > 0;
         return account.isActive || hasMovement || account.openingBalance !== 0;
       })
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -582,297 +632,31 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       }
     };
 
-    if (groupBy === "source") {
-      const sourceAccumulator = new Map<string, Accumulator>();
-      const sourceBudgetScopes = new Set<string>();
+    // groupBy === "category"
+    const categoryAccumulator = new Map<string, Accumulator>();
 
-      function getSourceScopeKey(accountId: string | null, paymentMethodId: string | null, subId: string) {
-        return `${accountId || "null"}|${paymentMethodId || "null"}|${subId}`;
-      }
-
-      function getSourceAccumulatorKey(
-        accountId: string | null,
-        paymentMethodId: string | null,
-        subId: string,
-        defaultNature: "income" | "expense" | "transfer"
-      ) {
-        const details = getSubcategoryDetails(subId, defaultNature);
-        const normalizedAccountId = accountId || "null";
-        const normalizedPaymentMethodId = paymentMethodId || "null";
-        const key = `${normalizedAccountId}|${normalizedPaymentMethodId}|${details.nature}|${details.catName}|${subId}`;
-        if (!sourceAccumulator.has(key)) {
-          sourceAccumulator.set(key, {
-            budgeted: 0,
-            realized: 0,
-            committed: 0,
-            realizedCash: 0,
-            realizedCredit: 0,
-            committedCash: 0,
-            committedCredit: 0
-          });
-        }
-        return key;
-      }
-
-      for (const b of monthBudgets) {
-        const subId = b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
-        if (!subId) continue;
-        sourceBudgetScopes.add(getSourceScopeKey(b.accountId, b.paymentMethodId, subId));
-        const key = getSourceAccumulatorKey(b.accountId, b.paymentMethodId, subId, "expense");
-        sourceAccumulator.get(key)!.budgeted += b.amountCents;
-      }
-
-      for (const t of monthTransactions) {
-        if (t.status === "canceled") continue;
-        const subId = t.subcategoryId ?? (t.type === "income" ? UNCATEGORIZED_SUB_INCOME_ID : UNCATEGORIZED_SUB_EXPENSE_ID);
-        const defaultNature = t.type === "income" ? "income" : t.type === "transfer" ? "transfer" : "expense";
-        const transactionPaymentMethodId = getTransactionPaymentMethodId(t);
-        const transactionAccountId = t.accountId;
-        const matchingBudgetScope = [
-          getSourceScopeKey(transactionAccountId, transactionPaymentMethodId, subId),
-          getSourceScopeKey(transactionAccountId, null, subId),
-          getSourceScopeKey(null, transactionPaymentMethodId, subId),
-          getSourceScopeKey(null, null, subId)
-        ].find((scope) => sourceBudgetScopes.has(scope));
-        const [accountScope, paymentScope] = matchingBudgetScope
-          ? matchingBudgetScope.split("|")
-          : [transactionAccountId || "null", transactionPaymentMethodId || "null"];
-        const paymentMethodId = paymentScope === "null" ? null : paymentScope;
-        const accountId = accountScope === "null" ? null : accountScope;
-        const key = getSourceAccumulatorKey(accountId, paymentMethodId, subId, defaultNature);
-        const acc = sourceAccumulator.get(key)!;
-        const isRealized = t.status === "confirmed" || t.status === "reconciled";
-        const isCommitted = t.status === "planned";
-        const isCredit = paymentMethodId === "pm-credit-card";
-
-        const amountCents = (t.type === "refund" || t.type === "chargeback") ? -t.amountCents : t.amountCents;
-
-        if (isRealized) {
-          acc.realized += amountCents;
-          if (isCredit) {
-            acc.realizedCredit += amountCents;
-          } else {
-            acc.realizedCash += amountCents;
-          }
-        } else if (isCommitted) {
-          acc.committed += amountCents;
-          if (isCredit) {
-            acc.committedCredit += amountCents;
-          } else {
-            acc.committedCash += amountCents;
-          }
-        }
-      }
-
-      if (pagFaturaSub) {
-        for (const bill of billsDueInMonth) {
-          if (bill.status === "paid") continue;
-          const card = cardMap.get(bill.creditCardId);
-          const accountId = card?.paymentAccountId ?? null;
-          const paymentMethodId = getBillPaymentMethodId(bill);
-          const key = getSourceAccumulatorKey(accountId, paymentMethodId, pagFaturaSub.id, "transfer");
-          const acc = sourceAccumulator.get(key)!;
-          const totalCents = billTotalCentsMap.get(bill.id) ?? 0;
-          acc.committed += totalCents;
-          acc.committedCash += totalCents;
-        }
-      }
-
-      summary.income.budgeted = monthBudgets
-        .filter((b) => {
-          const subId = b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
-          return subId ? getSubcategoryDetails(subId, "expense").nature === "income" : false;
-        })
-        .reduce((sum, b) => sum + b.amountCents, 0);
-      summary.expense.budgeted = monthBudgets
-        .filter((b) => {
-          const subId = b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
-          return subId ? getSubcategoryDetails(subId, "expense").nature === "expense" : false;
-        })
-        .reduce((sum, b) => sum + b.amountCents, 0);
-
-      for (const [key, acc] of sourceAccumulator.entries()) {
-        const [, paymentMethodId, nature] = key.split("|");
-        const isCredit = paymentMethodId === "pm-credit-card";
-        if (nature === "income") {
-          summary.income.realized += acc.realized;
-          summary.income.committed += acc.committed;
-        } else if (nature === "expense") {
-          summary.expense.realized += acc.realized;
-          summary.expense.committed += acc.committed;
-          summary.expense.realizedCash += isCredit ? 0 : acc.realized;
-          summary.expense.realizedCredit += isCredit ? acc.realized : 0;
-          summary.expense.committedCash += isCredit ? 0 : acc.committed;
-          summary.expense.committedCredit += isCredit ? acc.committed : 0;
-        }
-      }
-
-      const natureLabels: Record<string, string> = {
-        income: "Receitas",
-        expense: "Despesas",
-        transfer: "Movimentações Internas"
-      };
-
-      const accountGroups = new Map<string, string[]>();
-      for (const key of sourceAccumulator.keys()) {
-        const accountId = key.split("|")[0];
-        if (!accountGroups.has(accountId)) accountGroups.set(accountId, []);
-        accountGroups.get(accountId)!.push(key);
-      }
-
-      const sourceTree: TreeNode[] = [];
-      for (const [accountId, accountKeys] of accountGroups.entries()) {
-        const paymentGroups = new Map<string, string[]>();
-        for (const key of accountKeys) {
-          const paymentMethodId = key.split("|")[1];
-          if (!paymentGroups.has(paymentMethodId)) paymentGroups.set(paymentMethodId, []);
-          paymentGroups.get(paymentMethodId)!.push(key);
-        }
-
-        const paymentChildren: TreeNode[] = [];
-        for (const [paymentMethodId, paymentKeys] of paymentGroups.entries()) {
-          const natureChildren: TreeNode[] = [];
-          for (const nature of ["income", "expense", "transfer"]) {
-            const catGroups = new Map<string, { subId: string; acc: Accumulator }[]>();
-            for (const key of paymentKeys) {
-              const [, , keyNature, keyCatName, keySubId] = key.split("|");
-              if (keyNature !== nature) continue;
-              if (!catGroups.has(keyCatName)) catGroups.set(keyCatName, []);
-              catGroups.get(keyCatName)!.push({ subId: keySubId, acc: sourceAccumulator.get(key)! });
-            }
-
-            const catChildren: TreeNode[] = [];
-            // Ordenar catGroups por sortOrder da categoria (view source)
-            const sortedCatEntriesSource = [...catGroups.entries()].sort(([nameA], [nameB]) => {
-              const orderA = catSortOrderByName.get(nameA) ?? 9999;
-              const orderB = catSortOrderByName.get(nameB) ?? 9999;
-              return orderA !== orderB ? orderA - orderB : nameA.localeCompare(nameB);
-            });
-            for (const [catName, subItems] of sortedCatEntriesSource) {
-              const subChildren: TreeNode[] = subItems
-                .map(({ subId, acc }) => {
-                  const details = getSubcategoryDetails(subId, nature as "income" | "expense" | "transfer");
-                  const accountValue = accountId === "null" ? null : accountId;
-                  const paymentValue = paymentMethodId === "null" ? null : paymentMethodId;
-                  return {
-                    id: `source-${accountId}-${paymentMethodId}-sub-${subId}`,
-                    name: details.subName,
-                    nature: nature as "income" | "expense" | "transfer",
-                    budgeted: acc.budgeted,
-                    realized: acc.realized,
-                    committed: acc.committed,
-                    available: calculateAvailable(nature as "income" | "expense" | "transfer", acc.budgeted, acc.realized, acc.committed),
-                    realizedCash: acc.realizedCash,
-                    realizedCredit: acc.realizedCredit,
-                    committedCash: acc.committedCash,
-                    committedCredit: acc.committedCredit,
-                    subcategoryId: subId,
-                    accountId: accountValue,
-                    paymentMethodId: paymentValue,
-                    _subSortOrder: subSortOrderById.get(subId) ?? 9999
-                  };
-                })
-                .sort((a, b) =>
-                  a._subSortOrder !== b._subSortOrder
-                    ? a._subSortOrder - b._subSortOrder
-                    : a.name.localeCompare(b.name)
-                )
-                .map((item) => {
-                  const { _subSortOrder, ...rest } = item;
-                  void _subSortOrder;
-                  return rest as TreeNode;
-                });
-
-              const catBudgeted = subChildren.reduce((sum, c) => sum + c.budgeted, 0);
-              const catRealized = subChildren.reduce((sum, c) => sum + c.realized, 0);
-              const catCommitted = subChildren.reduce((sum, c) => sum + c.committed, 0);
-              catChildren.push({
-                id: `source-${accountId}-${paymentMethodId}-cat-${nature}-${catName}`,
-                name: catName,
-                nature: nature as "income" | "expense" | "transfer",
-                budgeted: catBudgeted,
-                realized: catRealized,
-                committed: catCommitted,
-                available: calculateAvailable(nature as "income" | "expense" | "transfer", catBudgeted, catRealized, catCommitted),
-                children: subChildren
-              });
-            }
-
-            if (catChildren.length > 0) {
-              const natureBudgeted = catChildren.reduce((sum, c) => sum + c.budgeted, 0);
-              const natureRealized = catChildren.reduce((sum, c) => sum + c.realized, 0);
-              const natureCommitted = catChildren.reduce((sum, c) => sum + c.committed, 0);
-              natureChildren.push({
-                id: `source-${accountId}-${paymentMethodId}-nature-${nature}`,
-                name: natureLabels[nature] ?? nature,
-                nature: nature as "income" | "expense" | "transfer",
-                budgeted: natureBudgeted,
-                realized: natureRealized,
-                committed: natureCommitted,
-                available: calculateAvailable(nature as "income" | "expense" | "transfer", natureBudgeted, natureRealized, natureCommitted),
-                // categorias já chegam ordenadas por sortOrder via sortedCatEntriesSource
-                children: catChildren
-              });
-            }
-          }
-
-          if (natureChildren.length > 0) {
-            const paymentBudgeted = natureChildren.reduce((sum, c) => sum + (c.nature === "income" ? c.budgeted : -c.budgeted), 0);
-            const paymentRealized = natureChildren.reduce((sum, c) => sum + (c.nature === "income" ? c.realized : -c.realized), 0);
-            const paymentCommitted = natureChildren.reduce((sum, c) => sum + (c.nature === "income" ? c.committed : -c.committed), 0);
-            const paymentAvailable = natureChildren.reduce((sum, c) => sum + c.available, 0);
-            paymentChildren.push({
-              id: `source-${accountId}-pm-${paymentMethodId}`,
-              name: getSourcePaymentMethodName(paymentMethodId === "null" ? null : paymentMethodId),
-              nature: "mixed",
-              budgeted: paymentBudgeted,
-              realized: paymentRealized,
-              committed: paymentCommitted,
-              available: paymentAvailable,
-              children: natureChildren
-            });
-          }
-        }
-
-        if (paymentChildren.length > 0) {
-          const accountBudgeted = paymentChildren.reduce((sum, c) => sum + c.budgeted, 0);
-          const accountRealized = paymentChildren.reduce((sum, c) => sum + c.realized, 0);
-          const accountCommitted = paymentChildren.reduce((sum, c) => sum + c.committed, 0);
-          const accountAvailable = paymentChildren.reduce((sum, c) => sum + c.available, 0);
-          sourceTree.push({
-            id: `source-account-${accountId}`,
-            name: getAccountName(accountId === "null" ? null : accountId),
-            nature: "mixed",
-            budgeted: accountBudgeted,
-            realized: accountRealized,
-            committed: accountCommitted,
-            available: accountAvailable,
-            children: paymentChildren.sort((a, b) => a.name.localeCompare(b.name))
-          });
-        }
-      }
-
-      reply.send({
-        view: "competence",
-        summary,
-        tree: sourceTree.sort((a, b) => a.name.localeCompare(b.name)),
-        accountSummaries
+    for (const sub of allSubcategories) {
+      if (!sub.isActive) continue;
+      const cat = categoryMap.get(sub.categoryId);
+      if (!cat || !cat.isActive) continue;
+      const nature = cat.nature === "income" ? "income" : cat.nature === "transfer" ? "transfer" : "expense";
+      const catName = cat.name;
+      const key = `${nature}|${sub.behavior}|${catName}|${sub.id}`;
+      categoryAccumulator.set(key, {
+        budgeted: 0,
+        realized: 0,
+        committed: 0,
+        realizedCash: 0,
+        realizedCredit: 0,
+        committedCash: 0,
+        committedCredit: 0
       });
-    } else if (groupBy === "payment-method") {
-      reply.status(400).send({ error: "payment-method not supported" });
-      return;
+    }
 
-    } else {
-      // groupBy === "category"
-      const categoryAccumulator = new Map<string, Accumulator>();
-
-      for (const sub of allSubcategories) {
-        if (!sub.isActive) continue;
-        const cat = categoryMap.get(sub.categoryId);
-        if (!cat || !cat.isActive) continue;
-        const nature = cat.nature === "income" ? "income" : cat.nature === "transfer" ? "transfer" : "expense";
-        const catName = cat.name;
-        const key = `${nature}|${sub.behavior}|${catName}|${sub.id}`;
+    function getAccumulatorKey(subId: string, defaultNature: "income" | "expense" | "transfer") {
+      const details = getSubcategoryDetails(subId, defaultNature);
+      const key = `${details.nature}|${details.behavior}|${details.catName}|${subId}`;
+      if (!categoryAccumulator.has(key)) {
         categoryAccumulator.set(key, {
           budgeted: 0,
           realized: 0,
@@ -883,236 +667,293 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
           committedCredit: 0
         });
       }
-
-      function getAccumulatorKey(subId: string, defaultNature: "income" | "expense" | "transfer") {
-        const details = getSubcategoryDetails(subId, defaultNature);
-        const key = `${details.nature}|${details.behavior}|${details.catName}|${subId}`;
-        if (!categoryAccumulator.has(key)) {
-          categoryAccumulator.set(key, {
-            budgeted: 0,
-            realized: 0,
-            committed: 0,
-            realizedCash: 0,
-            realizedCredit: 0,
-            committedCash: 0,
-            committedCredit: 0
-          });
-        }
-        return key;
-      }
-
-      for (const b of monthBudgets) {
-        const subId = b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
-        if (!subId) continue;
-        const key = getAccumulatorKey(subId, "expense");
-        const acc = categoryAccumulator.get(key)!;
-        acc.budgeted += b.amountCents;
-      }
-
-      for (const t of monthTransactions) {
-        if (t.status === "canceled") continue;
-        const subId = t.subcategoryId ?? (t.type === "income" ? UNCATEGORIZED_SUB_INCOME_ID : UNCATEGORIZED_SUB_EXPENSE_ID);
-        const defaultNature = t.type === "income" ? "income" : t.type === "transfer" ? "transfer" : "expense";
-        const key = getAccumulatorKey(subId, defaultNature);
-        const acc = categoryAccumulator.get(key)!;
-
-        const isRealized = t.status === "confirmed" || t.status === "reconciled";
-        const isCommitted = t.status === "planned";
-        const isCredit = t.creditCardId !== null || t.paymentMethodId === "pm-credit-card";
-
-        const amountCents = (t.type === "refund" || t.type === "chargeback") ? -t.amountCents : t.amountCents;
-
-        if (isRealized) {
-          acc.realized += amountCents;
-          if (isCredit) {
-            acc.realizedCredit += amountCents;
-          } else {
-            acc.realizedCash += amountCents;
-          }
-        } else if (isCommitted) {
-          acc.committed += amountCents;
-          if (isCredit) {
-            acc.committedCredit += amountCents;
-          } else {
-            acc.committedCash += amountCents;
-          }
-        }
-      }
-
-      if (pagFaturaSub) {
-        const key = getAccumulatorKey(pagFaturaSub.id, "transfer");
-        const acc = categoryAccumulator.get(key);
-        if (acc) {
-          acc.realized = billRealizedSum;
-          acc.committed = billCommittedSum;
-          acc.realizedCash = billRealizedSum;
-          acc.committedCash = billCommittedSum;
-          acc.realizedCredit = 0;
-          acc.committedCredit = 0;
-        } else {
-          categoryAccumulator.set(key, {
-            budgeted: 0,
-            realized: billRealizedSum,
-            committed: billCommittedSum,
-            realizedCash: billRealizedSum,
-            realizedCredit: 0,
-            committedCash: billCommittedSum,
-            committedCredit: 0
-          });
-        }
-      }
-
-      // Calculate summary
-      for (const [key, acc] of categoryAccumulator.entries()) {
-        const nature = key.split("|")[0];
-        if (nature === "income") {
-          summary.income.budgeted += acc.budgeted;
-          summary.income.realized += acc.realized;
-          summary.income.committed += acc.committed;
-        } else if (nature === "expense") {
-          summary.expense.budgeted += acc.budgeted;
-          summary.expense.realized += acc.realized;
-          summary.expense.committed += acc.committed;
-          summary.expense.realizedCash += acc.realizedCash;
-          summary.expense.realizedCredit += acc.realizedCredit;
-          summary.expense.committedCash += acc.committedCash;
-          summary.expense.committedCredit += acc.committedCredit;
-        }
-      }
-
-      const tree: TreeNode[] = [];
-      const natureLabels: Record<string, string> = {
-        income: "Receitas",
-        expense: "Despesas",
-        transfer: "Movimentações Internas"
-      };
-
-      const natures = ["income", "expense", "transfer"];
-      for (const nature of natures) {
-        const natureChildren: TreeNode[] = [];
-
-        // Agrupar diretamente por categoria (sem nível intermediário de behavior)
-        const catGroups = new Map<string, { subId: string; behavior: string; acc: Accumulator }[]>();
-        for (const [key, acc] of categoryAccumulator.entries()) {
-          const [kNature, kBehavior, kCatName, kSubId] = key.split("|");
-          if (kNature === nature) {
-            if (!catGroups.has(kCatName)) {
-              catGroups.set(kCatName, []);
-            }
-            catGroups.get(kCatName)!.push({ subId: kSubId, behavior: kBehavior, acc });
-          }
-        }
-
-        // Ordenar categorias por sortOrder
-        const sortedCatEntries = [...catGroups.entries()].sort(([nameA], [nameB]) => {
-          const orderA = catSortOrderByName.get(nameA) ?? 9999;
-          const orderB = catSortOrderByName.get(nameB) ?? 9999;
-          return orderA !== orderB ? orderA - orderB : nameA.localeCompare(nameB);
-        });
-
-        for (const [catName, subItems] of sortedCatEntries) {
-          const subChildren: TreeNode[] = subItems
-            .map(({ subId, behavior, acc }) => {
-              const details = getSubcategoryDetails(subId, nature as "income" | "expense" | "transfer");
-              return {
-                id: `sub-${subId}`,
-                name: details.subName,
-                behavior: behavior as "fixed" | "variable" | "extra",
-                nature: nature as "income" | "expense" | "transfer",
-                budgeted: acc.budgeted,
-                realized: acc.realized,
-                committed: acc.committed,
-                available: calculateAvailable(
-                  nature as "income" | "expense" | "transfer",
-                  acc.budgeted,
-                  acc.realized,
-                  acc.committed
-                ),
-                realizedCash: acc.realizedCash,
-                realizedCredit: acc.realizedCredit,
-                committedCash: acc.committedCash,
-                committedCredit: acc.committedCredit,
-                _subSortOrder: subSortOrderById.get(subId) ?? 9999
-              };
-            })
-            .sort((a, b) =>
-              a._subSortOrder !== b._subSortOrder
-                ? a._subSortOrder - b._subSortOrder
-                : a.name.localeCompare(b.name)
-            )
-            .map((item) => {
-              const { _subSortOrder, ...rest } = item;
-              void _subSortOrder;
-              return rest as TreeNode;
-            });
-
-          const catBudgeted = subChildren.reduce((sum, c) => sum + c.budgeted, 0);
-          const catRealized = subChildren.reduce((sum, c) => sum + c.realized, 0);
-          const catCommitted = subChildren.reduce((sum, c) => sum + c.committed, 0);
-          const catRealizedCash = subChildren.reduce((sum, c) => sum + (c.realizedCash ?? 0), 0);
-          const catRealizedCredit = subChildren.reduce((sum, c) => sum + (c.realizedCredit ?? 0), 0);
-          const catCommittedCash = subChildren.reduce((sum, c) => sum + (c.committedCash ?? 0), 0);
-          const catCommittedCredit = subChildren.reduce((sum, c) => sum + (c.committedCredit ?? 0), 0);
-
-          natureChildren.push({
-            id: `cat-${nature}-${catName}`,
-            name: catName,
-            nature: nature as "income" | "expense" | "transfer",
-            budgeted: catBudgeted,
-            realized: catRealized,
-            committed: catCommitted,
-            available: calculateAvailable(
-              nature as "income" | "expense" | "transfer",
-              catBudgeted,
-              catRealized,
-              catCommitted
-            ),
-            realizedCash: catRealizedCash,
-            realizedCredit: catRealizedCredit,
-            committedCash: catCommittedCash,
-            committedCredit: catCommittedCredit,
-            children: subChildren
-          });
-        }
-
-        if (natureChildren.length > 0) {
-          const natureBudgeted = natureChildren.reduce((sum, c) => sum + c.budgeted, 0);
-          const natureRealized = natureChildren.reduce((sum, c) => sum + c.realized, 0);
-          const natureCommitted = natureChildren.reduce((sum, c) => sum + c.committed, 0);
-          const natureRealizedCash = natureChildren.reduce((sum, c) => sum + (c.realizedCash ?? 0), 0);
-          const natureRealizedCredit = natureChildren.reduce((sum, c) => sum + (c.realizedCredit ?? 0), 0);
-          const natureCommittedCash = natureChildren.reduce((sum, c) => sum + (c.committedCash ?? 0), 0);
-          const natureCommittedCredit = natureChildren.reduce((sum, c) => sum + (c.committedCredit ?? 0), 0);
-
-          tree.push({
-            id: `nature-${nature}`,
-            name: natureLabels[nature] ?? nature,
-            nature: nature as "income" | "expense" | "transfer",
-            budgeted: natureBudgeted,
-            realized: natureRealized,
-            committed: natureCommitted,
-            available: calculateAvailable(
-              nature as "income" | "expense" | "transfer",
-              natureBudgeted,
-              natureRealized,
-              natureCommitted
-            ),
-            realizedCash: natureRealizedCash,
-            realizedCredit: natureRealizedCredit,
-            committedCash: natureCommittedCash,
-            committedCredit: natureCommittedCredit,
-            children: natureChildren
-          });
-        }
-      }
-
-      reply.send({
-        view: "competence",
-        summary,
-        tree,
-        accountSummaries
-      });
+      return key;
     }
+
+    for (const b of monthBudgets) {
+      const subId = b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
+      if (!subId) continue;
+      const key = getAccumulatorKey(subId, "expense");
+      const acc = categoryAccumulator.get(key)!;
+      acc.budgeted += b.amountCents;
+    }
+
+    const makeBreakdownKey = (accId: string | null, cardId: string | null, pmId: string | null) => {
+      return `${accId || "null"}|${cardId || "null"}|${pmId || "null"}`;
+    };
+
+    // Per-subcategory breakdown by source & payment method (budgets)
+    const subBudgetByMethod = new Map<string, Map<string, number>>();
+    for (const b of monthBudgets) {
+      const subId = b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
+      if (!subId) continue;
+      if (!subBudgetByMethod.has(subId)) subBudgetByMethod.set(subId, new Map());
+
+      let linkedCardId: string | null = null;
+      if (b.accountId && b.paymentMethodId === "pm-credit-card") {
+        const linkedCard = allCards.find((c) => c.paymentAccountId === b.accountId);
+        if (linkedCard) {
+          linkedCardId = linkedCard.id;
+        }
+      }
+
+      const key = makeBreakdownKey(b.accountId, linkedCardId, b.paymentMethodId);
+      const pmMap = subBudgetByMethod.get(subId)!;
+      pmMap.set(key, (pmMap.get(key) ?? 0) + b.amountCents);
+    }
+
+    // Per-subcategory breakdown by source & payment method (realized/committed transactions)
+    const subRealizedByMethod = new Map<string, Map<string, number>>();
+    const subCommittedByMethod = new Map<string, Map<string, number>>();
+
+    for (const t of monthTransactions) {
+      if (t.status === "canceled") continue;
+      const subId = t.subcategoryId ?? (t.type === "income" ? UNCATEGORIZED_SUB_INCOME_ID : UNCATEGORIZED_SUB_EXPENSE_ID);
+      const defaultNature = t.type === "income" ? "income" : t.type === "transfer" ? "transfer" : "expense";
+      const keyAcc = getAccumulatorKey(subId, defaultNature);
+      const acc = categoryAccumulator.get(keyAcc)!;
+
+      const isRealized = t.status === "confirmed" || t.status === "reconciled";
+      const isCommitted = t.status === "planned";
+      const isCredit = t.creditCardId !== null || t.paymentMethodId === "pm-credit-card";
+
+      const amountCents = (t.type === "refund" || t.type === "chargeback") ? -t.amountCents : t.amountCents;
+
+      if (isRealized) {
+        acc.realized += amountCents;
+        if (isCredit) {
+          acc.realizedCredit += amountCents;
+        } else {
+          acc.realizedCash += amountCents;
+        }
+      } else if (isCommitted) {
+        acc.committed += amountCents;
+        if (isCredit) {
+          acc.committedCredit += amountCents;
+        } else {
+          acc.committedCash += amountCents;
+        }
+      }
+
+      // Also track per-method breakdown
+      const txPmId: string | null = getTransactionPaymentMethodId(t) || null;
+      let resolvedAccountId = t.accountId;
+      if (t.creditCardId) {
+        const card = cardMap.get(t.creditCardId);
+        if (card && card.paymentAccountId) {
+          resolvedAccountId = card.paymentAccountId;
+        }
+      }
+      const key = makeBreakdownKey(resolvedAccountId, t.creditCardId, txPmId);
+      if (isRealized) {
+        if (!subRealizedByMethod.has(subId)) subRealizedByMethod.set(subId, new Map());
+        const m = subRealizedByMethod.get(subId)!;
+        m.set(key, (m.get(key) ?? 0) + amountCents);
+      } else if (isCommitted) {
+        if (!subCommittedByMethod.has(subId)) subCommittedByMethod.set(subId, new Map());
+        const m = subCommittedByMethod.get(subId)!;
+        m.set(key, (m.get(key) ?? 0) + amountCents);
+      }
+    }
+
+    if (pagFaturaSub) {
+      const key = getAccumulatorKey(pagFaturaSub.id, "transfer");
+      const acc = categoryAccumulator.get(key);
+      if (acc) {
+        acc.realized = billRealizedSum;
+        acc.committed = billCommittedSum;
+        acc.realizedCash = billRealizedSum;
+        acc.committedCash = billCommittedSum;
+        acc.realizedCredit = 0;
+        acc.committedCredit = 0;
+      } else {
+        categoryAccumulator.set(key, {
+          budgeted: 0,
+          realized: billRealizedSum,
+          committed: billCommittedSum,
+          realizedCash: billRealizedSum,
+          realizedCredit: 0,
+          committedCash: billCommittedSum,
+          committedCredit: 0
+        });
+      }
+    }
+
+    // Calculate summary
+    for (const [key, acc] of categoryAccumulator.entries()) {
+      const nature = key.split("|")[0];
+      if (nature === "income") {
+        summary.income.budgeted += acc.budgeted;
+        summary.income.realized += acc.realized;
+        summary.income.committed += acc.committed;
+      } else if (nature === "expense") {
+        summary.expense.budgeted += acc.budgeted;
+        summary.expense.realized += acc.realized;
+        summary.expense.committed += acc.committed;
+        summary.expense.realizedCash += acc.realizedCash;
+        summary.expense.realizedCredit += acc.realizedCredit;
+        summary.expense.committedCash += acc.committedCash;
+        summary.expense.committedCredit += acc.committedCredit;
+      }
+    }
+
+    const tree: TreeNode[] = [];
+    const natureLabels: Record<string, string> = {
+      income: "Receitas",
+      expense: "Despesas",
+      transfer: "Movimentações Internas"
+    };
+
+    const natures = ["income", "expense", "transfer"];
+    for (const nature of natures) {
+      const natureChildren: TreeNode[] = [];
+
+      // Agrupar diretamente por categoria (sem nível intermediário de behavior)
+      const catGroups = new Map<string, { subId: string; behavior: string; acc: Accumulator }[]>();
+      for (const [key, acc] of categoryAccumulator.entries()) {
+        const [kNature, kBehavior, kCatName, kSubId] = key.split("|");
+        if (kNature === nature) {
+          if (!catGroups.has(kCatName)) {
+            catGroups.set(kCatName, []);
+          }
+          catGroups.get(kCatName)!.push({ subId: kSubId, behavior: kBehavior, acc });
+        }
+      }
+
+      // Ordenar categorias por sortOrder
+      const sortedCatEntries = [...catGroups.entries()].sort(([nameA], [nameB]) => {
+        const orderA = catSortOrderByName.get(nameA) ?? 9999;
+        const orderB = catSortOrderByName.get(nameB) ?? 9999;
+        return orderA !== orderB ? orderA - orderB : nameA.localeCompare(nameB);
+      });
+
+      for (const [catName, subItems] of sortedCatEntries) {
+        const subChildren: TreeNode[] = subItems
+          .map(({ subId, behavior, acc }) => {
+            const details = getSubcategoryDetails(subId, nature as "income" | "expense" | "transfer");
+
+            // Build per-payment-method breakdown for this subcategory
+            const budgetMap = subBudgetByMethod.get(subId);
+            const realizedMap = subRealizedByMethod.get(subId);
+            const committedMap = subCommittedByMethod.get(subId);
+            const allKeys = new Set<string>([
+              ...(budgetMap?.keys() ?? []),
+              ...(realizedMap?.keys() ?? []),
+              ...(committedMap?.keys() ?? [])
+            ]);
+            const byPaymentMethod = allKeys.size > 0
+              ? [...allKeys].map((key) => {
+                  const [accId, cardId, pmId] = key.split("|");
+                  return {
+                    accountId: accId === "null" ? null : accId,
+                    creditCardId: cardId === "null" ? null : cardId,
+                    paymentMethodId: pmId === "null" ? null : pmId,
+                    budgeted: budgetMap?.get(key) ?? 0,
+                    realized: realizedMap?.get(key) ?? 0,
+                    committed: committedMap?.get(key) ?? 0
+                  };
+                })
+              : undefined;
+
+            return {
+              id: `sub-${subId}`,
+              name: details.subName,
+              behavior: behavior as "fixed" | "variable" | "extra",
+              nature: nature as "income" | "expense" | "transfer",
+              budgeted: acc.budgeted,
+              realized: acc.realized,
+              committed: acc.committed,
+              realizedCash: acc.realizedCash,
+              realizedCredit: acc.realizedCredit,
+              committedCash: acc.committedCash,
+              committedCredit: acc.committedCredit,
+              available: calculateAvailable(
+                nature as "income" | "expense" | "transfer",
+                acc.budgeted,
+                acc.realized,
+                acc.committed
+              ),
+              byPaymentMethod,
+              _subSortOrder: subSortOrderById.get(subId) ?? 9999
+            };
+          })
+          .sort((a, b) =>
+            a._subSortOrder !== b._subSortOrder
+              ? a._subSortOrder - b._subSortOrder
+              : a.name.localeCompare(b.name)
+          )
+          .map((item) => {
+            const { _subSortOrder, ...rest } = item;
+            void _subSortOrder;
+            return rest as TreeNode;
+          });
+
+        const catBudgeted = subChildren.reduce((sum, c) => sum + c.budgeted, 0);
+        const catRealized = subChildren.reduce((sum, c) => sum + c.realized, 0);
+        const catCommitted = subChildren.reduce((sum, c) => sum + c.committed, 0);
+        const catRealizedCash = subChildren.reduce((sum, c) => sum + (c.realizedCash ?? 0), 0);
+        const catRealizedCredit = subChildren.reduce((sum, c) => sum + (c.realizedCredit ?? 0), 0);
+        const catCommittedCash = subChildren.reduce((sum, c) => sum + (c.committedCash ?? 0), 0);
+        const catCommittedCredit = subChildren.reduce((sum, c) => sum + (c.committedCredit ?? 0), 0);
+
+        natureChildren.push({
+          id: `cat-${nature}-${catName}`,
+          name: catName,
+          nature: nature as "income" | "expense" | "transfer",
+          budgeted: catBudgeted,
+          realized: catRealized,
+          committed: catCommitted,
+          available: calculateAvailable(
+            nature as "income" | "expense" | "transfer",
+            catBudgeted,
+            catRealized,
+            catCommitted
+          ),
+          realizedCash: catRealizedCash,
+          realizedCredit: catRealizedCredit,
+          committedCash: catCommittedCash,
+          committedCredit: catCommittedCredit,
+          children: subChildren
+        });
+      }
+
+      if (natureChildren.length > 0) {
+        const natureBudgeted = natureChildren.reduce((sum, c) => sum + c.budgeted, 0);
+        const natureRealized = natureChildren.reduce((sum, c) => sum + c.realized, 0);
+        const natureCommitted = natureChildren.reduce((sum, c) => sum + c.committed, 0);
+        const natureRealizedCash = natureChildren.reduce((sum, c) => sum + (c.realizedCash ?? 0), 0);
+        const natureRealizedCredit = natureChildren.reduce((sum, c) => sum + (c.realizedCredit ?? 0), 0);
+        const natureCommittedCash = natureChildren.reduce((sum, c) => sum + (c.committedCash ?? 0), 0);
+        const natureCommittedCredit = natureChildren.reduce((sum, c) => sum + (c.committedCredit ?? 0), 0);
+
+        tree.push({
+          id: `nature-${nature}`,
+          name: natureLabels[nature] ?? nature,
+          nature: nature as "income" | "expense" | "transfer",
+          budgeted: natureBudgeted,
+          realized: natureRealized,
+          committed: natureCommitted,
+          available: calculateAvailable(
+            nature as "income" | "expense" | "transfer",
+            natureBudgeted,
+            natureRealized,
+            natureCommitted
+          ),
+          realizedCash: natureRealizedCash,
+          realizedCredit: natureRealizedCredit,
+          committedCash: natureCommittedCash,
+          committedCredit: natureCommittedCredit,
+          children: natureChildren
+        });
+      }
+    }
+
+    reply.send({
+      view: "competence",
+      summary,
+      tree,
+      accountSummaries
+    });
   });
 
   app.get("/budgets", async (req, reply) => {

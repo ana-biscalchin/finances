@@ -476,7 +476,7 @@ Use como separador o ponto e vírgula (;). O cabeçalho deve ser exatamente: Dat
 Siga rigorosamente estas regras:
 1. Data: Converta todas as datas para o formato DD/MM/AAAA.
 2. Descrição: Simplifique e limpe a descrição do lançamento (remova identificadores longos, números ou códigos, deixando apenas o nome legível do estabelecimento, ex: "Uber *Trip" vira "Uber", "Pao de Acucar Sp" vira "Pão de Açúcar"). Se o lançamento for parcelado no texto original (ex: "Compra 1/3" ou "Compra - 2 de 5"), remova a indicação de parcelas da descrição (pois ela irá para as colunas Parcela e TotalParcelas).
-3. Valor: Escreva no formato decimal brasileiro positivo (usando vírgula para centavos, ex: 120,50). No caso de faturas, todas as compras normais entram como despesa (valor positivo). Se for um estorno ou crédito na fatura, represente com sinal de menos (ex: -50,00).
+3. Valor: Escreva no formato decimal brasileiro positivo (usando vírgula para centavos, ex: 120,50). No caso de faturas, todas as compras normais entram como despesa (valor positivo). Se for um estorno ou crédito na fatura, represente com sinal de menos (ex: -50,00). IMPORTANTE: Sempre envolva o valor com aspas duplas (ex: "120,50" ou "-50,00") para que a vírgula do centavo não quebre o alinhamento das colunas.
 4. Categoria: Tente inferir a categoria correta com base na descrição, escolhendo uma das categorias abaixo:
    - Despesas: ${expenses.join(", ")}
 5. Parcela: Se a compra for parcelada, extraia o número da parcela atual sendo cobrada nesta fatura (ex: na compra "Mercado 2/3", a parcela atual é 2). Deixe em branco se for à vista.

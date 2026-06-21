@@ -265,6 +265,7 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
         const existingTargetBudget = targetBudgets.find(
           (targetBudget) =>
             targetBudget.budgetMonth === sourceBudget.budgetMonth &&
+            targetBudget.accountId === sourceBudget.accountId &&
             targetBudget.paymentMethodId === sourceBudget.paymentMethodId
         );
 

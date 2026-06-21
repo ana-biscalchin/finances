@@ -1,17 +1,19 @@
 import {
+  ActionIcon,
   Alert,
   Badge,
   Box,
   Button,
   Card,
   Collapse,
+  Grid,
   Group,
+  HoverCard,
   Loader,
+  Modal,
   NumberInput,
   Paper,
-  Popover,
   Progress,
-  SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
@@ -24,18 +26,23 @@ import {
 } from "@mantine/core";
 import {
   IconAlertCircle,
+  IconAlertTriangle,
+  IconCheck,
   IconChevronDown,
   IconChevronUp,
   IconCopy,
+  IconCreditCard,
+  IconInfoCircle,
   IconLayoutGrid,
+  IconPencil,
   IconPlus,
+  IconTrash,
   IconWallet
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatMoney, moneyFromCents } from "@finances/domain";
 
 import { MonthSelector } from "../shared/MonthSelector";
-import { CategorySelect } from "../shared/CategorySelect";
 import { CashMonthlyView } from "./CashMonthlyView";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
@@ -49,13 +56,14 @@ interface TreeNode {
   realized: number;
   committed: number;
   available: number;
-  realizedCash?: number;
-  realizedCredit?: number;
-  committedCash?: number;
-  committedCredit?: number;
-  subcategoryId?: string;
-  accountId?: string | null;
-  paymentMethodId?: string | null;
+  byPaymentMethod?: {
+    accountId: string | null;
+    creditCardId: string | null;
+    paymentMethodId: string | null;
+    budgeted: number;
+    realized: number;
+    committed: number;
+  }[];
   children?: TreeNode[];
 }
 
@@ -67,8 +75,6 @@ interface SummaryData {
     committed: number;
     realizedCash?: number;
     realizedCredit?: number;
-    committedCash?: number;
-    committedCredit?: number;
   };
 }
 
@@ -83,6 +89,16 @@ interface AccountMonthlySummary {
   realizedOutflow: number;
   realizedBalance: number;
   projectedBalance: number;
+  plannedInflow?: number;
+  plannedOutflow?: number;
+  openCardBills?: number;
+  linkedCards?: string[];
+  linkedBillsDetail?: {
+    cardName: string;
+    billMonth: string;
+    amountCents: number;
+    dueDate: string;
+  }[];
 }
 
 interface RowData {
@@ -94,16 +110,10 @@ interface RowData {
   realized: number;
   committed: number;
   available: number;
-  realizedCash?: number;
-  realizedCredit?: number;
-  committedCash?: number;
-  committedCredit?: number;
   level: number;
   parentId: string | null;
   hasChildren: boolean;
   subcategoryId?: string;
-  accountId?: string | null;
-  paymentMethodId?: string | null;
 }
 
 type Account = {
@@ -117,87 +127,98 @@ type PaymentMethod = {
   name: string;
 };
 
-type Category = {
+type CreditCard = {
   id: string;
-  nature: string;
   name: string;
-  subcategories: Array<{ id: string; name: string }>;
+  isActive: boolean;
+  paymentAccountId?: string | null;
 };
 
-type GroupByMode = "category" | "source";
 
-const emptySelectValue = "__none__";
+/** Same palette used in the reports payment-methods chart */
+export const PAYMENT_METHOD_COLORS = [
+  "var(--mantine-color-teal-6)",
+  "var(--mantine-color-blue-5)",
+  "var(--mantine-color-indigo-5)",
+  "var(--mantine-color-cyan-5)",
+  "var(--mantine-color-violet-5)",
+  "var(--mantine-color-grape-5)"
+];
 
-interface CategoryProgressProps {
+interface MethodBreakdown {
+  accountId: string | null;
+  creditCardId: string | null;
+  paymentMethodId: string | null;
   budgeted: number;
   realized: number;
   committed: number;
-  realizedCash?: number;
-  realizedCredit?: number;
-  committedCash?: number;
-  committedCredit?: number;
-  nature: "income" | "expense" | "mixed" | "transfer";
 }
 
-function CategoryProgress({
-  budgeted,
-  realized,
-  committed,
-  realizedCash,
-  realizedCredit,
-  committedCash,
-  committedCredit,
-  nature
-}: CategoryProgressProps) {
-  if (budgeted <= 0) return <Text size="xs" c="dimmed">—</Text>;
-
-  const totalUsed = realized + committed;
-  const isIncome = nature === "income" || nature === "mixed";
-
-  const rCash = realizedCash ?? (isIncome ? realized : realized - (realizedCredit ?? 0));
-  const rCredit = realizedCredit ?? 0;
-  const cCash = committedCash ?? (isIncome ? committed : committed - (committedCredit ?? 0));
-  const cCredit = committedCredit ?? 0;
-
-  const pctRealizedCash = (rCash / budgeted) * 100;
-  const pctRealizedCredit = (rCredit / budgeted) * 100;
-  const pctCommittedCash = (cCash / budgeted) * 100;
-  const pctCommittedCredit = (cCredit / budgeted) * 100;
-  const totalPct = (totalUsed / budgeted) * 100;
-
-  const isOver = !isIncome && totalUsed > budgeted;
-
-  return (
-    <Tooltip
-      multiline
-      w={260}
-      withArrow
-      label={
-        <Stack gap={4} p={4}>
-          <Text size="xs" fw={700}>Detalhamento do uso:</Text>
-          <Text size="xs">💵 À Vista Realizado: {formatMoney(moneyFromCents(rCash))} ({Math.round(pctRealizedCash)}%)</Text>
-          <Text size="xs">💳 Cartão Realizado: {formatMoney(moneyFromCents(rCredit))} ({Math.round(pctRealizedCredit)}%)</Text>
-          <Text size="xs">⏳ À Vista Planejado: {formatMoney(moneyFromCents(cCash))} ({Math.round(pctCommittedCash)}%)</Text>
-          <Text size="xs">⏳ Cartão Planejado: {formatMoney(moneyFromCents(cCredit))} ({Math.round(pctCommittedCredit)}%)</Text>
-          <Text size="xs" fw={700} mt={4} style={{ borderTop: "1px solid rgba(255,255,255,0.2)", paddingTop: 4 }}>
-            Total: {formatMoney(moneyFromCents(totalUsed))} ({Math.round(totalPct)}%)
-          </Text>
-        </Stack>
+function collectMethodBreakdown(node: TreeNode): MethodBreakdown[] {
+  // Leaf node with explicit per-method data from backend
+  if (node.byPaymentMethod && node.byPaymentMethod.length > 0) {
+    return node.byPaymentMethod;
+  }
+  if (!node.children || node.children.length === 0) {
+    return [{
+      accountId: null,
+      creditCardId: null,
+      paymentMethodId: null,
+      budgeted: node.budgeted,
+      realized: node.realized,
+      committed: node.committed
+    }];
+  }
+  const map = new Map<string, MethodBreakdown>();
+  for (const child of node.children) {
+    for (const b of collectMethodBreakdown(child)) {
+      const key = `${b.accountId || "null"}|${b.creditCardId || "null"}|${b.paymentMethodId || "null"}`;
+      const ex = map.get(key);
+      if (ex) {
+        ex.budgeted += b.budgeted;
+        ex.realized += b.realized;
+        ex.committed += b.committed;
+      } else {
+        map.set(key, { ...b });
       }
-    >
-      <Group gap="xs" wrap="nowrap" style={{ flexGrow: 1 }}>
-        <Progress.Root size="md" radius="xl" style={{ flexGrow: 1 }}>
-          <Progress.Section value={pctRealizedCash} color="teal" />
-          <Progress.Section value={pctRealizedCredit} color="grape" />
-          <Progress.Section value={pctCommittedCash} color="teal.2" />
-          <Progress.Section value={pctCommittedCredit} color="grape.2" />
-        </Progress.Root>
-        <Text size="xs" fw={700} c={isOver ? "red" : isIncome ? "teal" : "dimmed"}>
-          {Math.round(totalPct)}%
-        </Text>
-      </Group>
-    </Tooltip>
-  );
+    }
+  }
+  return Array.from(map.values());
+}
+
+/** Mantine color names (short) matching PAYMENT_METHOD_COLORS order */
+const PM_COLOR_NAMES = ["teal", "blue", "indigo", "cyan", "violet", "grape"] as const;
+
+function getCategoryProgressColor(pmId: string | null, paymentMethods: PaymentMethod[], isIncome: boolean): string {
+  if (!pmId) return isIncome ? "teal" : "blue";
+  const idx = paymentMethods.findIndex((pm) => pm.id === pmId);
+  return idx >= 0 ? PM_COLOR_NAMES[idx % PM_COLOR_NAMES.length] : "blue";
+}
+
+
+
+function getBreakdownItemLabel(
+  m: MethodBreakdown,
+  accounts: Account[],
+  creditCards: CreditCard[],
+  paymentMethods: PaymentMethod[]
+): string {
+  let sourceName = "";
+  if (m.creditCardId) {
+    sourceName = creditCards.find((c) => c.id === m.creditCardId)?.name ?? "Cartão";
+  } else if (m.accountId) {
+    sourceName = accounts.find((a) => a.id === m.accountId)?.name ?? "Conta";
+  }
+
+  let pmName = "";
+  if (m.paymentMethodId) {
+    pmName = paymentMethods.find((pm) => pm.id === m.paymentMethodId)?.name ?? "Meio";
+  }
+
+  if (sourceName && pmName) {
+    return `${sourceName} · ${pmName}`;
+  }
+  return sourceName || pmName || "Geral";
 }
 
 interface ControleMensalPageProps {
@@ -207,24 +228,16 @@ interface ControleMensalPageProps {
 
 export function ControleMensalPage({ selectedMonth, setSelectedMonth }: ControleMensalPageProps) {
   const [activeView, setActiveView] = useState<"competence" | "cash">("competence");
-  const [groupBy, setGroupBy] = useState<GroupByMode>("category");
+  const groupBy = "category";
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
   const [accountSummaries, setAccountSummaries] = useState<AccountMonthlySummary[]>([]);
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [creditCards, setCreditCards] = useState<CreditCard[]>([]);
   const [oldestAvailableMonth, setOldestAvailableMonth] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [allocationError, setAllocationError] = useState<string | null>(null);
-  const [isAllocationSaving, setIsAllocationSaving] = useState(false);
-  const [allocationForm, setAllocationForm] = useState({
-    subcategoryId: emptySelectValue,
-    accountId: emptySelectValue,
-    paymentMethodId: emptySelectValue,
-    amountReais: "" as number | string
-  });
 
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem("controle-mensal-expanded-nodes");
@@ -244,9 +257,6 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
   const [balancesCollapsed, setBalancesCollapsed] = useState(() => {
     return localStorage.getItem("controle-mensal-balances-collapsed") === "true";
   });
-  const [allocationCollapsed, setAllocationCollapsed] = useState(() => {
-    return localStorage.getItem("controle-mensal-allocation-collapsed") === "true";
-  });
 
   const handleToggleSummary = () => {
     setSummaryCollapsed((prev) => {
@@ -260,14 +270,6 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
     setBalancesCollapsed((prev) => {
       const next = !prev;
       localStorage.setItem("controle-mensal-balances-collapsed", String(next));
-      return next;
-    });
-  };
-
-  const handleToggleAllocation = () => {
-    setAllocationCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem("controle-mensal-allocation-collapsed", String(next));
       return next;
     });
   };
@@ -334,72 +336,21 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
 
   async function loadReferences() {
     try {
-      const [accountsResponse, paymentMethodsResponse, categoriesResponse] = await Promise.all([
+      const [accountsResponse, paymentMethodsResponse, creditCardsResponse] = await Promise.all([
         fetch(`${apiBaseUrl}/accounts`),
         fetch(`${apiBaseUrl}/payment-methods`),
-        fetch(`${apiBaseUrl}/categories?includeInactive=true`)
+        fetch(`${apiBaseUrl}/credit-cards`)
       ]);
 
-      if (!accountsResponse.ok || !paymentMethodsResponse.ok || !categoriesResponse.ok) {
-        throw new Error("Não foi possível carregar contas, meios e categorias.");
+      if (!accountsResponse.ok || !paymentMethodsResponse.ok || !creditCardsResponse.ok) {
+        throw new Error("Não foi possível carregar contas, meios de pagamento e cartões.");
       }
 
       setAccounts((await accountsResponse.json()) as Account[]);
       setPaymentMethods((await paymentMethodsResponse.json()) as PaymentMethod[]);
-      setCategories((await categoriesResponse.json()) as Category[]);
+      setCreditCards((await creditCardsResponse.json()) as CreditCard[]);
     } catch (loadError) {
-      setAllocationError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
-    }
-  }
-
-  async function saveAllocation() {
-    setAllocationError(null);
-    setIsAllocationSaving(true);
-
-    try {
-      if (allocationForm.subcategoryId === emptySelectValue) {
-        throw new Error("Escolha uma subcategoria.");
-      }
-
-      const rawAmount = typeof allocationForm.amountReais === "number"
-        ? allocationForm.amountReais
-        : Number(String(allocationForm.amountReais).replace(",", "."));
-      const amountCents = Math.round((Number.isFinite(rawAmount) ? rawAmount : 0) * 100);
-      if (amountCents <= 0) {
-        throw new Error("Informe um valor maior que zero.");
-      }
-
-      const res = await fetch(`${apiBaseUrl}/budgets`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          budgetMonth: selectedMonth,
-          subcategoryId: allocationForm.subcategoryId,
-          accountId: allocationForm.accountId === emptySelectValue ? null : allocationForm.accountId,
-          paymentMethodId:
-            allocationForm.paymentMethodId === emptySelectValue ? null : allocationForm.paymentMethodId,
-          amountCents
-        })
-      });
-
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
-        throw new Error(
-          typeof body?.message === "string" ? body.message : "Não foi possível salvar a alocação."
-        );
-      }
-
-      setAllocationForm({
-        subcategoryId: emptySelectValue,
-        accountId: emptySelectValue,
-        paymentMethodId: emptySelectValue,
-        amountReais: ""
-      });
-      await loadData(true);
-    } catch (saveError) {
-      setAllocationError(saveError instanceof Error ? saveError.message : "Erro inesperado.");
-    } finally {
-      setIsAllocationSaving(false);
+      console.error(loadError);
     }
   }
 
@@ -425,21 +376,11 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
 
   const getLeafDetails = (
     node: TreeNode
-  ): { subcategoryId: string; accountId: string | null; paymentMethodId: string | null } | null => {
-    if (node.subcategoryId) {
-      return {
-        subcategoryId: node.subcategoryId,
-        accountId: node.accountId ?? null,
-        paymentMethodId: node.paymentMethodId ?? null
-      };
-    }
-
+  ): { subcategoryId: string } | null => {
     const { id } = node;
     if (id.startsWith("sub-")) {
       return {
-        subcategoryId: id.slice(4),
-        accountId: null,
-        paymentMethodId: null
+        subcategoryId: id.slice(4)
       };
     }
     return null;
@@ -461,16 +402,10 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
           realized: node.realized,
           committed: node.committed,
           available: node.available,
-          realizedCash: node.realizedCash,
-          realizedCredit: node.realizedCredit,
-          committedCash: node.committedCash,
-          committedCredit: node.committedCredit,
           level,
           parentId,
           hasChildren: !isLeaf,
-          subcategoryId: leafDetails?.subcategoryId,
-          accountId: leafDetails?.accountId,
-          paymentMethodId: leafDetails?.paymentMethodId
+          subcategoryId: leafDetails?.subcategoryId
         });
 
         const isExpanded = expandedNodes[node.id] !== undefined
@@ -485,6 +420,19 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
     return list;
   }, [treeData, expandedNodes, groupBy]);
 
+  /** Map nodeId → per-payment-method breakdown, computed from full tree (not just visible rows) */
+  const breakdownMap = useMemo(() => {
+    const map = new Map<string, MethodBreakdown[]>();
+    const traverse = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        map.set(node.id, collectMethodBreakdown(node));
+        if (node.children) traverse(node.children);
+      }
+    };
+    traverse(treeData);
+    return map;
+  }, [treeData]);
+
   // Totals calculations
   const totalExpenseBudgeted = summary?.expense.budgeted ?? 0;
   const totalExpenseRealized = summary?.expense.realized ?? 0;
@@ -493,6 +441,7 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
 
   const totalExpenseRealizedCash = summary?.expense.realizedCash ?? 0;
   const totalExpenseRealizedCredit = summary?.expense.realizedCredit ?? 0;
+
 
   const totalIncomeBudgeted = summary?.income.budgeted ?? 0;
   const totalIncomeRealized = summary?.income.realized ?? 0;
@@ -511,21 +460,6 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
     0
   );
 
-
-  const accountOptions = useMemo(
-    () => accounts
-      .filter((account) => account.isActive)
-      .map((account) => ({ value: account.id, label: account.name })),
-    [accounts]
-  );
-
-  const paymentMethodOptions = useMemo(
-    () => paymentMethods.map((paymentMethod) => ({
-      value: paymentMethod.id,
-      label: paymentMethod.name
-    })),
-    [paymentMethods]
-  );
 
   return (
     <Stack gap="lg">
@@ -593,220 +527,197 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
               </Group>
               <Collapse in={!summaryCollapsed}>
                 <Box p="md">
-                  <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
-                    {/* Income Card */}
-                    <Card withBorder padding="md" radius="md">
-                      <Stack gap="xs">
-                        <Group justify="space-between">
-                          <Text size="xs" c="dimmed" fw={700} tt="uppercase">
-                            Receitas do mês
-                          </Text>
-                          <Badge color="teal" variant="light">
-                            Entradas
-                          </Badge>
-                        </Group>
-                        <div>
-                          <Text size="xl" fw={700} c="teal">
-                            {formatMoney(moneyFromCents(totalIncomeRealized))}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            Planejado: {formatMoney(moneyFromCents(totalIncomeBudgeted))}
-                          </Text>
-                        </div>
-                        <Progress
-                          value={totalIncomeBudgeted > 0 ? (totalIncomeRealized / totalIncomeBudgeted) * 100 : 0}
-                          color="teal"
-                          size="sm"
-                          radius="xl"
-                        />
-                      </Stack>
-                    </Card>
+                  <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 5 }} spacing="md">
+                    {/* Card 1: Despesas — gasto vs limite + disponível em destaque */}
+                    {(() => {
+                      const expensePct = totalExpenseBudgeted > 0
+                        ? (totalExpenseUsed / totalExpenseBudgeted) * 100
+                        : 0;
+                      const expenseAvailable = totalExpenseBudgeted - totalExpenseUsed;
+                      const expenseColor = expensePct >= 100 ? "red" : expensePct >= 85 ? "orange" : "blue";
+                      return (
+                        <Card withBorder padding="md" radius="md" style={{
+                          borderLeft: `3px solid var(--mantine-color-${expenseColor}-5)`
+                        }}>
+                          <Stack gap="xs">
+                            <Group justify="space-between" align="flex-start">
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Despesas do mês</Text>
+                              <Badge color={expenseColor} variant="light" size="sm">
+                                {expensePct >= 100 ? "Limite estourado" : expensePct >= 85 ? "Atenção" : `${Math.round(expensePct)}% usado`}
+                              </Badge>
+                            </Group>
+                            <div>
+                              <Text size="xl" fw={700} c={expenseColor}>
+                                {formatMoney(moneyFromCents(totalExpenseUsed))}
+                              </Text>
+                              <Text size="xs" c="dimmed">de {formatMoney(moneyFromCents(totalExpenseBudgeted))} planejados</Text>
+                            </div>
+                            <Progress value={Math.min(expensePct, 100)} color={expenseColor} size="sm" radius="xl" />
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">Realizado</Text>
+                              <Text size="xs" fw={600} c={expenseColor}>
+                                {formatMoney(moneyFromCents(totalExpenseRealized))}
+                              </Text>
+                            </Group>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">Disponível</Text>
+                              <Text size="xs" fw={700} c={expenseAvailable >= 0 ? "teal" : "red"}>
+                                {formatMoney(moneyFromCents(expenseAvailable))}
+                              </Text>
+                            </Group>
+                          </Stack>
+                        </Card>
+                      );
+                    })()}
 
-                    {/* Expense Card */}
-                    <Card withBorder padding="md" radius="md">
-                      <Stack gap="xs">
-                        <Group justify="space-between">
-                          <Text size="xs" c="dimmed" fw={700} tt="uppercase">
-                            Despesas vs limite
-                          </Text>
-                          <Badge color="red" variant="light">
-                            Saídas
-                          </Badge>
-                        </Group>
-                        <div>
-                          <Text size="xl" fw={700} c={totalExpenseUsed > totalExpenseBudgeted ? "red" : "blue"}>
-                            {formatMoney(moneyFromCents(totalExpenseUsed))}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            Limite planejado: {formatMoney(moneyFromCents(totalExpenseBudgeted))}
-                          </Text>
-                        </div>
-                        <Progress
-                          value={totalExpenseBudgeted > 0 ? (totalExpenseUsed / totalExpenseBudgeted) * 100 : 0}
-                          color={totalExpenseUsed > totalExpenseBudgeted ? "red" : "blue"}
-                          size="sm"
-                          radius="xl"
-                        />
-                      </Stack>
-                    </Card>
+                    {/* Card 2: Projeção final das contas */}
+                    {(() => {
+                      const delta = totalAccountProjectedBalance - totalOpeningBalance;
+                      const deltaColor = delta >= 0 ? "teal" : "red";
+                      return (
+                        <Card withBorder padding="md" radius="md" style={{
+                          borderLeft: `3px solid var(--mantine-color-${totalAccountProjectedBalance >= 0 ? "teal" : "red"}-5)`
+                        }}>
+                          <Stack gap="xs">
+                            <Group justify="space-between" align="flex-start">
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Projeção de saldo</Text>
+                              <Badge color={totalAccountProjectedBalance >= 0 ? "teal" : "red"} variant="light" size="sm">
+                                Final do mês
+                              </Badge>
+                            </Group>
+                            <div>
+                              <Text size="xl" fw={700} c={totalAccountProjectedBalance >= 0 ? "teal" : "red"}>
+                                {formatMoney(moneyFromCents(totalAccountProjectedBalance))}
+                              </Text>
+                              <Text size="xs" c="dimmed">saldo projetado nas contas</Text>
+                            </div>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">Saldo inicial</Text>
+                              <Text size="xs" fw={600}>{formatMoney(moneyFromCents(totalOpeningBalance))}</Text>
+                            </Group>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">Variação projetada</Text>
+                              <Text size="xs" fw={700} c={deltaColor}>
+                                {delta >= 0 ? "+" : ""}{formatMoney(moneyFromCents(delta))}
+                              </Text>
+                            </Group>
+                          </Stack>
+                        </Card>
+                      );
+                    })()}
 
-                    {/* Credit Independence Card */}
-                    <Card withBorder padding="md" radius="md">
-                      <Stack gap="xs">
-                        <Group justify="space-between">
-                          <Text size="xs" c="dimmed" fw={700} tt="uppercase">
-                            Independência de Crédito
-                          </Text>
-                          <Badge color="grape" variant="light">
-                            Autonomia
-                          </Badge>
-                        </Group>
-                        <div>
-                          <Text size="xl" fw={700} c="teal">
-                            {totalExpenseRealized > 0
-                              ? `${Math.round((totalExpenseRealizedCash / totalExpenseRealized) * 100)}% à vista`
-                              : "—"}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            À vista: {formatMoney(moneyFromCents(totalExpenseRealizedCash))}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            No cartão: {formatMoney(moneyFromCents(totalExpenseRealizedCredit))}
-                          </Text>
-                        </div>
-                        <Progress.Root size="sm" radius="xl">
-                          <Progress.Section
-                            value={totalExpenseRealized > 0 ? (totalExpenseRealizedCash / totalExpenseRealized) * 100 : 0}
-                            color="teal"
-                          />
-                          <Progress.Section
-                            value={totalExpenseRealized > 0 ? (totalExpenseRealizedCredit / totalExpenseRealized) * 100 : 0}
-                            color="grape"
-                          />
-                        </Progress.Root>
-                      </Stack>
-                    </Card>
+                    {/* Card 3: Resultado líquido realizado */}
+                    {(() => {
+                      const color = netBalanceRealized >= 0 ? "teal" : "red";
+                      return (
+                        <Card withBorder padding="md" radius="md" style={{
+                          borderLeft: `3px solid var(--mantine-color-${color}-5)`
+                        }}>
+                          <Stack gap="xs">
+                            <Group justify="space-between" align="flex-start">
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Resultado realizado</Text>
+                              <Badge color={color} variant="light" size="sm">
+                                {netBalanceRealized >= 0 ? "Positivo" : "Negativo"}
+                              </Badge>
+                            </Group>
+                            <div>
+                              <Text size="xl" fw={700} c={color}>
+                                {formatMoney(moneyFromCents(netBalanceRealized))}
+                              </Text>
+                              <Text size="xs" c="dimmed">receita − despesa realizadas</Text>
+                            </div>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">Receitas recebidas</Text>
+                              <Text size="xs" fw={600} c="teal">{formatMoney(moneyFromCents(totalIncomeRealized))}</Text>
+                            </Group>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">Despesas pagas</Text>
+                              <Text size="xs" fw={600} c="red">{formatMoney(moneyFromCents(totalExpenseRealized))}</Text>
+                            </Group>
+                          </Stack>
+                        </Card>
+                      );
+                    })()}
 
-                    {/* Net Balance Card */}
-                    <Card withBorder padding="md" radius="md">
-                      <Stack gap="xs">
-                        <Group justify="space-between">
-                          <Text size="xs" c="dimmed" fw={700} tt="uppercase">
-                            Resultado líquido (realizado)
-                          </Text>
-                          <Badge color={netBalanceRealized >= 0 ? "teal" : "red"} variant="light">
-                            Saldo Real
-                          </Badge>
-                        </Group>
-                        <div>
-                          <Text size="xl" fw={700} c={netBalanceRealized >= 0 ? "teal" : "red"}>
-                            {formatMoney(moneyFromCents(netBalanceRealized))}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            Receita realizada − despesa realizada
-                          </Text>
-                        </div>
-                        <Box h={10} />
-                      </Stack>
-                    </Card>
+                    {/* Card 4: Receitas planejadas vs recebidas */}
+                    {(() => {
+                      const incomePct = totalIncomeBudgeted > 0
+                        ? (totalIncomeRealized / totalIncomeBudgeted) * 100
+                        : 0;
+                      return (
+                        <Card withBorder padding="md" radius="md" style={{
+                          borderLeft: "3px solid var(--mantine-color-teal-5)"
+                        }}>
+                          <Stack gap="xs">
+                            <Group justify="space-between" align="flex-start">
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Receitas do mês</Text>
+                              <Badge color="teal" variant="light" size="sm">
+                                {incomePct >= 100 ? "Completo" : `${Math.round(incomePct)}% recebido`}
+                              </Badge>
+                            </Group>
+                            <div>
+                              <Text size="xl" fw={700} c="teal">
+                                {formatMoney(moneyFromCents(totalIncomeRealized))}
+                              </Text>
+                              <Text size="xs" c="dimmed">de {formatMoney(moneyFromCents(totalIncomeBudgeted))} esperados</Text>
+                            </div>
+                            <Progress value={Math.min(incomePct, 100)} color="teal" size="sm" radius="xl" />
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">A receber ainda</Text>
+                              <Text size="xs" fw={700} c={totalIncomeBudgeted > totalIncomeRealized ? "orange" : "teal"}>
+                                {formatMoney(moneyFromCents(Math.max(0, totalIncomeBudgeted - totalIncomeRealized)))}
+                              </Text>
+                            </Group>
+                          </Stack>
+                        </Card>
+                      );
+                    })()}
+
+                    {/* Card 5: Independência de crédito */}
+                    {(() => {
+                      const cashPct = totalExpenseRealized > 0
+                        ? (totalExpenseRealizedCash / totalExpenseRealized) * 100
+                        : 0;
+                      const creditPct = 100 - cashPct;
+                      const independenceColor = cashPct >= 70 ? "teal" : cashPct >= 40 ? "orange" : "grape";
+                      return (
+                        <Card withBorder padding="md" radius="md" style={{
+                          borderLeft: `3px solid var(--mantine-color-${independenceColor}-5)`
+                        }}>
+                          <Stack gap="xs">
+                            <Group justify="space-between" align="flex-start">
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Independência de crédito</Text>
+                              <Badge color={independenceColor} variant="light" size="sm">
+                                {cashPct >= 70 ? "Alta" : cashPct >= 40 ? "Média" : "Baixa"}
+                              </Badge>
+                            </Group>
+                            <div>
+                              <Text size="xl" fw={700} c={independenceColor}>
+                                {totalExpenseRealized > 0 ? `${Math.round(cashPct)}% à vista` : "—"}
+                              </Text>
+                              <Text size="xs" c="dimmed">do total gasto realizado</Text>
+                            </div>
+                            <Progress.Root size="sm" radius="xl">
+                              <Progress.Section value={cashPct} color="teal" />
+                              <Progress.Section value={creditPct} color="grape" />
+                            </Progress.Root>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">À vista</Text>
+                              <Text size="xs" fw={600} c="teal">{formatMoney(moneyFromCents(totalExpenseRealizedCash))}</Text>
+                            </Group>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">No cartão</Text>
+                              <Text size="xs" fw={600} c="grape">{formatMoney(moneyFromCents(totalExpenseRealizedCredit))}</Text>
+                            </Group>
+                          </Stack>
+                        </Card>
+                      );
+                    })()}
                   </SimpleGrid>
                 </Box>
               </Collapse>
             </Paper>
 
-            {/* Nova alocação mensal */}
-            <Paper withBorder radius="md">
-              <Group
-                justify="space-between"
-                align="center"
-                px="md"
-                py="xs"
-                style={{
-                  borderBottom: allocationCollapsed ? "none" : "1px solid var(--mantine-color-gray-2)",
-                  cursor: "pointer",
-                  userSelect: "none"
-                }}
-                onClick={handleToggleAllocation}
-              >
-                <div>
-                  <Text fw={700}>Nova alocação mensal</Text>
-                  <Text size="xs" c="dimmed">
-                    Planeje por subcategoria, conta/carteira e meio de pagamento quando fizer sentido.
-                  </Text>
-                </div>
-                <Group gap="xs">
-                  {allocationCollapsed ? <IconChevronDown size={20} /> : <IconChevronUp size={20} />}
-                </Group>
-              </Group>
-
-              <Collapse in={!allocationCollapsed}>
-                <Stack gap="sm" p="md">
-                  <Group justify="flex-end">
-                    <Button
-                      leftSection={<IconPlus size={16} />}
-                      color="teal"
-                      variant="light"
-                      onClick={() => void saveAllocation()}
-                      loading={isAllocationSaving}
-                    >
-                      Salvar alocação
-                    </Button>
-                  </Group>
-
-                  {allocationError ? (
-                    <Alert color="red" variant="light" icon={<IconAlertCircle size={16} />}>
-                      {allocationError}
-                    </Alert>
-                  ) : null}
-
-                  <SimpleGrid cols={{ base: 1, md: 4 }} spacing="sm">
-                    <CategorySelect
-                      label="Subcategoria"
-                      categories={categories}
-                      value={allocationForm.subcategoryId}
-                      onChange={(value) =>
-                        setAllocationForm((current) => ({ ...current, subcategoryId: value }))
-                      }
-                      emptyOptionLabel="Escolha uma subcategoria"
-                      placeholder="Escolha uma subcategoria"
-                    />
-                    <Select
-                      label="Fonte / conta"
-                      data={[{ value: emptySelectValue, label: "Geral, sem fonte específica" }, ...accountOptions]}
-                      value={allocationForm.accountId}
-                      onChange={(value) =>
-                        setAllocationForm((current) => ({ ...current, accountId: value ?? emptySelectValue }))
-                      }
-                      searchable
-                    />
-                    <Select
-                      label="Meio"
-                      data={[{ value: emptySelectValue, label: "Todos os meios" }, ...paymentMethodOptions]}
-                      value={allocationForm.paymentMethodId}
-                      onChange={(value) =>
-                        setAllocationForm((current) => ({ ...current, paymentMethodId: value ?? emptySelectValue }))
-                      }
-                      searchable
-                    />
-                    <NumberInput
-                      label="Valor"
-                      decimalScale={2}
-                      fixedDecimalScale
-                      thousandSeparator="."
-                      decimalSeparator=","
-                      prefix="R$ "
-                      min={0}
-                      step={0.01}
-                      value={allocationForm.amountReais}
-                      onChange={(value) =>
-                        setAllocationForm((current) => ({ ...current, amountReais: value }))
-                      }
-                      onFocus={(e) => e.currentTarget.select()}
-                    />
-                  </SimpleGrid>
-                </Stack>
-              </Collapse>
-            </Paper>
 
             {/* Account Balances */}
             <Paper withBorder radius="md">
@@ -890,8 +801,8 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                             return (
                               <Table.Tr key={account.id}>
                                 <Table.Td>
-                                  <Group gap="xs" wrap="nowrap">
-                                    <ThemeIcon variant="light" color={account.projectedBalance >= 0 ? "teal" : "red"}>
+                                  <Group gap="xs" wrap="nowrap" align="flex-start">
+                                    <ThemeIcon variant="light" color={account.projectedBalance >= 0 ? "teal" : "red"} mt={3}>
                                       <IconWallet size={16} />
                                     </ThemeIcon>
                                     <div>
@@ -900,6 +811,22 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                         {account.institution || getAccountTypeLabel(account.type)}
                                         {!account.isActive ? " · arquivada" : ""}
                                       </Text>
+                                      {account.linkedCards && account.linkedCards.length > 0 && (
+                                        <Group gap={4} mt={4}>
+                                          {account.linkedCards.map((cardName) => (
+                                            <Badge
+                                              key={cardName}
+                                              variant="light"
+                                              color="grape"
+                                              size="xs"
+                                              leftSection={<IconCreditCard size={10} />}
+                                              style={{ textTransform: "none" }}
+                                            >
+                                              {cardName}
+                                            </Badge>
+                                          ))}
+                                        </Group>
+                                      )}
                                     </div>
                                   </Group>
                                 </Table.Td>
@@ -919,9 +846,90 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                   </Text>
                                 </Table.Td>
                                 <Table.Td style={{ textAlign: "right" }}>
-                                  <Text size="sm" fw={700} c={account.projectedBalance >= 0 ? "teal" : "red"}>
-                                    {formatMoney(moneyFromCents(account.projectedBalance))}
-                                  </Text>
+                                  <HoverCard width={320} shadow="md" withArrow openDelay={100} position="left">
+                                    <HoverCard.Target>
+                                      <Group gap={4} justify="flex-end" style={{ cursor: "help", display: "inline-flex" }} wrap="nowrap">
+                                        <Text size="sm" fw={700} c={account.projectedBalance >= 0 ? "teal" : "red"}>
+                                          {formatMoney(moneyFromCents(account.projectedBalance))}
+                                        </Text>
+                                        <IconInfoCircle size={14} style={{ opacity: 0.6 }} />
+                                        {account.projectedBalance < 0 && (
+                                          <IconAlertTriangle size={14} color="var(--mantine-color-red-6)" />
+                                        )}
+                                      </Group>
+                                    </HoverCard.Target>
+                                    <HoverCard.Dropdown p="sm">
+                                      <Stack gap="xs" style={{ textAlign: "left" }}>
+                                        <Text size="xs" fw={700} tt="uppercase" c="dimmed">
+                                          Detalhamento da Projeção
+                                        </Text>
+                                        
+                                        <Group justify="space-between" wrap="nowrap">
+                                          <Text size="xs">Saldo realizado (atual):</Text>
+                                          <Text size="xs" fw={600} c={account.realizedBalance >= 0 ? "teal" : "red"}>
+                                            {formatMoney(moneyFromCents(account.realizedBalance))}
+                                          </Text>
+                                        </Group>
+
+                                        {account.plannedInflow ? account.plannedInflow > 0 && (
+                                          <Group justify="space-between" wrap="nowrap">
+                                            <Text size="xs">(+) Entradas planejadas:</Text>
+                                            <Text size="xs" fw={600} c="teal">
+                                              +{formatMoney(moneyFromCents(account.plannedInflow))}
+                                            </Text>
+                                          </Group>
+                                        ) : null}
+
+                                        {account.plannedOutflow ? account.plannedOutflow > 0 && (
+                                          <Group justify="space-between" wrap="nowrap">
+                                            <Text size="xs">(-) Saídas planejadas:</Text>
+                                            <Text size="xs" fw={600} c="red">
+                                              -{formatMoney(moneyFromCents(account.plannedOutflow))}
+                                            </Text>
+                                          </Group>
+                                        ) : null}
+
+                                        {account.openCardBills ? account.openCardBills > 0 && (
+                                          <>
+                                            <Group justify="space-between" wrap="nowrap">
+                                              <Text size="xs" fw={600}>(-) Faturas em aberto:</Text>
+                                              <Text size="xs" fw={700} c="orange">
+                                                -{formatMoney(moneyFromCents(account.openCardBills))}
+                                              </Text>
+                                            </Group>
+                                            <Stack gap={2} pl="xs" style={{ borderLeft: "2px solid var(--mantine-color-orange-2)" }}>
+                                              {account.linkedBillsDetail?.map((bill, index) => (
+                                                <Group key={index} justify="space-between" wrap="nowrap">
+                                                  <Text size="10px" c="dimmed">
+                                                    {bill.cardName} ({bill.billMonth})
+                                                  </Text>
+                                                  <Text size="10px" fw={600} c="dimmed">
+                                                    -{formatMoney(moneyFromCents(bill.amountCents))}
+                                                  </Text>
+                                                </Group>
+                                              ))}
+                                            </Stack>
+                                          </>
+                                        ) : null}
+
+                                        <Group justify="space-between" wrap="nowrap" pt="xs" style={{ borderTop: "1px solid var(--mantine-color-gray-2)" }}>
+                                          <Text size="xs" fw={700}>Saldo projetado final:</Text>
+                                          <Text size="xs" fw={700} c={account.projectedBalance >= 0 ? "teal" : "red"}>
+                                            {formatMoney(moneyFromCents(account.projectedBalance))}
+                                          </Text>
+                                        </Group>
+
+                                        {account.projectedBalance < 0 && (
+                                          <Group gap={4} wrap="nowrap" mt="xs" p={6} style={{ borderRadius: 4, backgroundColor: "var(--mantine-color-red-0)" }}>
+                                            <IconAlertTriangle size={14} color="var(--mantine-color-red-6)" />
+                                            <Text size="10px" c="red.9" fw={500}>
+                                              Atenção: Saldo projetado negativo!
+                                            </Text>
+                                          </Group>
+                                        )}
+                                      </Stack>
+                                    </HoverCard.Dropdown>
+                                  </HoverCard>
                                 </Table.Td>
                               </Table.Tr>
                             );
@@ -938,15 +946,6 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
             <Paper withBorder radius="md">
               <Group justify="space-between" align="center" px="md" py="xs" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
                 <Text fw={700}>Detalhamento do orçamento</Text>
-                <SegmentedControl
-                  size="xs"
-                  value={groupBy}
-                  onChange={(val) => setGroupBy(val as GroupByMode)}
-                  data={[
-                    { label: "Por Categoria", value: "category" },
-                    { label: "Por Fonte", value: "source" }
-                  ]}
-                />
               </Group>
 
               {isLoading ? (
@@ -968,12 +967,10 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                   <Table verticalSpacing="xs">
                     <Table.Thead>
                       <Table.Tr>
-                        <Table.Th style={{ width: "35%" }}>Item</Table.Th>
-                        <Table.Th style={{ textAlign: "right" }}>Planejado/Alocado</Table.Th>
-                        <Table.Th style={{ textAlign: "right" }}>Realizado</Table.Th>
-                        <Table.Th style={{ textAlign: "right" }}>Comprometido</Table.Th>
-                        <Table.Th style={{ textAlign: "right" }}>Disponível / Diferença</Table.Th>
-                        <Table.Th style={{ width: "15%" }}>Uso</Table.Th>
+                        <Table.Th style={{ width: "25%" }}>Item</Table.Th>
+                        <Table.Th style={{ textAlign: "right", width: "12%" }}>Planejado</Table.Th>
+                        <Table.Th style={{ textAlign: "right", width: "12%" }}>Realizado</Table.Th>
+                        <Table.Th style={{ minWidth: 400, width: "51%" }}>Meio / Fonte</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -1020,11 +1017,8 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                     gap: "6px"
                                   }}
                                 >
-                                  {row.level === 0 && groupBy === "source" ? (
-                                    <IconWallet size={16} opacity={0.6} />
-                                  ) : null}
                                   {row.name}
-                                  {row.behavior && groupBy === "category" && !row.hasChildren ? (
+                                  {row.behavior && !row.hasChildren ? (
                                     <Badge
                                       size="xs"
                                       variant="light"
@@ -1044,61 +1038,124 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                               </Group>
                             </Table.Td>
 
-                            {/* Budgeted */}
+                            {/* Planejado */}
                             <Table.Td style={{ textAlign: "right" }}>
-                              <BudgetCell
-                                initialCents={row.budgeted}
-                                subcategoryId={row.subcategoryId}
-                                accountId={row.accountId}
-                                paymentMethodId={row.paymentMethodId}
-                                selectedMonth={selectedMonth}
-                                onSave={() => void loadData(true)}
-                              />
+                              <Group gap={6} justify="flex-end" wrap="nowrap" align="center">
+                                <Text size="sm" fw={row.level <= 1 ? 700 : 500}>
+                                  {formatMoney(moneyFromCents(row.budgeted))}
+                                </Text>
+                                {row.subcategoryId && (
+                                  <BudgetCell
+                                    initialCents={row.budgeted}
+                                    subcategoryId={row.subcategoryId}
+                                    subcategoryName={row.name}
+                                    selectedMonth={selectedMonth}
+                                    accounts={accounts}
+                                    paymentMethods={paymentMethods}
+                                    creditCards={creditCards}
+                                    onSave={() => void loadData(true)}
+                                  />
+                                )}
+                              </Group>
                             </Table.Td>
 
-                            {/* Realized */}
+                            {/* Realizado */}
                             <Table.Td style={{ textAlign: "right" }}>
-                              <Text size="sm">{formatMoney(moneyFromCents(row.realized))}</Text>
-                            </Table.Td>
-
-                            {/* Committed */}
-                            <Table.Td style={{ textAlign: "right" }} c="dimmed">
-                              <Text size="sm">
-                                {row.committed > 0
-                                  ? formatMoney(moneyFromCents(row.committed))
-                                  : "—"}
+                              <Text size="sm" fw={row.level <= 1 ? 700 : 500}>
+                                {formatMoney(moneyFromCents(row.realized))}
                               </Text>
                             </Table.Td>
 
-                            {/* Available */}
-                            <Table.Td style={{ textAlign: "right" }}>
-                              <Text
-                                size="sm"
-                                fw={700}
-                                c={
-                                  row.available < 0
-                                    ? "red"
-                                    : row.budgeted > 0 || row.available > 0
-                                      ? "teal"
-                                      : "dimmed"
+                            {/* Meio / Fonte */}
+                            <Table.Td>
+                              {(() => {
+                                const breakdown = breakdownMap.get(row.id) ?? [];
+                                const active = breakdown.filter((m) => m.budgeted > 0 || m.realized > 0);
+                                if (active.length === 0) {
+                                  return <Text size="xs" c="dimmed">—</Text>;
                                 }
-                              >
-                                {formatMoney(moneyFromCents(row.available))}
-                              </Text>
-                            </Table.Td>
 
-                            {/* Progress Bar */}
-                            <Table.Td style={{ width: "20%" }}>
-                              <CategoryProgress
-                                budgeted={row.budgeted}
-                                realized={row.realized}
-                                committed={row.committed}
-                                realizedCash={row.realizedCash}
-                                realizedCredit={row.realizedCredit}
-                                committedCash={row.committedCash}
-                                committedCredit={row.committedCredit}
-                                nature={row.nature}
-                              />
+                                if (row.hasChildren) {
+                                  // For parent rows, show only a compact list of active sources (accounts/cards) to avoid vertical stretching
+                                  const activeSources = Array.from(
+                                    new Set(
+                                      active
+                                        .map((m) => {
+                                          if (m.creditCardId) {
+                                            return creditCards.find((c) => c.id === m.creditCardId)?.name;
+                                          }
+                                          if (m.accountId) {
+                                            return accounts.find((a) => a.id === m.accountId)?.name;
+                                          }
+                                          return null;
+                                        })
+                                        .filter(Boolean)
+                                    )
+                                  );
+
+                                  if (activeSources.length === 0) {
+                                    return <Text size="xs" c="dimmed">—</Text>;
+                                  }
+
+                                  return (
+                                    <Group gap={4} wrap="wrap">
+                                      {activeSources.map((sourceName) => (
+                                        <Badge key={sourceName} size="xs" variant="light" color="gray">
+                                          {sourceName}
+                                        </Badge>
+                                      ))}
+                                    </Group>
+                                  );
+                                }
+
+                                return (
+                                  <Group gap="xs" wrap="wrap">
+                                    {active.map((m) => {
+                                      const name = getBreakdownItemLabel(m, accounts, creditCards, paymentMethods);
+                                      const dotColor = getCategoryProgressColor(m.paymentMethodId, paymentMethods, row.nature === "income");
+                                      const isIncome = row.nature === "income";
+                                      const used = m.realized + m.committed;
+                                      const diff = isIncome ? used - m.budgeted : m.budgeted - used;
+                                      const diffColor = diff < 0 ? "red" : (diff > 0 ? "teal" : "gray");
+
+                                      return (
+                                        <Paper
+                                          key={`${m.accountId || "null"}-${m.creditCardId || "null"}-${m.paymentMethodId || "null"}`}
+                                          withBorder
+                                          px="xs"
+                                          py="4px"
+                                          radius="sm"
+                                          style={{
+                                            backgroundColor: "var(--mantine-color-gray-0)",
+                                            borderColor: "var(--mantine-color-gray-2)",
+                                            minWidth: "160px",
+                                            flex: "1 1 auto",
+                                            maxWidth: "240px"
+                                          }}
+                                        >
+                                          <Group justify="space-between" wrap="nowrap" gap={4} mb={2}>
+                                            <Group gap={5} wrap="nowrap" style={{ overflow: "hidden" }}>
+                                              <div style={{
+                                                width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                                                backgroundColor: `var(--mantine-color-${dotColor}-5)`
+                                              }} />
+                                              <Text size="11px" fw={600} style={{ whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                                                {name}
+                                              </Text>
+                                            </Group>
+                                            <Badge size="xs" color={diffColor} variant="light" style={{ flexShrink: 0 }}>
+                                              {diff === 0 ? "Ok" : formatMoney(moneyFromCents(diff))}
+                                            </Badge>
+                                          </Group>
+                                          <Text size="10px" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+                                            Plan: {formatMoney(moneyFromCents(m.budgeted))} / Real: {formatMoney(moneyFromCents(m.realized))}
+                                          </Text>
+                                        </Paper>
+                                      );
+                                    })}
+                                  </Group>
+                                );
+                              })()}
                             </Table.Td>
                           </Table.Tr>
                         );
@@ -1119,123 +1176,384 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
   );
 }
 
+interface Budget {
+  id: string;
+  accountId: string | null;
+  paymentMethodId: string | null;
+  amountCents: number;
+  subcategoryId: string;
+  budgetMonth: string;
+}
+
+interface Transaction {
+  id: string;
+  description: string;
+  amountCents: number;
+  eventDate: string;
+  accountId?: string | null;
+  creditCardId?: string | null;
+  paymentMethodId?: string | null;
+}
+
 function BudgetCell({
   initialCents,
   subcategoryId,
-  accountId,
-  paymentMethodId,
+  subcategoryName,
   selectedMonth,
+  accounts,
+  paymentMethods,
+  creditCards,
   onSave
 }: {
   initialCents: number;
   subcategoryId?: string;
-  accountId?: string | null;
-  paymentMethodId?: string | null;
+  subcategoryName?: string;
   selectedMonth: string;
+  accounts: Account[];
+  paymentMethods: PaymentMethod[];
+  creditCards: CreditCard[];
   onSave: () => void;
 }) {
   const [opened, setOpened] = useState(false);
-  const [value, setValue] = useState<number | string>(initialCents === 0 ? "" : initialCents / 100);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setValue(initialCents === 0 ? "" : initialCents / 100);
-  }, [initialCents]);
+  const [budgetsList, setBudgetsList] = useState<Budget[]>([]);
+  const [transactionsList, setTransactionsList] = useState<Transaction[]>([]);
+
+  // Budget editing states
+  const [budgetAmounts, setBudgetAmounts] = useState<Record<string, number | string>>({});
+
+  // New budget form states
+  const [newBudgetAccountId, setNewBudgetAccountId] = useState<string | null>(null);
+  const [newBudgetPmId, setNewBudgetPmId] = useState<string | null>(null);
+  const [newBudgetAmount, setNewBudgetAmount] = useState<number | string>("");
+
+  const loadModalData = async () => {
+    if (!subcategoryId) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const [budgetsRes, transactionsRes] = await Promise.all([
+        fetch(`${apiBaseUrl}/budgets?month=${selectedMonth}`),
+        fetch(`${apiBaseUrl}/transactions?budgetMonth=${selectedMonth}&subcategoryId=${subcategoryId}`)
+      ]);
+
+      if (!budgetsRes.ok || !transactionsRes.ok) {
+        throw new Error("Erro ao carregar dados de limites ou lançamentos.");
+      }
+
+      const allBudgets = (await budgetsRes.json()) as Budget[];
+      const filteredBudgets = allBudgets.filter((b) => b.subcategoryId === subcategoryId);
+      setBudgetsList(filteredBudgets);
+
+      const bAmounts: Record<string, number | string> = {};
+      for (const b of filteredBudgets) {
+        bAmounts[b.id] = b.amountCents / 100;
+      }
+      setBudgetAmounts(bAmounts);
+
+      const allTransactions = (await transactionsRes.json()) as Transaction[];
+      setTransactionsList(allTransactions);
+    } catch (e) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : "Erro inesperado");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (opened) {
-      setValue(initialCents === 0 ? "" : initialCents / 100);
-      const timer = setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.focus();
-          inputRef.current.select();
-        }
-      }, 50);
-      return () => clearTimeout(timer);
+      void loadModalData();
     }
-  }, [opened, initialCents]);
+  }, [opened, selectedMonth, subcategoryId]);
 
   if (!subcategoryId) {
     return (
-      <Text size="sm" fw={600}>
+      <Text size="sm" fw={600} c="dimmed">
         {initialCents > 0 ? formatMoney(moneyFromCents(initialCents)) : "—"}
       </Text>
     );
   }
 
-  const handleSave = async () => {
+  const handleSaveBudget = async (budget: Budget, val: number | string) => {
+    const parsedValue = typeof val === "number" ? val : parseFloat(String(val).replace(",", ".")) || 0;
+    const amountCents = Math.round(parsedValue * 100);
     try {
-      const parsedValue = typeof value === "number"
-        ? value
-        : parseFloat(String(value).replace(",", ".")) || 0;
-      const amountCents = Math.round(parsedValue * 100);
       const res = await fetch(`${apiBaseUrl}/budgets`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           budgetMonth: selectedMonth,
           subcategoryId,
-          accountId,
-          paymentMethodId,
+          accountId: budget.accountId || null,
+          paymentMethodId: budget.paymentMethodId || null,
           amountCents
         })
       });
       if (res.ok) {
-        setOpened(false);
-        onSave();
+        await loadModalData();
       }
     } catch (e) {
       console.error(e);
     }
   };
 
+  const handleDeleteBudget = async (budget: Budget) => {
+    if (!window.confirm("Deseja realmente remover este limite planejado?")) return;
+    await handleSaveBudget(budget, 0);
+  };
+
+  const handleAddBudget = async () => {
+    const amt = typeof newBudgetAmount === "number" ? newBudgetAmount : parseFloat(String(newBudgetAmount).replace(",", ".")) || 0;
+    if (amt <= 0) return;
+    try {
+      const res = await fetch(`${apiBaseUrl}/budgets`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          budgetMonth: selectedMonth,
+          subcategoryId,
+          accountId: newBudgetAccountId || null,
+          paymentMethodId: newBudgetPmId || null,
+          amountCents: Math.round(amt * 100)
+        })
+      });
+      if (res.ok) {
+        setNewBudgetAmount("");
+        setNewBudgetAccountId(null);
+        setNewBudgetPmId(null);
+        await loadModalData();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const accountOptions = [
+    { value: "", label: "Qualquer conta / geral" },
+    ...accounts
+      .filter((a) => a.isActive)
+      .map((a) => ({ value: a.id, label: a.name }))
+  ];
+
+  const pmOptions = [
+    { value: "", label: "Qualquer meio" },
+    ...paymentMethods.map((pm) => ({ value: pm.id, label: pm.name }))
+  ];
+
   return (
-    <Popover opened={opened} onChange={setOpened} position="bottom" withArrow shadow="md">
-      <Popover.Target>
-        <Text
-          size="sm"
-          style={{
-            cursor: "pointer",
-            textDecoration: "underline dashed var(--mantine-color-teal-5)"
-          }}
-          c="teal"
-          fw={500}
+    <>
+      <Tooltip label={initialCents > 0 ? "Editar planejamento e lançamentos" : "Definir limites e lançamentos"} withArrow position="top">
+        <ActionIcon
+          size="xs"
+          variant="subtle"
+          color={initialCents > 0 ? "gray" : "teal"}
           onClick={() => setOpened(true)}
+          style={{ flexShrink: 0 }}
         >
-          {initialCents > 0 ? formatMoney(moneyFromCents(initialCents)) : "Definir"}
-        </Text>
-      </Popover.Target>
-      <Popover.Dropdown p="xs">
-        <Stack gap="xs">
-          <Text size="xs" fw={700}>
-            Definir limite:
+          {initialCents > 0 ? <IconPencil size={12} /> : <IconPlus size={12} />}
+        </ActionIcon>
+      </Tooltip>
+
+      <Modal
+        opened={opened}
+        onClose={() => {
+          setOpened(false);
+          onSave();
+        }}
+        title={
+          <Text fw={700} size="md">
+            Planejamento e Lançamentos — {subcategoryName}
           </Text>
-          <Group gap="xs" align="flex-end">
-            <NumberInput
-              ref={inputRef}
-              size="xs"
-              value={value}
-              onChange={(val) => setValue(val)}
-              decimalScale={2}
-              fixedDecimalScale
-              thousandSeparator="."
-              decimalSeparator=","
-              prefix="R$ "
-              w={120}
-              min={0}
-              step={0.01}
-              onFocus={(e) => e.currentTarget.select()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void handleSave();
-              }}
-            />
-            <Button size="xs" color="teal" onClick={handleSave}>
-              Salvar
-            </Button>
+        }
+        size="xl"
+        centered
+      >
+        {isLoading ? (
+          <Group justify="center" p="xl">
+            <Loader size="md" />
           </Group>
-        </Stack>
-      </Popover.Dropdown>
-    </Popover>
+        ) : error ? (
+          <Alert color="red" variant="light" title="Erro">
+            {error}
+          </Alert>
+        ) : (
+          <Grid gutter="xl">
+            {/* Coluna 1: Limites Planejados */}
+            <Grid.Col span={6} style={{ borderRight: "1px solid var(--mantine-color-gray-2)" }}>
+              <Title order={5} mb="md" c="teal" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <IconPencil size={16} /> Limites Planejados
+              </Title>
+
+              <Stack gap="xs" style={{ maxHeight: 300, overflowY: "auto", paddingRight: 6 }}>
+                {budgetsList.length === 0 ? (
+                  <Text size="xs" c="dimmed" style={{ fontStyle: "italic" }}>
+                    Nenhum limite planejado para este mês.
+                  </Text>
+                ) : (
+                  budgetsList.map((b) => (
+                    <Paper key={b.id} p="xs" withBorder radius="xs" style={{ backgroundColor: "var(--mantine-color-gray-0)" }}>
+                      <Group justify="space-between" wrap="nowrap">
+                        <Stack gap={1}>
+                          <Text size="xs" fw={700}>
+                            {(() => {
+                              if (b.accountId && b.paymentMethodId === "pm-credit-card") {
+                                const card = creditCards.find((c) => c.paymentAccountId === b.accountId);
+                                if (card) return card.name;
+                              }
+                              return b.accountId
+                                ? (accounts.find((a) => a.id === b.accountId)?.name || "Conta específica")
+                                : "Geral / qualquer conta";
+                            })()}
+                          </Text>
+                          <Text size="xs" c="dimmed">
+                            {b.paymentMethodId ? (paymentMethods.find(pm => pm.id === b.paymentMethodId)?.name || "Meio específico") : "Geral / qualquer meio"}
+                          </Text>
+                        </Stack>
+                        <Group gap={6} wrap="nowrap" align="center">
+                          <NumberInput
+                            value={budgetAmounts[b.id] ?? ""}
+                            onChange={(val) => setBudgetAmounts(prev => ({ ...prev, [b.id]: val }))}
+                            decimalScale={2}
+                            thousandSeparator="."
+                            decimalSeparator=","
+                            prefix="R$ "
+                            style={{ width: 100 }}
+                            size="xs"
+                            min={0}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void handleSaveBudget(b, budgetAmounts[b.id]);
+                            }}
+                          />
+                          <Tooltip label="Salvar este limite">
+                            <ActionIcon color="teal" variant="subtle" size="xs" onClick={() => void handleSaveBudget(b, budgetAmounts[b.id])}>
+                              <IconCheck size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip label="Remover limite">
+                            <ActionIcon color="red" variant="subtle" size="xs" onClick={() => void handleDeleteBudget(b)}>
+                              <IconTrash size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                        </Group>
+                      </Group>
+                    </Paper>
+                  ))
+                )}
+              </Stack>
+
+              <Paper p="xs" withBorder radius="xs" mt="md" style={{ backgroundColor: "var(--mantine-color-teal-0)" }}>
+                <Text size="xs" fw={700} c="teal" mb="xs">
+                  Adicionar Planejamento
+                </Text>
+                <Stack gap="xs">
+                  <Select
+                    label="Conta / Fonte"
+                    size="xs"
+                    data={accountOptions}
+                    value={newBudgetAccountId}
+                    onChange={setNewBudgetAccountId}
+                    placeholder="Geral / qualquer conta"
+                    clearable
+                    searchable
+                  />
+                  <Select
+                    label="Meio de pagamento"
+                    size="xs"
+                    data={pmOptions}
+                    value={newBudgetPmId}
+                    onChange={setNewBudgetPmId}
+                    placeholder="Geral / qualquer meio"
+                    clearable
+                    searchable
+                  />
+                  <NumberInput
+                    label="Valor planejado"
+                    size="xs"
+                    value={newBudgetAmount}
+                    onChange={setNewBudgetAmount}
+                    decimalScale={2}
+                    thousandSeparator="."
+                    decimalSeparator=","
+                    prefix="R$ "
+                    min={0.01}
+                  />
+                  <Button size="xs" color="teal" onClick={handleAddBudget} fullWidth>
+                    Adicionar Limite
+                  </Button>
+                </Stack>
+              </Paper>
+            </Grid.Col>
+
+            {/* Coluna 2: Lançamentos Realizados */}
+            <Grid.Col span={6}>
+              <Title order={5} mb="md" c="blue" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <IconWallet size={16} /> Lançamentos Realizados
+              </Title>
+
+              <Stack gap="md" style={{ maxHeight: 450, overflowY: "auto", paddingRight: 6 }}>
+                {transactionsList.length === 0 ? (
+                  <Text size="xs" c="dimmed" style={{ fontStyle: "italic" }}>
+                    Nenhum lançamento registrado neste mês.
+                  </Text>
+                ) : (
+                  (() => {
+                    const groups: Record<string, typeof transactionsList> = {};
+                    for (const tx of transactionsList) {
+                      const sourceName = tx.creditCardId
+                        ? `${creditCards.find(c => c.id === tx.creditCardId)?.name || "Cartão"}`
+                        : tx.accountId
+                        ? `${accounts.find(a => a.id === tx.accountId)?.name || "Conta"}`
+                        : "Geral";
+
+                      const pmName = tx.creditCardId
+                        ? "Cartão de Crédito"
+                        : (paymentMethods.find(pm => pm.id === tx.paymentMethodId)?.name || "Geral");
+
+                      const key = `${sourceName} · ${pmName}`;
+                      if (!groups[key]) {
+                        groups[key] = [];
+                      }
+                      groups[key].push(tx);
+                    }
+
+                    return Object.entries(groups).map(([groupTitle, txs]) => (
+                      <Card key={groupTitle} p="xs" withBorder radius="xs" style={{ backgroundColor: "var(--mantine-color-blue-0)" }}>
+                        <Text size="xs" fw={700} c="blue" mb="xs" style={{ borderBottom: "1px solid var(--mantine-color-blue-1)", paddingBottom: 4 }}>
+                          {groupTitle}
+                        </Text>
+                        <Stack gap="xs">
+                          {txs.map((tx) => {
+                            const dateParts = tx.eventDate.split("-");
+                            const formattedDate = dateParts.length === 3
+                              ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
+                              : tx.eventDate;
+
+                            return (
+                              <Group key={tx.id} justify="space-between" wrap="nowrap" align="center">
+                                <Stack gap={1} style={{ flex: 1 }}>
+                                  <Text size="xs" fw={500}>{tx.description}</Text>
+                                  <Text size="10px" c="dimmed">{formattedDate}</Text>
+                                </Stack>
+                                <Text size="xs" fw={700}>
+                                  {formatMoney(moneyFromCents(tx.amountCents))}
+                                </Text>
+                              </Group>
+                            );
+                          })}
+                        </Stack>
+                      </Card>
+                    ));
+                  })()
+                )}
+              </Stack>
+            </Grid.Col>
+          </Grid>
+        )}
+      </Modal>
+    </>
   );
 }
 

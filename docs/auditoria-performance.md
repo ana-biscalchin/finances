@@ -4,12 +4,71 @@ Este documento resume a investigação sobre os fatores que podem deixar a aplic
 
 ---
 
+## Auditoria de Banco - 2026-06-21
+
+### Resultado do banco local
+
+- Banco analisado: `data/financas.sqlite`.
+- Backup criado antes da manutenção: `data/financas.sqlite.audit-backup-20260621-192331`.
+- `PRAGMA integrity_check`: `ok`.
+- `PRAGMA foreign_key_check`: 0 violações.
+- Migrations aplicadas: 6 antes da nova migration de índices; 7 após `0006_fearless_vengeance.sql`.
+- Contagens após a limpeza física:
+  - `accounts`: 5
+  - `budgets`: 148
+  - `categories`: 13
+  - `credit_card_bills`: 17
+  - `credit_cards`: 2
+  - `installments`: 0
+  - `payment_methods`: 8
+  - `reserve_goals`: 0
+  - `reserve_movements`: 0
+  - `subcategories`: 71
+  - `transactions`: 330
+
+### Anomalias verificadas
+
+- Sem duplicidade lógica de orçamentos por `budgetMonth + subcategoryId + accountId + paymentMethodId`.
+- Sem compras de cartão ativas com `creditCardId` preenchido e `creditCardBillId` vazio.
+- Sem múltiplos pagamentos ativos para a mesma fatura.
+- Sem links quebrados em transferências modeladas por `linkedTransactionId`.
+- Sem violações de chave estrangeira.
+- Uma subcategoria arquivada ainda possui histórico de transações, o que está correto pela regra de negócio de arquivamento sem exclusão.
+- Uma despesa ativa está sem subcategoria. Isso não quebra integridade e aparece como "Sem subcategoria", mas pode ser revisada manualmente se a categorização completa for desejada.
+
+### Limpeza segura executada
+
+- `PRAGMA optimize`.
+- `PRAGMA wal_checkpoint(TRUNCATE)`.
+- `VACUUM`.
+- Nenhuma linha financeira foi removida.
+
+### Ajustes aplicados
+
+- Prévia de importação CSV passou a buscar duplicatas apenas na janela de datas necessária, em vez de carregar todas as transações.
+- Relatórios e controle mensal passaram a usar intervalos indexáveis para datas (`>= início` e `< próximo período`) no lugar de `LIKE 'YYYY-%'` e filtros em memória.
+- Merge de subcategorias passou a considerar `accountId` ao consolidar orçamentos, preservando orçamentos de contas diferentes.
+- Adicionados índices compostos:
+  - `transactions_budget_month_event_idx`
+  - `transactions_budget_month_status_idx`
+  - `transactions_event_date_status_idx`
+  - `transactions_credit_card_month_idx`
+
+### Planos de consulta confirmados
+
+- Relatórios por ano de competência usam índice em `budget_month`.
+- Relatórios por ano de caixa usam índice em `event_date`.
+- Busca de compras por cartão e mês usa `transactions_credit_card_month_idx`.
+- Listagem mensal de lançamentos usa `transactions_budget_month_event_idx`.
+
+---
+
 ## 1. Gargalos Diagnosticados
 
 ### A. Banco de Dados SQLite sem Otimização de Gravação (WAL Mode)
-* **Status atual:** O SQLite está operando no modo padrão de diário de rollback (`DELETE`).
-* **Impacto:** A cada transação de escrita (inserção, atualização, remoção), o SQLite realiza uma operação síncrona no disco para gravar o diário e consolidar a transação. Em discos rígidos ou SSDs com políticas de cache conservadoras, isso pode demorar entre 10ms e 150ms por escrita, travando a thread principal do backend durante esse tempo.
-* **Solução:** Ativar o modo **WAL (Write-Ahead Logging)** e o sincronismo `NORMAL`. Isso permite que leituras e escritas aconteçam de forma concorrente sem bloqueios e agrupa as gravações em lote no disco, reduzindo o tempo de escrita em até 100x.
+* **Status atual:** Resolvido. `packages/database/src/connection.ts` ativa `journal_mode = WAL`, `synchronous = NORMAL` e `foreign_keys = ON`.
+* **Impacto:** Leituras e escritas ficam mais adequadas ao uso local do app, com menos bloqueios.
+* **Manutenção:** Rodar checkpoint/`VACUUM` apenas em auditorias ou manutenção pontual, sempre com backup prévio.
 
 ### B. Carregamento de Transações Totais em Memória (API - `budgets.ts`)
 * **Status atual:** No endpoint `/controle-mensal` (tela principal do app), a API realiza a seguinte chamada:
@@ -23,12 +82,8 @@ Este documento resume a investigação sobre os fatores que podem deixar a aplic
   2. Buscar apenas as transações específicas necessárias para encontrar o pagamento das faturas atuais usando cláusulas `WHERE` adequadas (filtrando por IDs de faturas daquele mês).
 
 ### C. Ausência de Índices no Banco de Dados (`schema.ts`)
-* **Status atual:** O schema do Drizzle em `transactions` possui índices apenas para `budgetMonth`, `eventDate` e `subcategoryId`.
-* **Gargalo:** Não existem índices para as colunas:
-  * `accountId` (usado intensivamente para calcular os saldos acumulados).
-  * `creditCardId` (usado para consolidar compras por cartão).
-  * `creditCardBillId` (usado para vincular pagamentos de faturas).
-* **Impacto:** Consultas filtrando por essas colunas resultam em varreduras completas da tabela (*table scans*), fazendo o SQLite ler linha por linha da tabela física.
+* **Status atual:** Parcialmente resolvido. Já existem índices simples para conta, cartão e fatura, além dos índices compostos criados na auditoria de 2026-06-21.
+* **Gargalo restante:** À medida que o banco crescer, consultas com muitos filtros opcionais podem precisar de novos índices compostos guiados por `EXPLAIN QUERY PLAN`, não por antecipação.
 
 ### D. Processos de Desenvolvimento Concorrentes
 * **Status atual:**

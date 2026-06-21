@@ -254,7 +254,7 @@ Use como separador o ponto e vírgula (;). O cabeçalho deve ser exatamente: Dat
 Siga rigorosamente estas regras:
 1. Data: Converta todas as datas para o formato DD/MM/AAAA.
 2. Descrição: Simplifique e limpe a descrição do lançamento (remova códigos, IDs de transação longos, etc., mantendo o nome do estabelecimento ou do remetente/destinatário de forma clara).
-3. Valor: Escreva no formato decimal brasileiro (usando vírgula para centavos, ex: 150,50 ou -32,00). Não use pontos para milhares. Despesas/saídas devem começar com sinal de menos (-) e receitas/entradas devem ser positivas.
+3. Valor: Escreva no formato decimal brasileiro (usando vírgula para centavos, ex: 150,50 ou -32,00). Não use pontos para milhares. Despesas/saídas devem começar com sinal de menos (-) e receitas/entradas devem ser positivas. IMPORTANTE: Sempre envolva o valor com aspas duplas (ex: "150,50" ou "-32,00") para que a vírgula do centavo não quebre o alinhamento das colunas.
 4. Tipo: Preencha com 'Receita' para entradas ou 'Despesa' para saídas.
 5. Categoria: Tente inferir a categoria correta com base na descrição, escolhendo uma das categorias abaixo:
    - Receitas: ${incomes.join(", ")}

@@ -128,10 +128,18 @@ export const transactions = sqliteTable(
   },
   (table) => [
     index("transactions_budget_month_idx").on(table.budgetMonth),
+    index("transactions_budget_month_event_idx").on(
+      table.budgetMonth,
+      table.eventDate,
+      table.description
+    ),
+    index("transactions_budget_month_status_idx").on(table.budgetMonth, table.status),
     index("transactions_event_date_idx").on(table.eventDate),
+    index("transactions_event_date_status_idx").on(table.eventDate, table.status),
     index("transactions_subcategory_idx").on(table.subcategoryId),
     index("transactions_account_idx").on(table.accountId),
     index("transactions_credit_card_idx").on(table.creditCardId),
+    index("transactions_credit_card_month_idx").on(table.creditCardId, table.budgetMonth),
     index("transactions_credit_card_bill_idx").on(table.creditCardBillId)
   ]
 );

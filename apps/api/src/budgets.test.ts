@@ -396,6 +396,103 @@ describe("budgets and monthly control", () => {
   });
 
 
+  it("should compute account projectedBalance correctly with planned transactions and open credit card bills", async () => {
+    // 1. Create checking account
+    const accRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Test Proj Account",
+        type: "checking",
+        initialBalanceCents: 100000, // R$ 1.000,00
+        sortOrder: 1,
+        isPrimary: true
+      }
+    });
+    const accountId = accRes.json().id;
+
+    // 2. Create card linked to account
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Test Proj Card",
+        closingDay: 5,
+        dueDay: 12,
+        paymentAccountId: accountId
+      }
+    });
+    const creditCardId = cardRes.json().id;
+
+    // 3. Create a transaction on the card representing open bill amount
+    await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Compra no cartao",
+        amountCents: 15000, // R$ 150,00
+        eventDate: "2026-06-02",
+        creditCardId,
+        subcategoryId,
+        status: "confirmed"
+      }
+    });
+
+    // 4. Create a planned transaction (status: planned) on the account - R$ 50,00
+    await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Saída planejada",
+        amountCents: 5000, // R$ 50,00
+        eventDate: "2026-06-15",
+        accountId,
+        subcategoryId,
+        status: "planned"
+      }
+    });
+
+    // 5. Create a planned inflow (status: planned) on the account - R$ 200,00
+    await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "income",
+        description: "Entrada planejada",
+        amountCents: 20000, // R$ 200,00
+        eventDate: "2026-06-20",
+        accountId,
+        subcategoryId,
+        status: "planned"
+      }
+    });
+
+    // 6. Fetch /controle-mensal
+    const controlRes = await app.inject({
+      method: "GET",
+      url: "/controle-mensal?month=2026-06"
+    });
+    expect(controlRes.statusCode).toBe(200);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = controlRes.json() as any;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const summary = body.accountSummaries.find((s: any) => s.id === accountId);
+    expect(summary).toBeDefined();
+    expect(summary.realizedBalance).toBe(100000);
+    expect(summary.plannedInflow).toBe(20000);
+    expect(summary.plannedOutflow).toBe(5000);
+    expect(summary.openCardBills).toBe(15000);
+    expect(summary.projectedBalance).toBe(100000); // 1000 + 200 - 50 - 150 = 1000 (100000 cents)
+    expect(summary.linkedCards).toContain("Test Proj Card");
+    expect(summary.linkedBillsDetail).toHaveLength(1);
+    expect(summary.linkedBillsDetail[0].cardName).toBe("Test Proj Card");
+    expect(summary.linkedBillsDetail[0].amountCents).toBe(15000);
+  });
+
+
   it("should plan monthly allocations by subcategory and account source", async () => {
     const flashRes = await app.inject({
       method: "POST",
@@ -587,44 +684,26 @@ describe("budgets and monthly control", () => {
 
     const controlRes = await app.inject({
       method: "GET",
-      url: "/controle-mensal?month=2026-06&groupBy=source"
+      url: "/controle-mensal?month=2026-06"
     });
     expect(controlRes.statusCode).toBe(200);
     const body = controlRes.json() as MonthlyControlResponse;
 
-    const flashNode = mustExist(body.tree.find((node: MonthlyControlNode) => node.id === `source-account-${flashAccountId}`));
-    const flashPaymentNode = mustExist(flashNode.children.find((node: MonthlyControlNode) => node.id === `source-${flashAccountId}-pm-null`));
-    const flashExpenseNode = mustExist(flashPaymentNode.children.find((node: MonthlyControlNode) => node.id === `source-${flashAccountId}-null-nature-expense`));
-    const flashCategoryNode = mustExist(flashExpenseNode.children.find((node: MonthlyControlNode) => node.name === "Alimentação"));
-    const flashSubNode = mustExist(flashCategoryNode.children.find((node: MonthlyControlNode) => node.id === `source-${flashAccountId}-null-sub-${subcategoryId}`));
-    expect(flashSubNode.budgeted).toBe(40000);
-    expect(flashSubNode.realized).toBe(25000);
-    expect(flashSubNode.available).toBe(15000);
+    const expenseNode = mustExist(body.tree.find((node: MonthlyControlNode) => node.id === "nature-expense"));
+    const categoryNode = mustExist(expenseNode.children.find((node: MonthlyControlNode) => node.name === "Alimentação"));
+    const subNode = mustExist(categoryNode.children.find((node: MonthlyControlNode) => node.id === `sub-${subcategoryId}`));
 
-    expect(flashPaymentNode.budgeted).toBe(-40000);
-    expect(flashPaymentNode.realized).toBe(-25000);
-    expect(flashPaymentNode.available).toBe(15000);
+    expect(subNode.budgeted).toBe(60000);
+    expect(subNode.realized).toBe(30000);
+    expect(subNode.available).toBe(30000);
 
-    expect(flashNode.budgeted).toBe(-40000);
-    expect(flashNode.realized).toBe(-25000);
-    expect(flashNode.available).toBe(15000);
+    expect(categoryNode.budgeted).toBe(60000);
+    expect(categoryNode.realized).toBe(30000);
+    expect(categoryNode.available).toBe(30000);
 
-    const nubankNode = mustExist(body.tree.find((node: MonthlyControlNode) => node.id === `source-account-${nubankAccountId}`));
-    const nubankPaymentNode = mustExist(nubankNode.children.find((node: MonthlyControlNode) => node.id === `source-${nubankAccountId}-pm-pm-pix-source-test`));
-    const nubankExpenseNode = mustExist(nubankPaymentNode.children.find((node: MonthlyControlNode) => node.id === `source-${nubankAccountId}-pm-pix-source-test-nature-expense`));
-    const nubankCategoryNode = mustExist(nubankExpenseNode.children.find((node: MonthlyControlNode) => node.name === "Alimentação"));
-    const nubankSubNode = mustExist(nubankCategoryNode.children.find((node: MonthlyControlNode) => node.id === `source-${nubankAccountId}-pm-pix-source-test-sub-${subcategoryId}`));
-    expect(nubankSubNode.budgeted).toBe(20000);
-    expect(nubankSubNode.realized).toBe(5000);
-    expect(nubankSubNode.available).toBe(15000);
-
-    expect(nubankPaymentNode.budgeted).toBe(-20000);
-    expect(nubankPaymentNode.realized).toBe(-5000);
-    expect(nubankPaymentNode.available).toBe(15000);
-
-    expect(nubankNode.budgeted).toBe(-20000);
-    expect(nubankNode.realized).toBe(-5000);
-    expect(nubankNode.available).toBe(15000);
+    expect(expenseNode.budgeted).toBe(60000);
+    expect(expenseNode.realized).toBe(30000);
+    expect(expenseNode.available).toBe(30000);
 
     expect(body.summary.expense.budgeted).toBe(60000);
     expect(body.summary.expense.realized).toBe(30000);

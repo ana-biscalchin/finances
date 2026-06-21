@@ -184,10 +184,12 @@ Backlog e status do projeto.
 - [x] Implementar busca inteligente com pontuação (score por prefixo de subcategoria, prefixo de categoria pai e substring) no `CategorySelect`.
 - [x] Eliminar nível intermediário de comportamento (Fixa/Variável/Extra) da árvore de controle mensal no backend e frontend, substituindo-o por tags/badges inline nas subcategorias.
 - [x] Limpar código órfão, imports não utilizados e adequar a documentação de regras financeiras à nova arquitetura da árvore.
-- [x] Corrigir a lógica de soma no agrupamento "Por Fonte" do controle mensal usando regras de fluxo de caixa líquido (sinais corretos de receitas/despesas) e eliminar a visualização "Por Meio".
+- [x] Eliminar as visualizações "Por Fonte" e "Por Meio" do Controle Mensal, consolidando na visualização unificada "Por Categoria".
 - [x] Permitir e gerenciar estornos (`chargeback`) e reembolsos (`refund`) de compras de cartão de crédito nas faturas:
   - [x] Atualizar validações da API para aceitar esses tipos em lançamentos associados a cartão de crédito.
   - [x] Liberar seletor de Tipo (Despesa/Reembolso/Estorno) nos drawers de criação e edição da tela de faturas.
   - [x] Garantir que estornos e reembolsos compensem corretamente o valor total da fatura.
   - [x] Habilitar detecção automática de estorno no preview e confirmação de importação de fatura via CSV.
+- [x] Melhorar o modal de edição de limites no Controle Mensal para exibir e gerenciar planejamentos por fonte-método e visualizar os lançamentos correspondentes agrupados.
+
 

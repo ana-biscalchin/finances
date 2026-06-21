@@ -145,4 +145,114 @@ describe("categories API", () => {
       amountCents: 80000
     });
   });
+
+  it("should keep budgets with different accounts separate when merging subcategories", async () => {
+    const categoryRes = await app.inject({
+      method: "POST",
+      url: "/categories",
+      payload: {
+        nature: "expense",
+        name: "Alimentação"
+      }
+    });
+    expect(categoryRes.statusCode).toBe(201);
+    const category = categoryRes.json();
+
+    const sourceSubRes = await app.inject({
+      method: "POST",
+      url: "/subcategories",
+      payload: {
+        categoryId: category.id,
+        name: "Delivery antigo",
+        behavior: "variable"
+      }
+    });
+    expect(sourceSubRes.statusCode).toBe(201);
+    const sourceSubcategory = sourceSubRes.json();
+
+    const targetSubRes = await app.inject({
+      method: "POST",
+      url: "/subcategories",
+      payload: {
+        categoryId: category.id,
+        name: "Delivery",
+        behavior: "variable"
+      }
+    });
+    expect(targetSubRes.statusCode).toBe(201);
+    const targetSubcategory = targetSubRes.json();
+
+    const accountARes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta A",
+        type: "checking"
+      }
+    });
+    expect(accountARes.statusCode).toBe(201);
+    const accountA = accountARes.json();
+
+    const accountBRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta B",
+        type: "checking"
+      }
+    });
+    expect(accountBRes.statusCode).toBe(201);
+    const accountB = accountBRes.json();
+
+    await app.inject({
+      method: "PUT",
+      url: "/budgets",
+      payload: {
+        budgetMonth: "2026-06",
+        subcategoryId: sourceSubcategory.id,
+        accountId: accountA.id,
+        amountCents: 30000
+      }
+    });
+
+    await app.inject({
+      method: "PUT",
+      url: "/budgets",
+      payload: {
+        budgetMonth: "2026-06",
+        subcategoryId: targetSubcategory.id,
+        accountId: accountB.id,
+        amountCents: 50000
+      }
+    });
+
+    const mergeRes = await app.inject({
+      method: "POST",
+      url: `/subcategories/${sourceSubcategory.id}/merge`,
+      payload: {
+        targetSubcategoryId: targetSubcategory.id
+      }
+    });
+    expect(mergeRes.statusCode).toBe(204);
+
+    const budgetsRes = await app.inject({
+      method: "GET",
+      url: "/budgets?month=2026-06"
+    });
+    expect(budgetsRes.statusCode).toBe(200);
+    expect(budgetsRes.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          subcategoryId: targetSubcategory.id,
+          accountId: accountA.id,
+          amountCents: 30000
+        }),
+        expect.objectContaining({
+          subcategoryId: targetSubcategory.id,
+          accountId: accountB.id,
+          amountCents: 50000
+        })
+      ])
+    );
+  });
 });

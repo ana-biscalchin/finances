@@ -829,6 +829,65 @@ describe("transactions & account balances business rules", () => {
     conn.sqlite.close();
   });
 
+  it("should expand remaining credit card bill installments when mapped to installment and installmentCount (separate columns case)", async () => {
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Outras Parcelas",
+        institution: "Banco Cartão",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+
+    expect(cardRes.statusCode).toBe(201);
+    const cardId = cardRes.json().id as string;
+
+    const csvContent = [
+      "Data;Descrição;Valor;Parcela;TotalParcelas",
+      "10/06/2026;Compra Parcelada Outra;100,00;2;3"
+    ].join("\n");
+
+    const previewRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-preview",
+      payload: {
+        csvContent,
+        mappings: {
+          eventDate: "Data",
+          description: "Descrição",
+          amount: "Valor",
+          installment: "Parcela",
+          installmentCount: "TotalParcelas"
+        },
+        dateFormat: "DMY",
+        defaultCreditCardId: cardId,
+        importMode: "credit_card_bill",
+        billMonth: "2026-06"
+      }
+    });
+
+    expect(previewRes.statusCode).toBe(200);
+    const preview = previewRes.json<ImportPreviewItem[]>();
+    expect(preview).toEqual([
+      expect.objectContaining({
+        description: "Compra Parcelada Outra (2/3)",
+        budgetMonth: "2026-06",
+        installmentNumber: 2,
+        installmentCount: 3
+      }),
+      expect.objectContaining({
+        description: "Compra Parcelada Outra (3/3)",
+        budgetMonth: "2026-07",
+        installmentNumber: 3,
+        installmentCount: 3
+      })
+    ]);
+  });
+
   it("should delete card transactions shown in a bill even when they were not directly linked to the bill", async () => {
     const cardRes = await app.inject({
       method: "POST",

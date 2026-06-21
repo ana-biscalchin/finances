@@ -19,7 +19,7 @@ import {
   getCreditCardBillMonth,
   yearMonthFromDate
 } from "@finances/domain";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -594,13 +594,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       })
       .from(transactions)
       .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+      .where(and(gte(transactions.eventDate, minDateStr), lte(transactions.eventDate, maxDateStr)))
       .all();
 
-    // Filter in range locally since SQLite date queries are simpler this way
-    const inRangeTx = existingTx.filter((tx) => tx.eventDate >= minDateStr && tx.eventDate <= maxDateStr);
-
     const parsedItemsWithDuplicates = parsedItems.map((item) => {
-      const match = inRangeTx.find((tx) => {
+      const match = existingTx.find((tx) => {
         const sameAmount = tx.amountCents === item.amountCents;
         const sameAccount = item.creditCardId
           ? tx.creditCardId === item.creditCardId
@@ -1266,20 +1264,31 @@ function parseImportedInstallmentInfo({
     parseInstallmentPair(description) ??
     parseInstallmentPair(`${installmentNumber}/${installmentCount}`);
 
-  if (!combined) {
-    return null;
+  if (combined) {
+    const [current, total] = combined;
+    if (current >= 1 && total >= 2 && current <= total && total <= 48) {
+      return {
+        installmentNumber: current,
+        installmentCount: total,
+        baseDescription: stripInstallmentMarker(description)
+      };
+    }
   }
 
-  const [current, total] = combined;
-  if (current < 1 || total < 2 || current > total || total > 48) {
-    return null;
+  const parsedCount = parseInt(installmentCount.trim(), 10);
+  if (!isNaN(parsedCount) && parsedCount >= 2 && parsedCount <= 48) {
+    const rawNum = installmentNumber.trim() || installment.trim();
+    const parsedNum = parseInt(rawNum, 10);
+    if (!isNaN(parsedNum) && parsedNum >= 1 && parsedNum <= parsedCount) {
+      return {
+        installmentNumber: parsedNum,
+        installmentCount: parsedCount,
+        baseDescription: stripInstallmentMarker(description)
+      };
+    }
   }
 
-  return {
-    installmentNumber: current,
-    installmentCount: total,
-    baseDescription: stripInstallmentMarker(description)
-  };
+  return null;
 }
 
 function parseInstallmentPair(value: string): [number, number] | null {
