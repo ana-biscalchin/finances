@@ -101,6 +101,9 @@ const pages: Array<{
 ];
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "layout-sidebar-collapsed";
+const HEADER_HEIGHT = 44;
+const SIDEBAR_WIDTH = 280;
+const SIDEBAR_COLLAPSED_WIDTH = 56;
 
 export function App() {
   const [activePage, setActivePage] = useState<PageKey>("monthly-control");
@@ -136,8 +139,8 @@ export function App() {
 
   return (
     <AppShell
-      header={{ height: 44 }}
-      navbar={{ width: isSidebarCollapsed ? 72 : 280, breakpoint: "sm" }}
+      header={{ height: HEADER_HEIGHT }}
+      navbar={{ width: isSidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH, breakpoint: 0 }}
       padding="lg"
     >
       <AppShell.Header>
@@ -147,50 +150,63 @@ export function App() {
       </AppShell.Header>
 
       <AppShell.Navbar p={0}>
-        <Box h="100%" p={isSidebarCollapsed ? "xs" : "md"} style={{ position: "relative" }}>
+        <Box
+          h={`calc(100dvh - ${HEADER_HEIGHT}px)`}
+          style={{
+            position: "relative",
+            width: "100%"
+          }}
+        >
           <Tooltip label={isSidebarCollapsed ? "Expandir menu" : "Recolher menu"} position="right">
             <ActionIcon
               aria-label={isSidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+              size={28}
               variant="subtle"
               onClick={toggleSidebar}
               style={{
                 backgroundColor: "var(--mantine-color-body)",
                 position: "absolute",
                 right: -14,
-                top: 22,
+                top: 16,
                 zIndex: 2
               }}
             >
-              {isSidebarCollapsed ? <IconChevronRight size={20} /> : <IconChevronLeft size={20} />}
+              {isSidebarCollapsed ? <IconChevronRight size={18} /> : <IconChevronLeft size={18} />}
             </ActionIcon>
           </Tooltip>
-          <Stack gap={4} align={isSidebarCollapsed ? "center" : "stretch"}>
-            {pages.map((page) => {
-              const Icon = page.icon;
+          <Box
+            h="100%"
+            p={isSidebarCollapsed ? 6 : "md"}
+            style={{ boxSizing: "border-box", overflowX: "hidden", overflowY: "auto" }}
+          >
+            <Stack gap={isSidebarCollapsed ? 2 : 4} align={isSidebarCollapsed ? "center" : "stretch"}>
+              {pages.map((page) => {
+                const Icon = page.icon;
 
-              return isSidebarCollapsed ? (
-                <Tooltip key={page.key} label={page.label} position="right">
-                  <ActionIcon
-                    aria-label={page.label}
-                    color={page.key === activePage ? "teal" : "gray"}
-                    size={44}
-                    variant={page.key === activePage ? "light" : "subtle"}
+                return isSidebarCollapsed ? (
+                  <Tooltip key={page.key} label={page.label} position="right">
+                    <ActionIcon
+                      aria-label={page.label}
+                      color={page.key === activePage ? "teal" : "gray"}
+                      size={36}
+                      variant={page.key === activePage ? "light" : "subtle"}
+                      onClick={() => setActivePage(page.key)}
+                    >
+                      <Icon size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+                ) : (
+                  <NavLink
+                    key={page.key}
+                    active={page.key === activePage}
+                    label={page.label}
+                    leftSection={<Icon size={18} />}
                     onClick={() => setActivePage(page.key)}
-                  >
-                    <Icon size={20} />
-                  </ActionIcon>
-                </Tooltip>
-              ) : (
-                <NavLink
-                  key={page.key}
-                  active={page.key === activePage}
-                  label={page.label}
-                  leftSection={<Icon size={18} />}
-                  onClick={() => setActivePage(page.key)}
-                />
-              );
-            })}
-          </Stack>
+                  />
+                );
+              })}
+            </Stack>
+          </Box>
         </Box>
       </AppShell.Navbar>
 
