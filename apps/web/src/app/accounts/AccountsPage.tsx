@@ -29,6 +29,7 @@ import {
   IconStarFilled
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
+import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
 
 type Account = {
   id: string;
@@ -170,7 +171,8 @@ export function AccountsPage() {
 
       setAccounts(await response.json());
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
+      reportClientError("accounts.loadAccounts", loadError);
+      setError(getErrorMessage(loadError));
     } finally {
       setIsLoading(false);
     }
@@ -189,7 +191,8 @@ export function AccountsPage() {
 
       setCards(await response.json());
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
+      reportClientError("accounts.loadCards", loadError);
+      setError(getErrorMessage(loadError));
     } finally {
       setIsCardsLoading(false);
     }
@@ -200,9 +203,10 @@ export function AccountsPage() {
   }, [includeInactive]);
 
   useEffect(() => {
-    void loadPaymentMethods().catch((loadError) =>
-      setError(loadError instanceof Error ? loadError.message : "Erro inesperado.")
-    );
+    void loadPaymentMethods().catch((loadError) => {
+      reportClientError("accounts.loadReferences", loadError);
+      setError(getErrorMessage(loadError));
+    });
   }, []);
 
   useEffect(() => {
@@ -224,7 +228,8 @@ export function AccountsPage() {
       name: account.name,
       type: account.type,
       institution: account.institution ?? "",
-      initialBalanceReais: account.initialBalanceCents === 0 ? "" : account.initialBalanceCents / 100,
+      initialBalanceReais:
+        account.initialBalanceCents === 0 ? "" : account.initialBalanceCents / 100,
       sortOrder: account.sortOrder,
       isPrimary: account.isPrimary,
       defaultPaymentMethodId: account.defaultPaymentMethodId ?? emptySelectValue
@@ -236,7 +241,8 @@ export function AccountsPage() {
     setEditingCard(null);
     setCardForm({
       ...emptyCardForm,
-      paymentAccountId: accounts.find((account) => account.isPrimary && account.isActive)?.id ?? emptySelectValue
+      paymentAccountId:
+        accounts.find((account) => account.isPrimary && account.isActive)?.id ?? emptySelectValue
     });
     setIsCardDrawerOpen(true);
   }
@@ -286,7 +292,8 @@ export function AccountsPage() {
       setIsModalOpen(false);
       await loadAccounts();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Erro inesperado.");
+      reportClientError("accounts.saveAccount", saveError);
+      setError(getErrorMessage(saveError));
     } finally {
       setIsSaving(false);
     }
@@ -345,7 +352,8 @@ export function AccountsPage() {
       setIsCardDrawerOpen(false);
       await loadCards();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Erro inesperado.");
+      reportClientError("accounts.saveCard", saveError);
+      setError(getErrorMessage(saveError));
     } finally {
       setIsCardSaving(false);
     }
@@ -371,7 +379,8 @@ export function AccountsPage() {
 
       await loadAccounts();
     } catch (archiveError) {
-      setError(archiveError instanceof Error ? archiveError.message : "Erro inesperado.");
+      reportClientError("accounts.archiveAccount", archiveError);
+      setError(getErrorMessage(archiveError));
     }
   }
 
@@ -389,7 +398,8 @@ export function AccountsPage() {
 
       await loadAccounts();
     } catch (restoreError) {
-      setError(restoreError instanceof Error ? restoreError.message : "Erro inesperado.");
+      reportClientError("accounts.restoreAccount", restoreError);
+      setError(getErrorMessage(restoreError));
     }
   }
 
@@ -413,7 +423,8 @@ export function AccountsPage() {
 
       await loadCards();
     } catch (archiveError) {
-      setError(archiveError instanceof Error ? archiveError.message : "Erro inesperado.");
+      reportClientError("accounts.archiveCard", archiveError);
+      setError(getErrorMessage(archiveError));
     }
   }
 
@@ -431,7 +442,8 @@ export function AccountsPage() {
 
       await loadCards();
     } catch (restoreError) {
-      setError(restoreError instanceof Error ? restoreError.message : "Erro inesperado.");
+      reportClientError("accounts.restoreCard", restoreError);
+      setError(getErrorMessage(restoreError));
     }
   }
 
@@ -444,12 +456,15 @@ export function AccountsPage() {
       });
 
       if (!response.ok) {
-        throw new Error(await getResponseError(response, "Não foi possível definir o cartão padrão."));
+        throw new Error(
+          await getResponseError(response, "Não foi possível definir o cartão padrão.")
+        );
       }
 
       await loadCards();
     } catch (defaultError) {
-      setError(defaultError instanceof Error ? defaultError.message : "Erro inesperado.");
+      reportClientError("accounts.setDefaultCard", defaultError);
+      setError(getErrorMessage(defaultError));
     }
   }
 
@@ -464,7 +479,11 @@ export function AccountsPage() {
             </Text>
           </div>
           <Group gap="xs">
-            <Button variant="light" leftSection={<IconCreditCard size={18} />} onClick={openCreateCardDrawer}>
+            <Button
+              variant="light"
+              leftSection={<IconCreditCard size={18} />}
+              onClick={openCreateCardDrawer}
+            >
               Novo cartão
             </Button>
             <Button leftSection={<IconPlus size={18} />} onClick={openCreateModal}>
@@ -536,8 +555,17 @@ export function AccountsPage() {
                     <Table.Td>{getAccountTypeLabel(account.type)}</Table.Td>
                     <Table.Td>{account.institution || "-"}</Table.Td>
                     <Table.Td>{formatMoney(moneyFromCents(account.initialBalanceCents))}</Table.Td>
-                    <Table.Td fw={700} c={(account.currentBalanceCents ?? account.initialBalanceCents) < 0 ? "red" : "teal"}>
-                      {formatMoney(moneyFromCents(account.currentBalanceCents ?? account.initialBalanceCents))}
+                    <Table.Td
+                      fw={700}
+                      c={
+                        (account.currentBalanceCents ?? account.initialBalanceCents) < 0
+                          ? "red"
+                          : "teal"
+                      }
+                    >
+                      {formatMoney(
+                        moneyFromCents(account.currentBalanceCents ?? account.initialBalanceCents)
+                      )}
                     </Table.Td>
                     <Table.Td>{account.sortOrder}</Table.Td>
                     <Table.Td>
@@ -611,7 +639,11 @@ export function AccountsPage() {
               label="Mostrar arquivados"
               onChange={(event) => setIncludeInactiveCards(event.currentTarget.checked)}
             />
-            <Button size="sm" leftSection={<IconCreditCard size={16} />} onClick={openCreateCardDrawer}>
+            <Button
+              size="sm"
+              leftSection={<IconCreditCard size={16} />}
+              onClick={openCreateCardDrawer}
+            >
               Novo cartão
             </Button>
           </Group>
@@ -624,7 +656,11 @@ export function AccountsPage() {
           <Stack align="center" p="xl" gap="xs">
             <Title order={4}>Nenhum cartão cadastrado</Title>
             <Text c="dimmed">Crie um cartão para acompanhar compras e faturas.</Text>
-            <Button mt="sm" leftSection={<IconCreditCard size={18} />} onClick={openCreateCardDrawer}>
+            <Button
+              mt="sm"
+              leftSection={<IconCreditCard size={18} />}
+              onClick={openCreateCardDrawer}
+            >
               Criar cartão
             </Button>
           </Stack>
@@ -679,7 +715,11 @@ export function AccountsPage() {
                               aria-label="Definir cartão como padrão"
                               onClick={() => void setDefaultCard(card)}
                             >
-                              {card.isDefault ? <IconStarFilled size={18} /> : <IconStar size={18} />}
+                              {card.isDefault ? (
+                                <IconStarFilled size={18} />
+                              ) : (
+                                <IconStar size={18} />
+                              )}
                             </ActionIcon>
                           </Tooltip>
                         ) : null}
@@ -907,20 +947,6 @@ function getAccountLabel(accountId: string | null, accounts: Account[]) {
 
 function toNullableSelectValue(value: string) {
   return value === emptySelectValue ? null : value;
-}
-
-async function getResponseError(response: Response, fallback: string) {
-  try {
-    const body = (await response.json()) as { message?: unknown };
-
-    if (typeof body.message === "string") {
-      return body.message;
-    }
-  } catch {
-    return fallback;
-  }
-
-  return fallback;
 }
 
 function parseInitialBalanceToCents(value: number | string) {

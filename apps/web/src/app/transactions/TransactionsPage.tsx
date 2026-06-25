@@ -23,12 +23,7 @@ import {
   Checkbox,
   FileInput
 } from "@mantine/core";
-import {
-  formatMoney,
-  moneyFromCents,
-  parseMoneyToCents,
-  transactionTypes
-} from "@finances/domain";
+import { formatMoney, moneyFromCents, parseMoneyToCents, transactionTypes } from "@finances/domain";
 import {
   IconTrash,
   IconChevronLeft,
@@ -46,20 +41,16 @@ import {
 import { useClipboard } from "@mantine/hooks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  formatBusinessDateForDisplay,
-  getTodayBusinessDate
-} from "../date-format";
+import { formatBusinessDateForDisplay, getTodayBusinessDate } from "../date-format";
 import { ReconciliationWizard } from "./ReconciliationWizard";
 import { BusinessDateInput } from "../shared/BusinessDateInput";
 import { parseCsvHeaderLine } from "../shared/csv-utils";
-import {
-  getAmountColor,
-  getResponseError
-} from "../shared/transaction-ui";
+import { formatCategoryPromptGroups, getAmountColor } from "../shared/transaction-ui";
+import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
 import { CategorySelect, QuickCategoryEdit } from "../shared/CategorySelect";
 import { MonthSelector } from "../shared/MonthSelector";
 import { QuickAmountEdit, QuickDateEdit, QuickTextEdit } from "../shared/QuickEditFields";
+import { applyImportPreviewBulkEdits } from "./import-preview";
 
 type Transaction = {
   id: string;
@@ -155,6 +146,7 @@ const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 const today = getTodayBusinessDate();
 const currentMonth = today.slice(0, 7);
 const emptySelectValue = "__none__";
+const missingFilterValue = "__missing__";
 const transactionTypeOptions = transactionTypes.map((transactionType) => ({
   value: transactionType.value,
   label: transactionType.label
@@ -189,6 +181,7 @@ export function TransactionsPage() {
   const [filterPaymentMethodId, setFilterPaymentMethodId] = useState<string>(emptySelectValue);
   const [filterSubcategoryId, setFilterSubcategoryId] = useState<string>(emptySelectValue);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<string>("date-desc");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -222,7 +215,8 @@ export function TransactionsPage() {
   const [selectedImportTempIds, setSelectedImportTempIds] = useState<Set<string>>(new Set());
   const [bulkImportType, setBulkImportType] = useState<string>(emptySelectValue);
   const [bulkImportAccountId, setBulkImportAccountId] = useState<string>(emptySelectValue);
-  const [bulkImportPaymentMethodId, setBulkImportPaymentMethodId] = useState<string>(emptySelectValue);
+  const [bulkImportPaymentMethodId, setBulkImportPaymentMethodId] =
+    useState<string>(emptySelectValue);
   const [bulkImportSubcategoryId, setBulkImportSubcategoryId] = useState<string>(emptySelectValue);
   const [isImportPreviewLoading, setIsImportPreviewLoading] = useState(false);
   const [isImportConfirming, setIsImportConfirming] = useState(false);
@@ -232,22 +226,6 @@ export function TransactionsPage() {
   const clipboard = useClipboard({ timeout: 2000 });
 
   const statementPromptText = useMemo(() => {
-    const incomes: string[] = [];
-    const expenses: string[] = [];
-    const transfers: string[] = [];
-
-    for (const cat of categories) {
-      for (const sub of cat.subcategories) {
-        if (cat.nature === "income") {
-          incomes.push(sub.name);
-        } else if (cat.nature === "expense") {
-          expenses.push(sub.name);
-        } else if (cat.nature === "transfer") {
-          transfers.push(sub.name);
-        }
-      }
-    }
-
     return `Por favor, formate o seguinte extrato bancário em um arquivo CSV estruturado para importação.
 Use como separador o ponto e vírgula (;). O cabeçalho deve ser exatamente: Data;Descricao;Valor;Tipo;Categoria
 
@@ -256,10 +234,13 @@ Siga rigorosamente estas regras:
 2. Descrição: Simplifique e limpe a descrição do lançamento (remova códigos, IDs de transação longos, etc., mantendo o nome do estabelecimento ou do remetente/destinatário de forma clara).
 3. Valor: Escreva no formato decimal brasileiro (usando vírgula para centavos, ex: 150,50 ou -32,00). Não use pontos para milhares. Despesas/saídas devem começar com sinal de menos (-) e receitas/entradas devem ser positivas. IMPORTANTE: Sempre envolva o valor com aspas duplas (ex: "150,50" ou "-32,00") para que a vírgula do centavo não quebre o alinhamento das colunas.
 4. Tipo: Preencha com 'Receita' para entradas ou 'Despesa' para saídas.
-5. Categoria: Tente inferir a categoria correta com base na descrição, escolhendo uma das categorias abaixo:
-   - Receitas: ${incomes.join(", ")}
-   - Despesas: ${expenses.join(", ")}
-   - Movimentações Internas (Transferências): ${transfers.join(", ")}
+5. Categoria: Preencha com o nome da subcategoria mais adequada. Use a categoria pai abaixo apenas como contexto:
+Receitas:
+${formatCategoryPromptGroups(categories, ["income"])}
+Despesas:
+${formatCategoryPromptGroups(categories, ["expense"])}
+Movimentações Internas (Transferências):
+${formatCategoryPromptGroups(categories, ["transfer"])}
 
 Extrato a ser convertido:
 [Cole seu extrato aqui]`;
@@ -281,12 +262,23 @@ Extrato a ser convertido:
     ],
     [paymentMethods]
   );
+  const filterPaymentMethodOptions = useMemo(
+    () => [
+      { value: emptySelectValue, label: "Todas" },
+      { value: missingFilterValue, label: "Sem forma de pagamento" },
+      ...paymentMethodOptions.filter((option) => option.value !== emptySelectValue)
+    ],
+    [paymentMethodOptions]
+  );
   const creditCardOptions = useMemo(
     () => [
       { value: emptySelectValue, label: "Selecione um cartão" },
       ...creditCards
         .filter((c) => c.isActive)
-        .map((c) => ({ value: c.id, label: c.institution ? `${c.name} (${c.institution})` : c.name }))
+        .map((c) => ({
+          value: c.id,
+          label: c.institution ? `${c.name} (${c.institution})` : c.name
+        }))
     ],
     [creditCards]
   );
@@ -296,7 +288,10 @@ Extrato a ser convertido:
   );
   const hasCreateDraft = !editingTransaction && hasDraft;
   const visibleTransactions = useMemo(
-    () => transactions.filter((transaction) => transaction.status !== "canceled" && transaction.status !== "planned"),
+    () =>
+      transactions.filter(
+        (transaction) => transaction.status !== "canceled" && transaction.status !== "planned"
+      ),
     [transactions]
   );
   const selectedTransactions = useMemo(
@@ -318,8 +313,6 @@ Extrato a ser convertido:
   }, [categories, form.subcategoryId]);
 
   const isTransferCategory = selectedSubcategory?.category.nature === "transfer";
-
-
 
   async function loadReferences() {
     const [accountsResponse, paymentMethodsResponse, categoriesResponse, creditCardsResponse] =
@@ -355,15 +348,13 @@ Extrato a ser convertido:
     setError(null);
 
     try {
-      const params = new URLSearchParams({ budgetMonth: selectedMonth });
-      if (filterType !== emptySelectValue) params.set("type", filterType);
-      if (filterAccountId !== emptySelectValue) params.set("accountId", filterAccountId);
-      if (filterPaymentMethodId !== emptySelectValue) {
-        params.set("paymentMethodId", filterPaymentMethodId);
-      }
-      if (filterSubcategoryId !== emptySelectValue) {
-        params.set("subcategoryId", filterSubcategoryId);
-      }
+      const params = buildTransactionSearchParams({
+        selectedMonth,
+        filterType,
+        filterAccountId,
+        filterPaymentMethodId,
+        filterSubcategoryId
+      });
 
       const response = await fetch(`${apiBaseUrl}/transactions?${params.toString()}`);
 
@@ -374,28 +365,21 @@ Extrato a ser convertido:
       setTransactions(await response.json());
       setSelectedTransactionIds(new Set());
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
+      reportClientError("transactions.load", loadError);
+      setError(getErrorMessage(loadError));
     } finally {
       setIsLoading(false);
     }
-  }, [
-    selectedMonth,
-    filterType,
-    filterAccountId,
-    filterPaymentMethodId,
-    filterSubcategoryId
-  ]);
+  }, [selectedMonth, filterType, filterAccountId, filterPaymentMethodId, filterSubcategoryId]);
 
   function handleExportCsv() {
-    const params = new URLSearchParams({ budgetMonth: selectedMonth });
-    if (filterType !== emptySelectValue) params.set("type", filterType);
-    if (filterAccountId !== emptySelectValue) params.set("accountId", filterAccountId);
-    if (filterPaymentMethodId !== emptySelectValue) {
-      params.set("paymentMethodId", filterPaymentMethodId);
-    }
-    if (filterSubcategoryId !== emptySelectValue) {
-      params.set("subcategoryId", filterSubcategoryId);
-    }
+    const params = buildTransactionSearchParams({
+      selectedMonth,
+      filterType,
+      filterAccountId,
+      filterPaymentMethodId,
+      filterSubcategoryId
+    });
     window.open(`${apiBaseUrl}/transactions/export?${params.toString()}`, "_blank");
   }
 
@@ -413,7 +397,13 @@ Extrato a ser convertido:
       const headers = parseCsvHeaderLine(firstLine).filter(Boolean);
       setCsvHeaders(headers);
 
-      const nextMappings = { eventDate: "", description: "", amount: "", type: "", subcategoryId: "" };
+      const nextMappings = {
+        eventDate: "",
+        description: "",
+        amount: "",
+        type: "",
+        subcategoryId: ""
+      };
       for (const h of headers) {
         const lower = h.toLowerCase();
         if (lower.includes("data") || lower.includes("date")) {
@@ -487,7 +477,8 @@ Extrato a ser convertido:
       setSelectedImportTempIds(initialSelected);
       setImportStep(3);
     } catch (err) {
-      setImportModalError(err instanceof Error ? err.message : "Erro inesperado.");
+      reportClientError("transactions.importPreview", err);
+      setImportModalError(getErrorMessage(err));
     } finally {
       setIsImportPreviewLoading(false);
     }
@@ -531,7 +522,8 @@ Extrato a ser convertido:
       resetImportState();
       await loadTransactions();
     } catch (err) {
-      setImportModalError(err instanceof Error ? err.message : "Erro inesperado.");
+      reportClientError("transactions.importConfirm", err);
+      setImportModalError(getErrorMessage(err));
     } finally {
       setIsImportConfirming(false);
     }
@@ -588,64 +580,33 @@ Extrato a ser convertido:
       return;
     }
 
-    const selectedAccount =
-      bulkImportAccountId === emptySelectValue
-        ? null
-        : accounts.find((account) => account.id === bulkImportAccountId);
-
     setPreviewTransactions((current) =>
-      current.map((item) => {
-        if (!selectedImportTempIds.has(item.tempId)) {
-          return item;
-        }
-
-        const nextItem = { ...item };
-
-        if (bulkImportType !== emptySelectValue) {
-          nextItem.type = bulkImportType as "income" | "expense";
-        }
-
-        if (bulkImportAccountId !== emptySelectValue) {
-          nextItem.accountId = bulkImportAccountId === "__clear__" ? null : bulkImportAccountId;
-          if (
-            bulkImportPaymentMethodId === emptySelectValue &&
-            selectedAccount?.defaultPaymentMethodId
-          ) {
-            nextItem.paymentMethodId = selectedAccount.defaultPaymentMethodId;
-          }
-        }
-
-        if (bulkImportPaymentMethodId !== emptySelectValue) {
-          nextItem.paymentMethodId =
-            bulkImportPaymentMethodId === "__clear__" ? null : bulkImportPaymentMethodId;
-        }
-
-        if (bulkImportSubcategoryId !== emptySelectValue) {
-          nextItem.subcategoryId =
-            bulkImportSubcategoryId === "__clear__" ? null : bulkImportSubcategoryId;
-        }
-
-        return nextItem;
-      })
+      applyImportPreviewBulkEdits(
+        current,
+        selectedImportTempIds,
+        {
+          type: bulkImportType,
+          accountId: bulkImportAccountId,
+          paymentMethodId: bulkImportPaymentMethodId,
+          subcategoryId: bulkImportSubcategoryId
+        },
+        accounts,
+        emptySelectValue
+      )
     );
     setImportModalError(null);
   }
 
   useEffect(() => {
-    void loadReferences().catch((loadError) =>
-      setError(loadError instanceof Error ? loadError.message : "Erro inesperado.")
-    );
+    void loadReferences().catch((loadError) => {
+      reportClientError("transactions.loadReferences", loadError);
+      setError(getErrorMessage(loadError));
+    });
   }, []);
 
   useEffect(() => {
     void loadTransactions();
-  }, [
-    selectedMonth,
-    filterType,
-    filterAccountId,
-    filterPaymentMethodId,
-    filterSubcategoryId
-  ]);
+  }, [selectedMonth, filterType, filterAccountId, filterPaymentMethodId, filterSubcategoryId]);
 
   useEffect(() => {
     if (editingTransaction) {
@@ -719,37 +680,40 @@ Extrato a ser convertido:
     setIsDrawerOpen(true);
   }
 
-  const openEditDrawer = useCallback((transaction: Transaction) => {
-    setEditingTransaction(transaction);
-    setDrawerError(null);
+  const openEditDrawer = useCallback(
+    (transaction: Transaction) => {
+      setEditingTransaction(transaction);
+      setDrawerError(null);
 
-    const isCardTransaction = Boolean(transaction.creditCardId);
-    let destinationAccountId = emptySelectValue;
-    if (transaction.linkedTransactionId) {
-      const linked = transactions.find((t) => t.id === transaction.linkedTransactionId);
-      if (linked) {
-        destinationAccountId = linked.accountId ?? emptySelectValue;
+      const isCardTransaction = Boolean(transaction.creditCardId);
+      let destinationAccountId = emptySelectValue;
+      if (transaction.linkedTransactionId) {
+        const linked = transactions.find((t) => t.id === transaction.linkedTransactionId);
+        if (linked) {
+          destinationAccountId = linked.accountId ?? emptySelectValue;
+        }
       }
-    }
 
-    setForm({
-      type: transaction.type,
-      description: transaction.description,
-      amountReais: transaction.amountCents === 0 ? "" : transaction.amountCents / 100,
-      eventDate: transaction.eventDate,
-      budgetMonth: transaction.budgetMonth,
-      accountId: transaction.accountId ?? emptySelectValue,
-      paymentMethodId: transaction.paymentMethodId ?? emptySelectValue,
-      subcategoryId: transaction.subcategoryId ?? emptySelectValue,
-      status: transaction.status,
-      notes: transaction.notes ?? "",
-      destinationAccountId,
-      paymentMode: (isCardTransaction ? "card" : "account") as "card" | "account",
-      creditCardId: transaction.creditCardId ?? emptySelectValue,
-      installmentCount: 1
-    });
-    setIsDrawerOpen(true);
-  }, [transactions]);
+      setForm({
+        type: transaction.type,
+        description: transaction.description,
+        amountReais: transaction.amountCents === 0 ? "" : transaction.amountCents / 100,
+        eventDate: transaction.eventDate,
+        budgetMonth: transaction.budgetMonth,
+        accountId: transaction.accountId ?? emptySelectValue,
+        paymentMethodId: transaction.paymentMethodId ?? emptySelectValue,
+        subcategoryId: transaction.subcategoryId ?? emptySelectValue,
+        status: transaction.status,
+        notes: transaction.notes ?? "",
+        destinationAccountId,
+        paymentMode: (isCardTransaction ? "card" : "account") as "card" | "account",
+        creditCardId: transaction.creditCardId ?? emptySelectValue,
+        installmentCount: 1
+      });
+      setIsDrawerOpen(true);
+    },
+    [transactions]
+  );
 
   function discardDraft() {
     const nextForm = buildEmptyFormWithDefaults(accounts);
@@ -828,8 +792,9 @@ Extrato a ser convertido:
             creditCardId,
             status: editingTransaction ? form.status : "confirmed",
             notes: form.notes,
-            destinationAccountId:
-              isTransferCategory ? toNullableSelectValue(form.destinationAccountId) : null,
+            destinationAccountId: isTransferCategory
+              ? toNullableSelectValue(form.destinationAccountId)
+              : null,
             installmentCount: isCardMode ? form.installmentCount : 1
           })
         }
@@ -846,37 +811,42 @@ Extrato a ser convertido:
       window.setTimeout(() => descriptionInputRef.current?.focus(), 120);
       await loadTransactions();
     } catch (saveError) {
-      setDrawerError(saveError instanceof Error ? saveError.message : "Erro inesperado.");
+      reportClientError("transactions.save", saveError);
+      setDrawerError(getErrorMessage(saveError));
     } finally {
       setIsSaving(false);
     }
   }
 
-  const deleteTransaction = useCallback(async (transaction: Transaction) => {
-    const confirmed = window.confirm(`Excluir o lançamento "${transaction.description}"?`);
+  const deleteTransaction = useCallback(
+    async (transaction: Transaction) => {
+      const confirmed = window.confirm(`Excluir o lançamento "${transaction.description}"?`);
 
-    if (!confirmed) {
-      return;
-    }
-
-    setError(null);
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/transactions/${transaction.id}`, {
-        method: "DELETE"
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          await getResponseError(response, "Não foi possível excluir o lançamento.")
-        );
+      if (!confirmed) {
+        return;
       }
 
-      await loadTransactions();
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Erro inesperado.");
-    }
-  }, [loadTransactions]);
+      setError(null);
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/transactions/${transaction.id}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            await getResponseError(response, "Não foi possível excluir o lançamento.")
+          );
+        }
+
+        await loadTransactions();
+      } catch (deleteError) {
+        reportClientError("transactions.delete", deleteError);
+        setError(getErrorMessage(deleteError));
+      }
+    },
+    [loadTransactions]
+  );
 
   const updateTransactionInline = useCallback(
     async (transaction: Transaction, changes: Partial<Transaction>) => {
@@ -915,14 +885,17 @@ Extrato a ser convertido:
         });
 
         if (!response.ok) {
-          throw new Error(await getResponseError(response, "Não foi possível atualizar o lançamento."));
+          throw new Error(
+            await getResponseError(response, "Não foi possível atualizar o lançamento.")
+          );
         }
 
         if (nextTransaction.budgetMonth !== selectedMonth) {
           await loadTransactions();
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Erro inesperado.");
+        reportClientError("transactions.inlineUpdate", err);
+        setError(getErrorMessage(err));
         void loadTransactions();
       }
     },
@@ -971,6 +944,24 @@ Extrato a ser convertido:
     });
   }, [visibleTransactions, searchQuery, categories]);
 
+  const sortedTransactions = useMemo(() => {
+    return [...filteredTransactions].sort((a, b) => {
+      if (sortBy === "date-asc") {
+        return a.eventDate.localeCompare(b.eventDate);
+      }
+      if (sortBy === "date-desc") {
+        return b.eventDate.localeCompare(a.eventDate);
+      }
+      if (sortBy === "name-asc") {
+        return a.description.localeCompare(b.description, "pt-BR");
+      }
+      if (sortBy === "name-desc") {
+        return b.description.localeCompare(a.description, "pt-BR");
+      }
+      return 0;
+    });
+  }, [filteredTransactions, sortBy]);
+
   const toggleSelectAllTransactions = useCallback(() => {
     setSelectedTransactionIds((current) => {
       const allFilteredIds = filteredTransactions.map((t) => t.id);
@@ -990,7 +981,7 @@ Extrato a ser convertido:
   }, [filteredTransactions]);
 
   const renderedRows = useMemo(() => {
-    return filteredTransactions.map((transaction) => (
+    return sortedTransactions.map((transaction) => (
       <Table.Tr key={transaction.id} style={{ verticalAlign: "middle" }}>
         <Table.Td>
           <Checkbox
@@ -1039,9 +1030,11 @@ Extrato a ser convertido:
             onSave={(amountCents) => updateTransactionInline(transaction, { amountCents })}
           />
         </Table.Td>
-        <Table.Td>
+        <Table.Td style={{ minWidth: 170, maxWidth: 220 }}>
           {transaction.creditCardId ? (
-            creditCards.find((c) => c.id === transaction.creditCardId)?.name || "Cartão"
+            <Text size="sm" fw={500} truncate="end">
+              {creditCards.find((c) => c.id === transaction.creditCardId)?.name || "Cartão"}
+            </Text>
           ) : (
             <Select
               size="xs"
@@ -1055,15 +1048,25 @@ Extrato a ser convertido:
               }
               searchable
               styles={{
-                input: { cursor: "pointer", fontWeight: 500, padding: 0, minHeight: "unset", height: "auto" },
-                root: { minWidth: 140 }
+                input: {
+                  cursor: "pointer",
+                  fontWeight: 500,
+                  padding: 0,
+                  minHeight: "unset",
+                  height: "auto",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis"
+                },
+                root: { minWidth: 170 }
               }}
             />
           )}
         </Table.Td>
-        <Table.Td>
+        <Table.Td style={{ minWidth: 190, maxWidth: 240 }}>
           {transaction.creditCardId ? (
-            "Cartão de Crédito"
+            <Text size="sm" fw={500} truncate="end">
+              Cartão de Crédito
+            </Text>
           ) : (
             <Select
               size="xs"
@@ -1077,19 +1080,27 @@ Extrato a ser convertido:
               }
               searchable
               styles={{
-                input: { cursor: "pointer", fontWeight: 500, padding: 0, minHeight: "unset", height: "auto" },
-                root: { minWidth: 150 }
+                input: {
+                  cursor: "pointer",
+                  fontWeight: 500,
+                  padding: 0,
+                  minHeight: "unset",
+                  height: "auto",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis"
+                },
+                root: { minWidth: 190 }
               }}
             />
           )}
         </Table.Td>
-        <Table.Td>
+        <Table.Td style={{ minWidth: 220, maxWidth: 280 }}>
           <QuickCategoryEdit
             categories={categories}
             value={transaction.subcategoryId ?? emptySelectValue}
             onChange={(value) =>
               void updateTransactionInline(transaction, {
-                subcategoryId: value
+                subcategoryId: value === emptySelectValue ? null : value
               })
             }
             emptyOptionLabel="Sem categoria"
@@ -1121,7 +1132,7 @@ Extrato a ser convertido:
       </Table.Tr>
     ));
   }, [
-    filteredTransactions,
+    sortedTransactions,
     selectedTransactionIds,
     categories,
     accounts,
@@ -1210,7 +1221,10 @@ Extrato a ser convertido:
 
         if (!response.ok) {
           throw new Error(
-            await getResponseError(response, `Não foi possível atualizar "${transaction.description}".`)
+            await getResponseError(
+              response,
+              `Não foi possível atualizar "${transaction.description}".`
+            )
           );
         }
       }
@@ -1227,7 +1241,8 @@ Extrato a ser convertido:
       setBulkSubcategoryId(emptySelectValue);
       await loadTransactions();
     } catch (bulkError) {
-      setError(bulkError instanceof Error ? bulkError.message : "Erro inesperado.");
+      reportClientError("transactions.bulkEdit", bulkError);
+      setError(getErrorMessage(bulkError));
       await loadTransactions();
     } finally {
       setIsBulkSaving(false);
@@ -1291,10 +1306,7 @@ Extrato a ser convertido:
         </Group>
       </Paper>
 
-      <MonthSelector
-        selectedMonth={selectedMonth}
-        onChange={setSelectedMonth}
-      />
+      <MonthSelector selectedMonth={selectedMonth} onChange={setSelectedMonth} />
 
       <Paper withBorder p="md" radius="md">
         <Stack gap="sm">
@@ -1309,12 +1321,13 @@ Extrato a ser convertido:
                 setFilterPaymentMethodId(emptySelectValue);
                 setFilterSubcategoryId(emptySelectValue);
                 setSearchQuery("");
+                setSortBy("date-desc");
               }}
             >
               Limpar filtros
             </Button>
           </Group>
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="sm">
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 6 }} spacing="sm">
             <TextInput
               label="Buscar"
               placeholder="Descrição, obs, data, cat..."
@@ -1336,16 +1349,18 @@ Extrato a ser convertido:
             />
             <Select
               label="Conta"
-              data={[{ value: emptySelectValue, label: "Todas" }, ...accountOptions]}
+              data={[
+                { value: emptySelectValue, label: "Todas" },
+                { value: missingFilterValue, label: "Sem conta" },
+                ...accountOptions
+              ]}
               value={filterAccountId}
               onChange={(value) => setFilterAccountId(value ?? emptySelectValue)}
               searchable
             />
             <Select
               label="Forma"
-              data={paymentMethodOptions.map((option) =>
-                option.value === emptySelectValue ? { ...option, label: "Todas" } : option
-              )}
+              data={filterPaymentMethodOptions}
               value={filterPaymentMethodId}
               onChange={(value) => setFilterPaymentMethodId(value ?? emptySelectValue)}
               searchable
@@ -1357,6 +1372,18 @@ Extrato a ser convertido:
               onChange={(value) => setFilterSubcategoryId(value)}
               emptyOptionLabel="Todas"
               placeholder="Todas"
+              extraOptions={[{ value: missingFilterValue, label: "Sem categoria" }]}
+            />
+            <Select
+              label="Ordenar por"
+              data={[
+                { value: "date-desc", label: "Data (Mais recente)" },
+                { value: "date-asc", label: "Data (Mais antiga)" },
+                { value: "name-asc", label: "Nome (A-Z)" },
+                { value: "name-desc", label: "Nome (Z-A)" }
+              ]}
+              value={sortBy}
+              onChange={(value) => setSortBy(value ?? "date-desc")}
             />
           </SimpleGrid>
         </Stack>
@@ -1369,7 +1396,7 @@ Extrato a ser convertido:
       ) : null}
 
       <Paper withBorder radius="md">
-        {isLoading ? (
+        {isLoading && transactions.length === 0 ? (
           <Group justify="center" p="xl">
             <Loader />
           </Group>
@@ -1414,7 +1441,9 @@ Extrato a ser convertido:
                       data={[
                         { value: emptySelectValue, label: "Manter forma atual" },
                         { value: "__clear__", label: "Sem meio de pagamento" },
-                        ...paymentMethodOptions.filter((option) => option.value !== emptySelectValue)
+                        ...paymentMethodOptions.filter(
+                          (option) => option.value !== emptySelectValue
+                        )
                       ]}
                       value={bulkPaymentMethodId}
                       onChange={(value) => setBulkPaymentMethodId(value ?? emptySelectValue)}
@@ -1441,39 +1470,37 @@ Extrato a ser convertido:
                 </Stack>
               </Box>
             ) : null}
-            <Table.ScrollContainer minWidth={1080}>
-            <Table verticalSpacing="xs" fz="sm" highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th style={{ width: 44 }}>
-                    <Checkbox
-                      aria-label="Selecionar todos os lançamentos"
-                      checked={
-                        filteredTransactions.length > 0 &&
-                        filteredTransactions.every((t) => selectedTransactionIds.has(t.id))
-                      }
-                      indeterminate={
-                        filteredTransactions.some((t) => selectedTransactionIds.has(t.id)) &&
-                        !filteredTransactions.every((t) => selectedTransactionIds.has(t.id))
-                      }
-                      onChange={toggleSelectAllTransactions}
-                    />
-                  </Table.Th>
-                  <Table.Th style={{ width: 95 }}>Data</Table.Th>
-                  <Table.Th style={{ minWidth: 160 }}>Descrição</Table.Th>
-                  <Table.Th style={{ width: 115 }}>Tipo</Table.Th>
-                  <Table.Th style={{ width: 110 }}>Valor</Table.Th>
-                  <Table.Th style={{ width: 140 }}>Conta</Table.Th>
-                  <Table.Th style={{ width: 150 }}>Meio</Table.Th>
-                  <Table.Th style={{ width: 170 }}>Categoria</Table.Th>
-                  <Table.Th style={{ width: 80 }}>Ações</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {renderedRows}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
+            <Table.ScrollContainer minWidth={1260}>
+              <Table verticalSpacing="xs" fz="sm" highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th style={{ width: 44 }}>
+                      <Checkbox
+                        aria-label="Selecionar todos os lançamentos"
+                        checked={
+                          filteredTransactions.length > 0 &&
+                          filteredTransactions.every((t) => selectedTransactionIds.has(t.id))
+                        }
+                        indeterminate={
+                          filteredTransactions.some((t) => selectedTransactionIds.has(t.id)) &&
+                          !filteredTransactions.every((t) => selectedTransactionIds.has(t.id))
+                        }
+                        onChange={toggleSelectAllTransactions}
+                      />
+                    </Table.Th>
+                    <Table.Th style={{ width: 95 }}>Data</Table.Th>
+                    <Table.Th style={{ minWidth: 220 }}>Descrição</Table.Th>
+                    <Table.Th style={{ width: 115 }}>Tipo</Table.Th>
+                    <Table.Th style={{ width: 110 }}>Valor</Table.Th>
+                    <Table.Th style={{ minWidth: 170 }}>Conta</Table.Th>
+                    <Table.Th style={{ minWidth: 190 }}>Meio</Table.Th>
+                    <Table.Th style={{ minWidth: 220 }}>Categoria</Table.Th>
+                    <Table.Th style={{ width: 80 }}>Ações</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>{renderedRows}</Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
           </Stack>
         )}
       </Paper>
@@ -1571,7 +1598,9 @@ Extrato a ser convertido:
 
           {(form.type === "expense" || form.type === "refund" || form.type === "chargeback") && (
             <Stack gap={6}>
-              <Text size="sm" fw={500}>Forma de pagamento</Text>
+              <Text size="sm" fw={500}>
+                Forma de pagamento
+              </Text>
               <SegmentedControl
                 fullWidth
                 data={[
@@ -1586,7 +1615,9 @@ Extrato a ser convertido:
                     return {
                       ...current,
                       paymentMode: isCard ? "card" : "account",
-                      creditCardId: isCard ? (defaultCard?.id ?? emptySelectValue) : emptySelectValue
+                      creditCardId: isCard
+                        ? (defaultCard?.id ?? emptySelectValue)
+                        : emptySelectValue
                     };
                   })
                 }
@@ -1608,7 +1639,10 @@ Extrato a ser convertido:
                   data={[...accountOptions, { value: emptySelectValue, label: "Sem conta" }]}
                   value={form.destinationAccountId}
                   onChange={(value) =>
-                    setForm((current) => ({ ...current, destinationAccountId: value ?? emptySelectValue }))
+                    setForm((current) => ({
+                      ...current,
+                      destinationAccountId: value ?? emptySelectValue
+                    }))
                   }
                   required
                 />
@@ -1649,7 +1683,9 @@ Extrato a ser convertido:
               {/* Installments — only for new card transactions */}
               {form.type === "expense" && form.paymentMode === "card" && (
                 <Stack gap={6}>
-                  <Text size="sm" fw={500}>Parcelamento</Text>
+                  <Text size="sm" fw={500}>
+                    Parcelamento
+                  </Text>
                   <SegmentedControl
                     fullWidth
                     data={[
@@ -1695,15 +1731,16 @@ Extrato a ser convertido:
             label="Categoria"
             categories={categories}
             filterNatures={
-              form.type === "income" ? ["income", "transfer"]
-                : form.type === "expense" ? ["expense", "transfer"]
-                : form.type === "refund" || form.type === "chargeback" ? ["expense"]
-                : undefined
+              form.type === "income"
+                ? ["income", "transfer"]
+                : form.type === "expense"
+                  ? ["expense", "transfer"]
+                  : form.type === "refund" || form.type === "chargeback"
+                    ? ["expense"]
+                    : undefined
             }
             value={form.subcategoryId}
-            onChange={(value) =>
-              setForm((current) => ({ ...current, subcategoryId: value }))
-            }
+            onChange={(value) => setForm((current) => ({ ...current, subcategoryId: value }))}
           />
           <TextInput
             label="Observação"
@@ -1721,33 +1758,33 @@ Extrato a ser convertido:
         </Stack>
 
         <Group
-            justify="space-between"
-            mt="auto"
-            pt="md"
-            pb="md"
-            bg="var(--mantine-color-body)"
-            style={{ 
-              borderTop: "1px solid var(--mantine-color-gray-2)",
-              position: "sticky",
-              bottom: 0,
-              zIndex: 10
-            }}
-          >
-            <Text size="xs" c="dimmed">
-              Rascunho
-            </Text>
-            <Tooltip label="Limpar lançamento">
-              <ActionIcon
-                size="lg"
-                variant="subtle"
-                color="gray"
-                aria-label="Limpar lançamento"
-                onClick={discardDraft}
-              >
-                <IconEraser size={20} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
+          justify="space-between"
+          mt="auto"
+          pt="md"
+          pb="md"
+          bg="var(--mantine-color-body)"
+          style={{
+            borderTop: "1px solid var(--mantine-color-gray-2)",
+            position: "sticky",
+            bottom: 0,
+            zIndex: 10
+          }}
+        >
+          <Text size="xs" c="dimmed">
+            Rascunho
+          </Text>
+          <Tooltip label="Limpar lançamento">
+            <ActionIcon
+              size="lg"
+              variant="subtle"
+              color="gray"
+              aria-label="Limpar lançamento"
+              onClick={discardDraft}
+            >
+              <IconEraser size={20} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
       </Drawer>
 
       {!isDrawerOpen ? (
@@ -1772,7 +1809,9 @@ Extrato a ser convertido:
         title={
           <Group gap="xs">
             <IconUpload size={22} color="var(--mantine-color-blue-filled)" />
-            <Text fw={700} size="lg">Importação de Transações CSV</Text>
+            <Text fw={700} size="lg">
+              Importação de Transações CSV
+            </Text>
           </Group>
         }
         size="xl"
@@ -1782,13 +1821,22 @@ Extrato a ser convertido:
         <Stack gap="md">
           {/* Step indicator header */}
           <Group justify="space-between" mb="xs">
-            <Badge color={importStep >= 1 ? "blue" : "gray"} variant={importStep === 1 ? "filled" : "light"}>
+            <Badge
+              color={importStep >= 1 ? "blue" : "gray"}
+              variant={importStep === 1 ? "filled" : "light"}
+            >
               1. Arquivo & Conta
             </Badge>
-            <Badge color={importStep >= 2 ? "blue" : "gray"} variant={importStep === 2 ? "filled" : "light"}>
+            <Badge
+              color={importStep >= 2 ? "blue" : "gray"}
+              variant={importStep === 2 ? "filled" : "light"}
+            >
               2. Mapear Colunas
             </Badge>
-            <Badge color={importStep >= 3 ? "blue" : "gray"} variant={importStep === 3 ? "filled" : "light"}>
+            <Badge
+              color={importStep >= 3 ? "blue" : "gray"}
+              variant={importStep === 3 ? "filled" : "light"}
+            >
               3. Pré-visualização
             </Badge>
           </Group>
@@ -1803,7 +1851,8 @@ Extrato a ser convertido:
           {importStep === 1 && (
             <Stack gap="md">
               <Text size="sm" c="dimmed">
-                Faça o upload do seu arquivo de extrato bancário ou planilha no formato CSV para importar suas transações.
+                Faça o upload do seu arquivo de extrato bancário ou planilha no formato CSV para
+                importar suas transações.
               </Text>
 
               <Paper
@@ -1811,9 +1860,10 @@ Extrato a ser convertido:
                 p="md"
                 radius="md"
                 style={{
-                  background: "linear-gradient(135deg, rgba(224, 242, 254, 0.35) 0%, rgba(238, 242, 255, 0.35) 100%)",
+                  background:
+                    "linear-gradient(135deg, rgba(224, 242, 254, 0.35) 0%, rgba(238, 242, 255, 0.35) 100%)",
                   borderColor: "var(--mantine-color-blue-light-color)",
-                  borderLeft: "4px solid var(--mantine-color-blue-filled)",
+                  borderLeft: "4px solid var(--mantine-color-blue-filled)"
                 }}
               >
                 <Group justify="space-between" align="center" wrap="nowrap">
@@ -1822,14 +1872,18 @@ Extrato a ser convertido:
                       Dica: Converta extratos com IA
                     </Text>
                     <Text size="xs" c="dimmed" mt={2}>
-                      Copie o prompt estruturado e envie para uma IA (como ChatGPT, Gemini ou Claude) para formatar seu extrato PDF ou texto em um CSV pronto para importação.
+                      Copie o prompt estruturado e envie para uma IA (como ChatGPT, Gemini ou
+                      Claude) para formatar seu extrato PDF ou texto em um CSV pronto para
+                      importação.
                     </Text>
                   </Box>
                   <Button
                     size="xs"
                     variant={clipboard.copied ? "filled" : "light"}
                     color={clipboard.copied ? "teal" : "blue"}
-                    leftSection={clipboard.copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                    leftSection={
+                      clipboard.copied ? <IconCheck size={14} /> : <IconCopy size={14} />
+                    }
                     onClick={() => clipboard.copy(statementPromptText)}
                     style={{ flexShrink: 0 }}
                   >
@@ -1851,16 +1905,16 @@ Extrato a ser convertido:
               <Select
                 label="Associar à Conta (opcional)"
                 description="Opcional. Se não for especificado no arquivo CSV, todas as transações importadas pertencerão a esta conta."
-                data={[{ value: emptySelectValue, label: "Nenhuma (deixar sem conta)" }, ...accountOptions]}
+                data={[
+                  { value: emptySelectValue, label: "Nenhuma (deixar sem conta)" },
+                  ...accountOptions
+                ]}
                 value={importAccountId}
                 onChange={(value) => setImportAccountId(value ?? emptySelectValue)}
               />
 
               <Group justify="flex-end" mt="md">
-                <Button
-                  onClick={() => setImportStep(2)}
-                  disabled={!importFile || !csvTextContent}
-                >
+                <Button onClick={() => setImportStep(2)} disabled={!importFile || !csvTextContent}>
                   Continuar
                 </Button>
               </Group>
@@ -1871,7 +1925,8 @@ Extrato a ser convertido:
           {importStep === 2 && (
             <Stack gap="md">
               <Text size="sm" c="dimmed">
-                Selecione qual coluna do seu arquivo CSV corresponde a cada um dos campos abaixo. O sistema tentou adivinhar os mapeamentos automaticamente.
+                Selecione qual coluna do seu arquivo CSV corresponde a cada um dos campos abaixo. O
+                sistema tentou adivinhar os mapeamentos automaticamente.
               </Text>
 
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
@@ -1880,7 +1935,7 @@ Extrato a ser convertido:
                   placeholder="Selecione a coluna"
                   data={csvHeaders}
                   value={mappings.eventDate}
-                  onChange={(val) => setMappings(m => ({ ...m, eventDate: val ?? "" }))}
+                  onChange={(val) => setMappings((m) => ({ ...m, eventDate: val ?? "" }))}
                   required
                 />
 
@@ -1901,7 +1956,7 @@ Extrato a ser convertido:
                   placeholder="Selecione a coluna"
                   data={csvHeaders}
                   value={mappings.description}
-                  onChange={(val) => setMappings(m => ({ ...m, description: val ?? "" }))}
+                  onChange={(val) => setMappings((m) => ({ ...m, description: val ?? "" }))}
                   required
                 />
 
@@ -1910,7 +1965,7 @@ Extrato a ser convertido:
                   placeholder="Selecione a coluna"
                   data={csvHeaders}
                   value={mappings.amount}
-                  onChange={(val) => setMappings(m => ({ ...m, amount: val ?? "" }))}
+                  onChange={(val) => setMappings((m) => ({ ...m, amount: val ?? "" }))}
                   required
                 />
 
@@ -1918,18 +1973,24 @@ Extrato a ser convertido:
                   label="Coluna de Tipo/Natureza (Opcional)"
                   description="Receita/Despesa. Se vazio, o sinal do valor define o tipo."
                   placeholder="Selecione a coluna"
-                  data={[{ value: "", label: "Auto-detectar pelo sinal do valor" }, ...csvHeaders.map(h => ({ value: h, label: h }))]}
+                  data={[
+                    { value: "", label: "Auto-detectar pelo sinal do valor" },
+                    ...csvHeaders.map((h) => ({ value: h, label: h }))
+                  ]}
                   value={mappings.type}
-                  onChange={(val) => setMappings(m => ({ ...m, type: val ?? "" }))}
+                  onChange={(val) => setMappings((m) => ({ ...m, type: val ?? "" }))}
                 />
 
                 <Select
                   label="Coluna de Categoria (Opcional)"
                   description="Pode ser uma coluna com nomes como Farmácia, Delivery ou textos como (-) Farmácia."
                   placeholder="Selecione a coluna"
-                  data={[{ value: "", label: "Definir na pré-visualização" }, ...csvHeaders.map(h => ({ value: h, label: h }))]}
+                  data={[
+                    { value: "", label: "Definir na pré-visualização" },
+                    ...csvHeaders.map((h) => ({ value: h, label: h }))
+                  ]}
                   value={mappings.subcategoryId}
-                  onChange={(val) => setMappings(m => ({ ...m, subcategoryId: val ?? "" }))}
+                  onChange={(val) => setMappings((m) => ({ ...m, subcategoryId: val ?? "" }))}
                 />
               </SimpleGrid>
 
@@ -1955,17 +2016,17 @@ Extrato a ser convertido:
                 <Text size="sm" fw={600}>
                   {previewTransactions.length} transações encontradas no arquivo.
                 </Text>
-                <Button
-                  variant="subtle"
-                  size="xs"
-                  onClick={toggleSelectAllImport}
-                >
-                  {selectedImportTempIds.size === previewTransactions.length ? "Desmarcar Todos" : "Selecionar Todos"}
+                <Button variant="subtle" size="xs" onClick={toggleSelectAllImport}>
+                  {selectedImportTempIds.size === previewTransactions.length
+                    ? "Desmarcar Todos"
+                    : "Selecionar Todos"}
                 </Button>
               </Group>
 
               <Text size="xs" c="dimmed">
-                As transações marcadas com aviso de duplicidade foram desmarcadas automaticamente para evitar duplicatas, mas você pode ativá-las manualmente. Você também pode ajustar os lançamentos selecionados em lote antes de importar.
+                As transações marcadas com aviso de duplicidade foram desmarcadas automaticamente
+                para evitar duplicatas, mas você pode ativá-las manualmente. Você também pode
+                ajustar os lançamentos selecionados em lote antes de importar.
               </Text>
 
               <Paper withBorder p="sm" radius="sm">
@@ -2008,7 +2069,9 @@ Extrato a ser convertido:
                       data={[
                         { value: emptySelectValue, label: "Manter forma atual" },
                         { value: "__clear__", label: "Sem meio de pagamento" },
-                        ...paymentMethodOptions.filter((option) => option.value !== emptySelectValue)
+                        ...paymentMethodOptions.filter(
+                          (option) => option.value !== emptySelectValue
+                        )
                       ]}
                       value={bulkImportPaymentMethodId}
                       onChange={(value) => setBulkImportPaymentMethodId(value ?? emptySelectValue)}
@@ -2031,88 +2094,124 @@ Extrato a ser convertido:
                 </Stack>
               </Paper>
 
-              <Box style={{ maxHeight: 350, overflowY: "auto", border: "1px solid var(--mantine-color-gray-3)", borderRadius: "var(--mantine-radius-md)" }}>
-                <Table verticalSpacing="xs" fz="sm" striped highlightOnHover>
-                  <Table.Thead style={{ position: "sticky", top: 0, background: "var(--mantine-color-body)", zIndex: 1 }}>
-                    <Table.Tr>
-                      <Table.Th style={{ width: 40 }}></Table.Th>
-                      <Table.Th>Data/Desc</Table.Th>
-                      <Table.Th>Tipo</Table.Th>
-                      <Table.Th>Conta</Table.Th>
-                      <Table.Th>Forma</Table.Th>
-                      <Table.Th style={{ textAlign: "right" }}>Valor</Table.Th>
-                      <Table.Th>Subcategoria</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {previewTransactions.map((item) => {
-                      const isSelected = selectedImportTempIds.has(item.tempId);
-                      return (
-                        <Table.Tr key={item.tempId} style={{ opacity: isSelected ? 1 : 0.6 }}>
-                          <Table.Td style={{ verticalAlign: "middle" }}>
-                            <Checkbox
-                              checked={isSelected}
-                              onChange={() => toggleSelectImport(item.tempId)}
-                            />
-                          </Table.Td>
-                          <Table.Td>
-                            <Stack gap={2}>
-                              <Group gap="xs" wrap="nowrap">
-                                <Text size="xs" c="dimmed">{formatBusinessDateForDisplay(item.eventDate)}</Text>
-                                {item.isDuplicate && (
-                                  <Badge color="yellow" size="xs" leftSection={<IconAlertTriangle size={10} />} style={{ textTransform: "none" }}>
-                                    Duplicada
-                                  </Badge>
-                                )}
-                              </Group>
-                              <Text size="sm" fw={600}>{item.description}</Text>
-                              {item.isDuplicate && item.duplicateOf && (
-                                <Text size="10px" c="yellow.8" style={{ lineHeight: 1.2 }}>
-                                  Match com: {item.duplicateOf.description} ({formatBusinessDateForDisplay(item.duplicateOf.eventDate)})
+              <Box
+                style={{
+                  maxHeight: 350,
+                  border: "1px solid var(--mantine-color-gray-3)",
+                  borderRadius: "var(--mantine-radius-md)"
+                }}
+              >
+                <Table.ScrollContainer minWidth={1080} maxHeight={350}>
+                  <Table verticalSpacing="xs" fz="sm" striped highlightOnHover>
+                    <Table.Thead
+                      style={{
+                        position: "sticky",
+                        top: 0,
+                        background: "var(--mantine-color-body)",
+                        zIndex: 1
+                      }}
+                    >
+                      <Table.Tr>
+                        <Table.Th style={{ width: 44 }} />
+                        <Table.Th style={{ minWidth: 260 }}>Data/Desc</Table.Th>
+                        <Table.Th style={{ width: 115 }}>Tipo</Table.Th>
+                        <Table.Th style={{ minWidth: 170 }}>Conta</Table.Th>
+                        <Table.Th style={{ minWidth: 190 }}>Forma</Table.Th>
+                        <Table.Th style={{ width: 120, textAlign: "right" }}>Valor</Table.Th>
+                        <Table.Th style={{ minWidth: 220 }}>Subcategoria</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {previewTransactions.map((item) => {
+                        const isSelected = selectedImportTempIds.has(item.tempId);
+                        return (
+                          <Table.Tr key={item.tempId} style={{ opacity: isSelected ? 1 : 0.6 }}>
+                            <Table.Td style={{ verticalAlign: "middle" }}>
+                              <Checkbox
+                                checked={isSelected}
+                                onChange={() => toggleSelectImport(item.tempId)}
+                              />
+                            </Table.Td>
+                            <Table.Td>
+                              <Stack gap={2}>
+                                <Group gap="xs" wrap="nowrap">
+                                  <Text size="xs" c="dimmed">
+                                    {formatBusinessDateForDisplay(item.eventDate)}
+                                  </Text>
+                                  {item.isDuplicate && (
+                                    <Badge
+                                      color="yellow"
+                                      size="xs"
+                                      leftSection={<IconAlertTriangle size={10} />}
+                                      style={{ textTransform: "none" }}
+                                    >
+                                      Duplicada
+                                    </Badge>
+                                  )}
+                                </Group>
+                                <Text size="sm" fw={600}>
+                                  {item.description}
                                 </Text>
-                              )}
-                            </Stack>
-                          </Table.Td>
-                          <Table.Td style={{ verticalAlign: "middle" }}>
-                            <Badge variant="light" color={getAmountColor(item.type)} style={{ textTransform: "none" }}>
-                              {getTransactionTypeLabel(item.type)}
-                            </Badge>
-                          </Table.Td>
-                          <Table.Td style={{ verticalAlign: "middle" }}>
-                            <Text size="xs">
-                              {item.creditCardId
-                                ? (creditCards.find((c) => c.id === item.creditCardId)?.name || "Cartão")
-                                : getAccountLabel(item.accountId, accounts)}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td style={{ verticalAlign: "middle" }}>
-                            <Text size="xs">
-                              {item.creditCardId
-                                ? "Cartão de Crédito"
-                                : getPaymentMethodLabel(item.paymentMethodId, paymentMethods)}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td style={{ textAlign: "right", verticalAlign: "middle" }}>
-                            <Text fw={700} size="sm" c={getAmountColor(item.type)}>
-                              {item.type === "expense" ? "-" : "+"} {formatMoney(moneyFromCents(item.amountCents))}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td style={{ verticalAlign: "middle", minWidth: 150 }}>
-                            <CategorySelect
-                              size="xs"
-                              categories={categories}
-                              value={item.subcategoryId ?? emptySelectValue}
-                              onChange={(val) => updateImportItemSubcategory(item.tempId, val === emptySelectValue ? null : val)}
-                              emptyOptionLabel="Sem categoria"
-                              placeholder="Categoria"
-                              label=""
-                            />
-                          </Table.Td>
-                        </Table.Tr>
-                      );
-                    })}
-                  </Table.Tbody>
-                </Table>
+                                {item.isDuplicate && item.duplicateOf && (
+                                  <Text size="10px" c="yellow.8" style={{ lineHeight: 1.2 }}>
+                                    Match com: {item.duplicateOf.description} (
+                                    {formatBusinessDateForDisplay(item.duplicateOf.eventDate)})
+                                  </Text>
+                                )}
+                              </Stack>
+                            </Table.Td>
+                            <Table.Td style={{ verticalAlign: "middle" }}>
+                              <Badge
+                                variant="light"
+                                color={getAmountColor(item.type)}
+                                style={{ textTransform: "none" }}
+                              >
+                                {getTransactionTypeLabel(item.type)}
+                              </Badge>
+                            </Table.Td>
+                            <Table.Td style={{ verticalAlign: "middle" }}>
+                              <Text size="xs" truncate="end">
+                                {item.creditCardId
+                                  ? creditCards.find((c) => c.id === item.creditCardId)?.name ||
+                                    "Cartão"
+                                  : getAccountLabel(item.accountId, accounts)}
+                              </Text>
+                            </Table.Td>
+                            <Table.Td style={{ verticalAlign: "middle" }}>
+                              <Text size="xs" truncate="end">
+                                {item.creditCardId
+                                  ? "Cartão de Crédito"
+                                  : getPaymentMethodLabel(item.paymentMethodId, paymentMethods)}
+                              </Text>
+                            </Table.Td>
+                            <Table.Td style={{ textAlign: "right", verticalAlign: "middle" }}>
+                              <Text fw={700} size="sm" c={getAmountColor(item.type)}>
+                                {item.type === "expense" ? "-" : "+"}{" "}
+                                {formatMoney(moneyFromCents(item.amountCents))}
+                              </Text>
+                            </Table.Td>
+                            <Table.Td style={{ verticalAlign: "middle" }}>
+                              <CategorySelect
+                                size="xs"
+                                categories={categories}
+                                value={item.subcategoryId ?? emptySelectValue}
+                                onChange={(val) =>
+                                  updateImportItemSubcategory(
+                                    item.tempId,
+                                    val === emptySelectValue ? null : val
+                                  )
+                                }
+                                emptyOptionLabel="Sem categoria"
+                                placeholder="Categoria"
+                                label=""
+                              />
+                            </Table.Td>
+                          </Table.Tr>
+                        );
+                      })}
+                    </Table.Tbody>
+                  </Table>
+                </Table.ScrollContainer>
               </Box>
 
               <Group justify="space-between" mt="md">
@@ -2189,6 +2288,31 @@ function isPristineTransactionDraft(form: TransactionFormState) {
     form.creditCardId === emptySelectValue &&
     form.installmentCount === 1
   );
+}
+
+function buildTransactionSearchParams({
+  selectedMonth,
+  filterType,
+  filterAccountId,
+  filterPaymentMethodId,
+  filterSubcategoryId
+}: {
+  selectedMonth: string;
+  filterType: string;
+  filterAccountId: string;
+  filterPaymentMethodId: string;
+  filterSubcategoryId: string;
+}) {
+  const params = new URLSearchParams({ budgetMonth: selectedMonth });
+  if (filterType !== emptySelectValue) params.set("type", filterType);
+  if (filterAccountId !== emptySelectValue) params.set("accountId", filterAccountId);
+  if (filterPaymentMethodId !== emptySelectValue) {
+    params.set("paymentMethodId", filterPaymentMethodId);
+  }
+  if (filterSubcategoryId !== emptySelectValue) {
+    params.set("subcategoryId", filterSubcategoryId);
+  }
+  return params;
 }
 
 /** Shows installment value preview, e.g. "3x de R$ 100,00" */

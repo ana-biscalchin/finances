@@ -31,3 +31,32 @@ export function createDatabaseConnection(databasePath?: string) {
     db: drizzle(sqlite, { schema })
   };
 }
+
+export function validateDatabaseIntegrity(filePath: string): boolean {
+  let tempDb: InstanceType<typeof Database> | null = null;
+  try {
+    tempDb = new Database(filePath, { readonly: true });
+    const check = tempDb.pragma("integrity_check") as unknown;
+    const result =
+      Array.isArray(check) && check.length > 0 && typeof check[0] === "object" && check[0] !== null
+        ? (check[0] as Record<string, unknown>).integrity_check
+        : check;
+    return result === "ok";
+  } catch {
+    return false;
+  } finally {
+    if (tempDb) {
+      tempDb.close();
+    }
+  }
+}
+
+export async function restoreDatabaseOnline(backupPath: string, mainDbPath: string): Promise<void> {
+  const backupDb = new Database(backupPath, { readonly: true });
+  try {
+    await backupDb.backup(mainDbPath);
+  } finally {
+    backupDb.close();
+  }
+}
+

@@ -1,224 +1,233 @@
-# Guia de Orientação: Importação de Lançamentos via CSV
+# Guia de Orientacao: Importacao CSV
 
-Este documento orienta sobre como estruturar arquivos CSV para importar lançamentos financeiros no aplicativo de finanças pessoais de forma correta e sem duplicidades.
+Este documento descreve como preparar CSVs para os fluxos atuais de importacao do app e foi revisado a partir do codigo de entrada em `apps/web/src/app/transactions`, `apps/web/src/app/cards` e `apps/api/src/modules/transactions.ts`.
 
----
+## Fonte Dinamica de Categorias, Contas e Meios
 
-## 1. Estrutura e Formato do Arquivo CSV
+As instrucoes de apoio a importacao nao devem congelar listas de categorias, contas ou meios de pagamento neste Markdown.
 
-O arquivo deve ser um arquivo de texto comum no formato **CSV (Comma-Separated Values)**. 
+- Categorias e subcategorias validas sao as que estiverem cadastradas no app no momento da importacao.
+- Os prompts de IA exibidos nas telas de importacao sao montados dinamicamente a partir de `GET /categories`.
+- As contas disponiveis vem do cadastro atual de contas.
+- Os meios de pagamento vem do cadastro/semente atual de meios de pagamento; na importacao geral eles podem ser ajustados na previa, mas cartao de credito nao deve ser usado como meio operacional de caixa.
+- `docs/categorias.md` documenta a taxonomia conceitual/base. Para importar, a fonte operacional e sempre a tela/API atual, porque categorias podem ser renomeadas, arquivadas ou expandidas.
 
-### Requisitos Técnicos:
-- **Separador**: O sistema detecta automaticamente vírgula (`,`), ponto e vírgula (`;`) ou tabulação como separador de campos.
-- **Aspas**: Campos que contenham o próprio separador internamente devem estar entre aspas duplas (ex: `"R$ 1.500,00"` em CSV separado por vírgula).
-- **Cabeçalho**: A primeira linha do arquivo deve conter os nomes das colunas (ex: `Data,Descrição,Valor` ou `Data;Descrição;Valor`).
-- **Codificação**: Arquivos UTF-8 com BOM são aceitos; o BOM é ignorado no primeiro cabeçalho.
+Quando precisar orientar uma IA externa a converter extratos ou faturas, use o botao **Copiar prompt IA** dentro da propria tela de importacao. Esse prompt ja inclui a versao mais recente das subcategorias carregadas pelo app.
 
----
+## Formato de Arquivo
 
-## 2. Colunas e Mapeamento Dinâmico
+- Separadores aceitos: virgula, ponto e virgula ou tabulacao. O sistema detecta o separador pela primeira linha.
+- A primeira linha deve conter cabecalhos.
+- Campos com separador interno devem vir entre aspas duplas. Exemplo em CSV separado por virgula: `"R$ 1.500,00"`.
+- UTF-8 com BOM e aceito; o BOM e removido do primeiro cabecalho.
+- Linhas vazias sao ignoradas.
 
-O sistema de importação possui mapeamento flexível. Você não precisa alterar o nome das colunas do seu arquivo ou planilha; basta associá-las na tela do assistente de importação.
+## Importacao Geral de Lancamentos
 
-### Colunas Obrigatórias:
-1. **Data**: O dia em que a transação ocorreu.
-2. **Descrição**: O texto descritivo do lançamento (ex: "Supermercado Z", "Salário Mensal").
-3. **Valor**: O valor monetário da transação.
+Fluxo usado pela tela **Lancamentos > Importar CSV**.
 
-### Coluna Opcional:
-- **Tipo/Natureza**: Indica se é uma **Receita** (entrada) ou **Despesa** (saída). Se esta coluna não for mapeada, o sistema decidirá o tipo automaticamente com base no sinal do valor (valores negativos ou normais).
-- **Categoria**: Indica a categoria/subcategoria do lançamento. Pode conter nomes diretos como `Farmácia`, `Delivery` e `Saldo anterior`, ou textos com sinal como `(-) Farmácia` e `(+) Saldo anterior`.
+### Colunas
 
-> A mesma coluna pode ser usada para **Tipo/Natureza** e **Categoria** quando ela combina sinal e categoria, como no formato `(-) Farmácia`.
+Obrigatorias:
 
----
+- Data
+- Descricao
+- Valor
 
-## 3. Formatação dos Dados
+Opcionais:
 
-Para garantir que a importação ocorra com sucesso, siga as regras de formatação abaixo:
+- Tipo/Natureza
+- Categoria/Subcategoria
 
-### Formato de Data (Data):
-O sistema aceita os formatos mais comuns de data:
-- **Padrão ISO**: `AAAA-MM-DD` (ex: `2026-06-07`)
-- **Padrão Brasileiro**: `DD/MM/AAAA` (ex: `07/06/2026`) ou `DD-MM-AAAA` (ex: `07-06-2026`)
-- **Padrão Americano**: `MM/DD/AAAA` (ex: `06/07/2026`) ou `MM-DD-AAAA` (ex: `06-07-2026`)
+A tela tenta mapear cabecalhos automaticamente:
 
-Na etapa de mapeamento, escolha o **Formato da Data** correspondente ao arquivo importado. Isso é especialmente importante em datas ambíguas como `06/07/2026`, que pode significar 6 de julho ou 7 de junho dependendo do formato.
+- Data: nomes contendo `data` ou `date`.
+- Descricao: nomes contendo `desc`, `hist` ou `memo`.
+- Valor: nomes contendo `valor`, `amount` ou `val`.
+- Tipo: nomes contendo `tipo`, `type` ou `natureza`.
+- Categoria: nomes contendo `categoria`, `category` ou `subcategoria`.
 
-### Formato de Valor (Valor):
-O parser monetário é inteligente e aceita números inteiros, decimais em formato americano ou brasileiro, com ou sem símbolos de moeda:
-- **Formatos Válidos**:
-  - `1500.00` ou `-1200.00`
-  - `1500,00` ou `-1200,00`
-  - `R$ 1.500,00` ou `R$ -1.200,00`
-  - `(150,00)` (valores entre parênteses são auto-detectados como despesas/valores negativos)
+O mapeamento pode ser corrigido manualmente antes da previa.
 
-### Formato de Tipo/Natureza:
-Quando a coluna de tipo/natureza for mapeada, o sistema reconhece:
-- Indicadores positivos como `Receita`, `Entrada`, `Crédito`, `C` e textos iniciados por `(+)`.
-- Indicadores negativos como `Despesa`, `Saída`, `Débito`, `D` e textos iniciados por `(-)`.
+### Datas
 
-Exemplos aceitos: `(+) Saldo anterior`, `(+) Salário`, `(-) Farmácia`, `(-) Supermercado`.
+Escolha o formato correto na etapa de mapeamento:
 
----
+- `DMY`: `DD/MM/AAAA` ou `DD-MM-AAAA`
+- `MDY`: `MM/DD/AAAA` ou `MM-DD-AAAA`
+- `YMD`: `AAAA-MM-DD` ou `AAAA/MM/DD`
 
-## 4. Detecção de Duplicidades e Reconciliação
+Datas ambiguas, como `06/07/2026`, dependem dessa escolha.
 
-Para evitar que você importe lançamentos repetidos, o sistema realiza uma varredura automática nos lançamentos existentes no banco de dados e sinaliza possíveis duplicatas se encontrar:
-- O **mesmo valor** (em centavos);
-- A **mesma conta** de origem (se aplicável);
-- Uma **data próxima** (intervalo de até **3 dias** para mais ou para menos).
+### Valores e Tipos
 
-> [!IMPORTANT]
-> Na tela de **Reconciliação (Passo 3)**, os itens identificados como duplicados são **desmarcados por padrão** para proteger seu saldo contra duplicações acidentais. Se desejar importá-los mesmo assim, você poderá marcá-los manualmente na lista.
+O parser aceita moeda, virgula decimal, ponto decimal, separadores de milhar e valores entre parenteses.
 
----
-
-## 5. Meios de Pagamento Aceitos
-
-Ao fazer a importação, as transações serão associadas aos meios de pagamento disponíveis. Os meios de pagamento cadastrados no sistema são:
-
-| Meio de Pagamento | Identificador Interno | Descrição/Tipo |
-| :--- | :--- | :--- |
-| **Pix** | `pm-pix` | Transferência instantânea |
-| **Dinheiro** | `pm-cash` | Dinheiro em espécie |
-| **Cartão de débito** | `pm-debit-card` | Débito em conta corrente |
-| **Cartão de crédito** | `pm-credit-card` | Lançamento em fatura |
-| **Cartão pré-pago** | `pm-prepaid-card` | Saldo recarregável |
-| **Boleto** | `pm-bank-slip` | Pagamento de fichas de compensação |
-| **Débito automático** | `pm-auto-debit` | Cobrança automática em conta |
-| **Transferência bancária/TED** | `pm-bank-transfer` | Transferências tradicionais |
-
----
-
-## 6. Categorias e Subcategorias Aceitas
-
-Na terceira etapa da importação, você poderá atribuir categorias a cada lançamento individualmente antes de salvá-los no banco. A taxonomia do sistema é estruturada da seguinte forma:
-
-### 📥 Receitas (Entradas)
-- **Trabalho**: `Salário` (Fixo), `Bônus` (Variável), `Hora extra` (Variável), `13º salário` (Extra).
-- **Rendimentos e Resgates**: `Resgate de investimento` (Extra), `Dividendos e Juros` (Variável).
-- **Outras Receitas**: `Flash alimentação` (Fixo), `Flash convênio` (Fixo), `Reembolso` (Extra), `Estorno` (Extra), `Cashback` (Variável), `Saldo anterior` (Extra).
-
-### 🔄 Movimentações Neutras (Transferências)
-- **Movimentações Internas**: `Entre minhas contas` (Variável), `Pagamento de fatura` (Fixo).
-
-### 📤 Despesas (Saídas)
-- **Moradia & Casa**: `Aluguel` (Fixo), `Condomínio` (Fixo), `Luz` (Fixo), `Gás` (Fixo), `Internet e celular` (Fixo), `Compras para casa` (Variável), `Material de limpeza` (Variável), `Manutenção e reformas` (Extra).
-- **Alimentação**: `Supermercado` (Variável), `Feira e hortifruti` (Variável), `Restaurantes` (Variável), `Delivery` (Variável), `Cafeteria e lanches` (Variável), `Bares e festas` (Variável).
-- **Transporte**: `Metrô e ônibus` (Variável), `Uber e táxi` (Variável), `Combustível e estacionamento` (Variável).
-- **Saúde e Bem-estar**: `Academia` (Fixo), `Personal` (Fixo), `Terapia` (Fixo), `Nutricionista` (Fixo), `Farmácia` (Variável), `Cosméticos` (Variável), `Estética` (Variável), `Médico e dentista` (Extra), `Hospital e exames` (Extra).
-- **Lazer e Estilo de Vida**: `Viagens` (Variável), `Cinema, teatro e shows` (Variável), `Livros e cultura` (Variável), `Assinaturas de streaming` (Fixo), `Roupas e calçados` (Variável), `Presentes` (Variável), `Outros passeios` (Variável).
-- **Educação e Desenvolvimento**: `Faculdade` (Fixo), `Cursos` (Variável).
-- **Gastos Shuri**: `Ração` (Variável), `Petiscos` (Variável), `Higiene` (Variável), `Brinquedos` (Variável), `Saúde e veterinário` (Variável).
-- **Impostos e Serviços Financeiros**: `Contabilidade` (Fixo), `Impostos (IRPF)` (Fixo), `Empréstimos Caixa` (Fixo), `Seguro Nu` (Fixo), `Apoio Uel` (Fixo), `Doação` (Variável), `Tarifas e juros` (Variável), `Anuidade cartão` (Fixo).
-- **Investimentos (Aportes)**: `Aporte em corretora` (Variável), `Reserva de emergência` (Fixo), `Poupança da Shuri` (Fixo), `Poupança da casa` (Fixo).
-
----
-
-## 7. Exemplo de Arquivo CSV Correto
-
-Abaixo está um exemplo de conteúdo estruturado que é processado e aceito com sucesso pelo aplicativo:
+Exemplos aceitos:
 
 ```csv
-Data,Descrição,Valor,Tipo
-12/06/2026,Aluguel de Junho,-1200.00,Despesa
-13/06/2026,Reembolso Viagem,350.50,Receita
-14/06/2026,Supermercado,R$ 230,50,Despesa
-15/06/2026,Salário do Mês,"R$ 4.500,00",Receita
+1500.00
+-1200.00
+1500,00
+R$ 1.500,00
+(150,00)
 ```
 
-Também é aceito CSV separado por ponto e vírgula, comum em planilhas exportadas em português:
+Na importacao geral:
 
-```csv
-Data;Lançamento;Valor;Tipo;Forma de Pagamento
-06/01/2026;saldo em conta;R$ 1.224,58;(+) Saldo anterior;Pix/Débito Nubank
-06/02/2026;farmacia antiinflamatorio;R$ 55,89;(-) Farmácia;Pix/Débito Nubank
-```
+- valor positivo vira `income` quando nao ha tipo mapeado;
+- valor negativo, sinal no fim ou parenteses vira `expense`;
+- se a coluna de tipo for mapeada, ela pode sobrescrever o fallback do sinal.
 
-Para arquivos nesse formato, se as datas estiverem no padrão americano, selecione **MM/DD/AAAA** no campo **Formato da Data** durante o mapeamento.
+Tipos reconhecidos como receita: `Receita`, `Income`, `Entrada`, `Credito`, `Credit`, `CR`, `C` e textos iniciados por `(+)`.
 
----
+Tipos reconhecidos como despesa: `Despesa`, `Expense`, `Saida`, `Debito`, `Debit`, `DB`, `D` e textos iniciados por `(-)`.
 
-## 8. Importação de Fatura de Cartão
+### Categorias
 
-A importação feita pela tela **Faturas > Importar fatura** é diferente da importação geral de lançamentos:
+A coluna de categoria e resolvida contra as subcategorias atuais do banco.
 
-- Todas as linhas entram como **despesa de cartão de crédito**.
-- O cartão é o cartão da fatura aberta na tela.
-- O mês da fatura atual é usado para filtrar as compras iniciais do arquivo.
-- Se houver parcelamento, o importador pode criar parcelas futuras automaticamente.
-- Duplicatas são desmarcadas na prévia e também são ignoradas na confirmação para evitar lançamento repetido.
+O importador tenta, nesta ordem:
 
-### CSV recomendado para fatura
+1. usar o valor como ID interno de subcategoria, se bater exatamente;
+2. encontrar uma subcategoria com o mesmo nome normalizado;
+3. encontrar a combinacao normalizada de categoria pai + subcategoria;
+4. encontrar uma subcategoria cujo nome esteja contido no texto.
 
-Use este formato quando construir a planilha manualmente:
+Sinais e palavras como `Receita`, `Despesa`, `Credito`, `Debito`, `Entrada` e `Saida` sao removidos antes da busca de categoria. Assim, valores como `(-) Farmacia` e `(+) Salario` podem funcionar como tipo e categoria quando a mesma coluna for mapeada nos dois campos.
+
+Para despesa, o resolvedor considera categorias de natureza `expense` e `transfer`. Para receita, considera `income` e `transfer`.
+
+Se nao houver correspondencia, a linha continua na previa sem categoria, e a categoria pode ser ajustada manualmente antes de confirmar.
+
+### Conta e Meio de Pagamento
+
+Na importacao geral, a conta pode vir de um padrao escolhido na tela. O codigo atual tambem le um campo `accountId` quando enviado para a API, mas a tela principal de importacao nao expoe uma coluna de conta no mapeamento.
+
+O meio de pagamento nao e inferido pelo CSV neste fluxo. Ele pode ser ajustado na etapa final de previa, inclusive em lote.
+
+### Duplicidades
+
+Na previa da importacao geral, uma linha e marcada como possivel duplicata quando encontra lancamento existente com:
+
+- mesmo valor;
+- mesma conta, quando ambas as contas estao informadas;
+- data proxima em ate 3 dias.
+
+Duplicatas ficam desmarcadas por padrao na previa. Na confirmacao, com `preventDuplicates`, a API tambem evita criar lancamento igual considerando valor, data, descricao, competencia e conta.
+
+## Importacao de Fatura de Cartao
+
+Fluxo usado pela tela **Faturas > Importar fatura**.
+
+### Regras Principais
+
+- Todas as linhas importadas entram ligadas ao cartao da fatura aberta.
+- Compras de cartao ficam sem `accountId` e sem `paymentMethodId`.
+- O mes da fatura aberta e enviado como `billMonth`.
+- A fatura importada e a fonte de verdade: compras do CSV entram no `billMonth` aberto, mesmo quando a data da compra cair fora do periodo teorico calculado pelo fechamento.
+- A competencia (`budgetMonth`) vem da fatura, nao necessariamente do mes da data da compra nem da regra automatica de fechamento.
+- Parcelas futuras podem ser criadas automaticamente.
+
+### CSV Recomendado
 
 ```csv
 Data;Descricao;Valor;Categoria;Parcela;TotalParcelas
-10/06/2026;Compra Parcelada;100,00;Roupas e calçados;2;3
-12/06/2026;Supermercado;230,45;Supermercado;;
-14/06/2026;Farmácia;58,90;Farmácia;;
+10/06/2026;Compra Parcelada;"100,00";Roupas e calcados;2;3
+12/06/2026;Supermercado;"230,45";Supermercado;;
+14/06/2026;Farmacia;"58,90";Farmacia;;
 ```
 
-Na tela de mapeamento, selecione:
+Mapeamento esperado:
 
 | Campo no app | Coluna do CSV |
 | :--- | :--- |
 | Coluna de data | `Data` |
-| Coluna de descrição | `Descricao` |
+| Coluna de descricao | `Descricao` |
 | Coluna de valor | `Valor` |
 | Coluna de categoria | `Categoria` |
 | Parcela atual | `Parcela` |
 | Total de parcelas | `TotalParcelas` |
 
-### Como o parcelamento é tratado
+Tambem e aceito usar uma coluna unica com `2/3` ou `2 de 3`. Nesse caso, selecione essa coluna em **Coluna de parcela (2/3)** e deixe **Parcela atual** e **Total de parcelas** vazios.
 
-Se uma linha vier com `Parcela = 2` e `TotalParcelas = 3`, o importador entende que a parcela `1/3` já ficou em uma fatura anterior. Ao importar a fatura atual, ele cria:
+### Valores em Fatura
+
+No fluxo de fatura:
+
+- compras normais devem vir com valor positivo;
+- estornos ou creditos na fatura devem vir negativos;
+- valor positivo vira `expense`;
+- valor negativo vira `chargeback`.
+
+O valor salvo continua positivo em centavos; o tipo carrega o sentido economico.
+
+### Parcelamento
+
+Se a linha da fatura atual vier como `2/3`, o importador cria:
 
 ```text
-Compra Parcelada (2/3) -> fatura atual
-Compra Parcelada (3/3) -> próxima fatura
+Compra (2/3) -> fatura atual
+Compra (3/3) -> proxima fatura
 ```
 
-Ele **não cria** a `1/3`, porque ela já deveria ter aparecido na fatura anterior.
+Ele nao cria a `1/3`, porque ela pertence a uma fatura anterior.
 
-Se uma linha vier com `Parcela = 1` e `TotalParcelas = 3`, ele cria:
+Se vier como `1/3`, cria:
 
 ```text
-Compra Parcelada (1/3) -> fatura atual
-Compra Parcelada (2/3) -> próxima fatura
-Compra Parcelada (3/3) -> fatura seguinte
+Compra (1/3) -> fatura atual
+Compra (2/3) -> proxima fatura
+Compra (3/3) -> fatura seguinte
 ```
 
-Para compras à vista, deixe `Parcela` e `TotalParcelas` vazios.
+O limite maximo aceito pelo parser e 48 parcelas.
 
-### Coluna combinada de parcela
+### Duplicidades em Fatura
 
-Também é aceito usar uma única coluna com `2/3` ou `2 de 3`:
+Na previa de fatura, o sistema procura duplicatas pelo mes da fatura, nao apenas pela janela de datas, porque parcelas futuras podem manter a data original da compra.
+
+Uma compra de cartao e considerada duplicata quando bate:
+
+- cartao;
+- mes da fatura;
+- descricao normalizada;
+- valor;
+- data proxima em ate 3 dias para compra avulsa.
+
+Para parcelas, a checagem tolera diferenca de ate 2 centavos no valor e nao exige a data proxima quando a descricao/parcelamento ja bate.
+
+Na confirmacao, `preventDuplicates` tambem evita recriar compras de cartao ja existentes no mesmo mes da fatura com mesmo cartao, descricao normalizada e valor compativel.
+
+## Conciliador de Extrato
+
+O conciliador em **Lancamentos > Conciliar extrato** e um fluxo diferente da importacao geral.
+
+- O CSV e lido no cliente.
+- Ele exige apenas data, descricao e valor.
+- A conta ou cartao de destino e escolhido antes da analise.
+- O backend busca candidatos com mesmo valor absoluto e status diferente de `canceled` e `reconciled`.
+- Matches com score maior ou igual a 90 sao tratados como exatos; acima de 50 como parciais.
+- Ao criar lancamento novo pelo conciliador, a subcategoria e obrigatoria.
+- Lancamentos criados ou vinculados pelo conciliador ficam com status `reconciled`.
+
+## Exemplos
+
+Importacao geral:
 
 ```csv
-Data;Descricao;Valor;Categoria;Parcela
-10/06/2026;Compra Parcelada;100,00;Roupas e calçados;2/3
-12/06/2026;Supermercado;230,45;Supermercado;
+Data;Descricao;Valor;Tipo;Categoria
+12/06/2026;Aluguel de Junho;"-1200,00";Despesa;Aluguel
+13/06/2026;Reembolso Viagem;"350,50";Receita;Reembolso
+14/06/2026;Supermercado;"-230,50";Despesa;Supermercado
+15/06/2026;Salario do Mes;"4500,00";Receita;Salario
 ```
 
-Nesse caso, na tela de mapeamento selecione:
+Fatura de cartao:
 
-| Campo no app | Coluna do CSV |
-| :--- | :--- |
-| Coluna de parcela (2/3) | `Parcela` |
-| Parcela atual | deixar vazio |
-| Total de parcelas | deixar vazio |
-
-### Duplicidades em fatura
-
-Na importação de fatura, o sistema considera duplicata quando já existe um lançamento com:
-
-- mesmo cartão;
-- mesma descrição;
-- mesmo valor;
-- mesma data;
-- mesmo mês de fatura.
-
-Isso protege principalmente o caso de reimportar a mesma fatura ou importar novamente parcelas futuras que já foram criadas antes.
+```csv
+Data;Descricao;Valor;Categoria;Parcela;TotalParcelas
+10/06/2026;Compra Parcelada;"100,00";Roupas e calcados;2;3
+12/06/2026;Supermercado;"230,45";Supermercado;;
+14/06/2026;Credito de contestacao;"-58,90";Estorno;;
+```

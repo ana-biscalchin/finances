@@ -57,6 +57,13 @@
       "when": 1782083200000,
       "tag": "0007_structured_installments",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1782226429261,
+      "tag": "0008_brown_kylun",
+      "breakpoints": true
     }
   ]
 }

@@ -18,7 +18,6 @@ import {
   Title
 } from "@mantine/core";
 
-
 import {
   IconAlertCircle,
   IconArrowDownLeft,
@@ -48,9 +47,9 @@ import {
   YAxis
 } from "recharts";
 
-
 import { formatMoney, moneyFromCents } from "@finances/domain";
 import { MonthSelector } from "../shared/MonthSelector";
+import { getErrorMessage, reportClientError } from "../shared/errors";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -101,6 +100,9 @@ interface CreditCardSummaryItem {
   dueDate: string;
   closingDate: string;
   amountCents: number;
+  futureCommittedCents: number;
+  futureInstallmentMonths: string[];
+  categoryBreakdown: { categoryId: string; categoryName: string; amountCents: number }[];
   status: "open" | "paid";
 }
 
@@ -115,6 +117,21 @@ interface CategorySpentItem {
   categoryId: string;
   categoryName: string;
   amountCents: number;
+  paymentBreakdown: PaymentBreakdownItem[];
+}
+
+interface PaymentBreakdownItem {
+  paymentMethodId: string;
+  paymentMethodName: string;
+  amountCents: number;
+}
+
+interface StackedCategoryItem {
+  categoryId?: string;
+  categoryName: string;
+  amountCents: number;
+  paymentBreakdown: PaymentBreakdownItem[];
+  [paymentMethodName: string]: string | number | PaymentBreakdownItem[] | undefined;
 }
 
 export function ReportsPage({
@@ -132,12 +149,10 @@ export function ReportsPage({
   const [timeframe, setTimeframe] = useState<string>("monthly");
   const [view, setView] = useState<"competence" | "cash">("competence");
 
-  // Options states
   const [accountsList, setAccountsList] = useState<AccountOption[]>([]);
   const [paymentMethodsList, setPaymentMethodsList] = useState<PaymentMethodOption[]>([]);
   const [categoriesList, setCategoriesList] = useState<CategoryOption[]>([]);
 
-  // Reports data states
   const [dailyData, setDailyData] = useState<DailyEvolutionItem[]>([]);
   const [cardSummaries, setCardSummaries] = useState<CreditCardSummaryItem[]>([]);
   const [annualSummary, setAnnualSummary] = useState<AnnualSummaryItem[]>([]);
@@ -146,7 +161,6 @@ export function ReportsPage({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch filter options once
   useEffect(() => {
     async function fetchOptions() {
       try {
@@ -159,14 +173,16 @@ export function ReportsPage({
         if (accRes.ok) setAccountsList(await accRes.json());
         if (pmRes.ok) setPaymentMethodsList(await pmRes.json());
         if (catRes.ok) setCategoriesList(await catRes.json());
-      } catch (e) {
-        console.error("Erro ao carregar opções de filtros:", e);
+      } catch (error) {
+        reportClientError("reports.loadFilterOptions", error);
+        setAccountsList([]);
+        setPaymentMethodsList([]);
+        setCategoriesList([]);
       }
     }
     void fetchOptions();
   }, []);
 
-  // Fetch report data when timeframe, dates, view or filters change
   const loadReportData = async () => {
     setIsLoading(true);
     setError(null);
@@ -194,7 +210,7 @@ export function ReportsPage({
         queryParams.append("year", selectedYear);
         const [annualRes, catRes] = await Promise.all([
           fetch(`${apiBaseUrl}/reports/annual-summary?${queryParams.toString()}`),
-          fetch(`${apiBaseUrl}/reports/annual-categories?${queryParams.toString()}`)
+          fetch(`${apiBaseUrl}/reports/categories-breakdown?${queryParams.toString()}`)
         ]);
 
         if (!annualRes.ok) throw new Error("Erro ao carregar sumário anual.");
@@ -204,7 +220,8 @@ export function ReportsPage({
         setCategoriesSpent(await catRes.json());
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro inesperado ao carregar dados.");
+      reportClientError("reports.loadReportData", e);
+      setError(getErrorMessage(e, "Erro inesperado ao carregar dados."));
     } finally {
       setIsLoading(false);
     }
@@ -296,16 +313,17 @@ export function ReportsPage({
     return `R$ ${(value / 100).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   };
 
-  const formatTooltipCurrency = (value: string | number | undefined | readonly (string | number)[]) => {
-    const numericValue = typeof value === "number"
-      ? value
-      : Array.isArray(value)
-        ? Number(value[0] || 0)
-        : Number(value || 0);
+  const formatTooltipCurrency = (
+    value: string | number | undefined | readonly (string | number)[]
+  ) => {
+    const numericValue =
+      typeof value === "number"
+        ? value
+        : Array.isArray(value)
+          ? Number(value[0] || 0)
+          : Number(value || 0);
     return formatMoney(moneyFromCents(numericValue));
   };
-
-
 
   return (
     <Stack gap="lg">
@@ -318,7 +336,12 @@ export function ReportsPage({
               Análise visual de fluxos de caixa, despesas por categoria e evolução financeira.
             </Text>
           </div>
-          <Tabs value={timeframe} onChange={(val) => setTimeframe(val || "monthly")} variant="pills" color="teal">
+          <Tabs
+            value={timeframe}
+            onChange={(val) => setTimeframe(val || "monthly")}
+            variant="pills"
+            color="teal"
+          >
             <Tabs.List>
               <Tabs.Tab value="monthly">Mensal</Tabs.Tab>
               <Tabs.Tab value="yearly">Anual</Tabs.Tab>
@@ -342,7 +365,9 @@ export function ReportsPage({
             <ThemeIcon variant="light" color="teal" size="sm">
               <IconFilter size={16} />
             </ThemeIcon>
-            <Text fw={700} size="sm">Filtros de Análise</Text>
+            <Text fw={700} size="sm">
+              Filtros de Análise
+            </Text>
           </Group>
 
           <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
@@ -424,7 +449,9 @@ export function ReportsPage({
       {isLoading ? (
         <Group justify="center" p="xl" h={300}>
           <Loader size="lg" color="teal" />
-          <Text size="sm" c="dimmed">Consolidando dados...</Text>
+          <Text size="sm" c="dimmed">
+            Consolidando dados...
+          </Text>
         </Group>
       ) : error ? (
         <Alert icon={<IconAlertCircle size={16} />} title="Erro" color="red" variant="light">
@@ -437,7 +464,12 @@ export function ReportsPage({
             Período:{" "}
             <Badge size="lg" color="teal" variant="light">
               {new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" })
-                .format(new Date(Number(selectedMonth.split("-")[0]), Number(selectedMonth.split("-")[1]) - 1))
+                .format(
+                  new Date(
+                    Number(selectedMonth.split("-")[0]),
+                    Number(selectedMonth.split("-")[1]) - 1
+                  )
+                )
                 .toUpperCase()}
             </Badge>
           </Title>
@@ -447,7 +479,9 @@ export function ReportsPage({
             <Card withBorder padding="md" radius="md">
               <Stack gap="xs">
                 <Group justify="space-between">
-                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">Receitas Filtradas</Text>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                    Receitas Filtradas
+                  </Text>
                   <ThemeIcon color="teal" variant="light" size="sm">
                     <IconArrowUpRight size={16} />
                   </ThemeIcon>
@@ -456,7 +490,9 @@ export function ReportsPage({
                   <Text size="xl" fw={700} c="teal">
                     {formatMoney(moneyFromCents(monthlySummary.income))}
                   </Text>
-                  <Text size="xs" c="dimmed">Total de entradas realizadas</Text>
+                  <Text size="xs" c="dimmed">
+                    Total de entradas realizadas
+                  </Text>
                 </div>
               </Stack>
             </Card>
@@ -464,7 +500,9 @@ export function ReportsPage({
             <Card withBorder padding="md" radius="md">
               <Stack gap="xs">
                 <Group justify="space-between">
-                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">Despesas Filtradas</Text>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                    Despesas Filtradas
+                  </Text>
                   <ThemeIcon color="red" variant="light" size="sm">
                     <IconArrowDownLeft size={16} />
                   </ThemeIcon>
@@ -473,7 +511,9 @@ export function ReportsPage({
                   <Text size="xl" fw={700} c="red">
                     {formatMoney(moneyFromCents(monthlySummary.expense))}
                   </Text>
-                  <Text size="xs" c="dimmed">Gastos totais (realizados + previstos)</Text>
+                  <Text size="xs" c="dimmed">
+                    Gastos totais (realizados + previstos)
+                  </Text>
                 </div>
               </Stack>
             </Card>
@@ -481,8 +521,14 @@ export function ReportsPage({
             <Card withBorder padding="md" radius="md">
               <Stack gap="xs">
                 <Group justify="space-between">
-                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">Fluxo Líquido Real</Text>
-                  <ThemeIcon color={monthlySummary.balance >= 0 ? "teal" : "red"} variant="light" size="sm">
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                    Fluxo Líquido Real
+                  </Text>
+                  <ThemeIcon
+                    color={monthlySummary.balance >= 0 ? "teal" : "red"}
+                    variant="light"
+                    size="sm"
+                  >
                     <IconScale size={16} />
                   </ThemeIcon>
                 </Group>
@@ -490,7 +536,9 @@ export function ReportsPage({
                   <Text size="xl" fw={700} c={monthlySummary.balance >= 0 ? "teal" : "red"}>
                     {formatMoney(moneyFromCents(monthlySummary.balance))}
                   </Text>
-                  <Text size="xs" c="dimmed">Saldo líquido realizado em conta</Text>
+                  <Text size="xs" c="dimmed">
+                    Saldo líquido realizado em conta
+                  </Text>
                 </div>
               </Stack>
             </Card>
@@ -508,18 +556,26 @@ export function ReportsPage({
 
               {shouldHideBalanceLine && (
                 <Alert color="yellow" variant="light" p="xs">
-                  A linha de saldo de caixa é ocultada ao aplicar filtros de Categoria ou Meio de Pagamento sem isolar uma Conta.
+                  A linha de saldo de caixa é ocultada ao aplicar filtros de Categoria ou Meio de
+                  Pagamento sem isolar uma Conta.
                 </Alert>
               )}
-
 
               <Box h={320} mt="md">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={dailyData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--mantine-color-teal-5)" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="var(--mantine-color-teal-5)" stopOpacity={0.0} />
+                        <stop
+                          offset="5%"
+                          stopColor="var(--mantine-color-teal-5)"
+                          stopOpacity={0.2}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="var(--mantine-color-teal-5)"
+                          stopOpacity={0.0}
+                        />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -578,7 +634,9 @@ export function ReportsPage({
                 <Stack gap="xs">
                   <Box>
                     <Text fw={700}>
-                      {filterCategoryId ? "Subcategorias de Despesas" : "Composição de Despesas por Categoria"}
+                      {filterCategoryId
+                        ? "Subcategorias de Despesas"
+                        : "Composição de Despesas por Categoria"}
                     </Text>
                     <Text size="xs" c="dimmed">
                       {filterCategoryId
@@ -593,7 +651,7 @@ export function ReportsPage({
                     filterAccountId={filterAccountId}
                     filterPaymentMethodId={filterPaymentMethodId}
                     filterCategoryId={filterCategoryId}
-                    filterCategoryName={categoriesList.find((c) => c.id === filterCategoryId)?.name || ""}
+                    view={view}
                   />
                 </Stack>
               </Paper>
@@ -609,22 +667,34 @@ export function ReportsPage({
                     </ThemeIcon>
                     <div>
                       <Text fw={700}>Próximos Vencimentos de Cartão</Text>
-                      <Text size="xs" c="dimmed">Faturas ativas no mês e mês subsequente.</Text>
+                      <Text size="xs" c="dimmed">
+                        Faturas ativas no mês e mês subsequente.
+                      </Text>
                     </div>
                   </Box>
 
                   <Box style={{ flexGrow: 1 }} mt="sm">
                     {cardSummaries.length === 0 ? (
-                      <Box p="xl" style={{ textAlign: "center", border: "1px dashed var(--mantine-color-gray-3)", borderRadius: "8px" }}>
-                        <Text c="dimmed" size="sm">Nenhuma fatura encontrada neste período.</Text>
+                      <Box
+                        p="xl"
+                        style={{
+                          textAlign: "center",
+                          border: "1px dashed var(--mantine-color-gray-3)",
+                          borderRadius: "8px"
+                        }}
+                      >
+                        <Text c="dimmed" size="sm">
+                          Nenhuma fatura encontrada neste período.
+                        </Text>
                       </Box>
                     ) : (
                       <Stack gap="xs">
                         {cardSummaries.map((bill) => {
                           const limitCents = bill.limitCents ?? 0;
-                          const pctUsed = limitCents > 0 ? (bill.amountCents / limitCents) * 100 : 0;
+                          const pctUsed =
+                            limitCents > 0 ? (bill.amountCents / limitCents) * 100 : 0;
                           const isPaid = bill.status === "paid";
-                          
+
                           // Format Dates nicely
                           const formattedDueDate = new Intl.DateTimeFormat("pt-BR", {
                             day: "2-digit",
@@ -632,11 +702,20 @@ export function ReportsPage({
                           }).format(new Date(bill.dueDate + "T00:00:00"));
 
                           return (
-                            <Card key={`${bill.cardId}-${bill.billMonth}`} withBorder p="xs" radius="sm">
+                            <Card
+                              key={`${bill.cardId}-${bill.billMonth}`}
+                              withBorder
+                              p="xs"
+                              radius="sm"
+                            >
                               <Group justify="space-between" wrap="nowrap">
                                 <Box>
-                                  <Text size="sm" fw={700}>{bill.cardName}</Text>
-                                  <Text size="xs" c="dimmed">Vence em: {formattedDueDate}</Text>
+                                  <Text size="sm" fw={700}>
+                                    {bill.cardName}
+                                  </Text>
+                                  <Text size="xs" c="dimmed">
+                                    Vence em: {formattedDueDate}
+                                  </Text>
                                 </Box>
                                 <Stack gap={2} align="flex-end">
                                   <Text size="sm" fw={700} c={isPaid ? "teal" : "red"}>
@@ -648,12 +727,49 @@ export function ReportsPage({
                                 </Stack>
                               </Group>
 
+                              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={6} mt="xs">
+                                <Box>
+                                  <Text size="10px" c="dimmed" tt="uppercase" fw={700}>
+                                    Parcelas futuras
+                                  </Text>
+                                  <Text size="xs" fw={600}>
+                                    {formatMoney(moneyFromCents(bill.futureCommittedCents ?? 0))}
+                                  </Text>
+                                  {bill.futureInstallmentMonths.length > 0 ? (
+                                    <Text size="10px" c="dimmed">
+                                      até {bill.futureInstallmentMonths[bill.futureInstallmentMonths.length - 1]}
+                                    </Text>
+                                  ) : null}
+                                </Box>
+                                <Box>
+                                  <Text size="10px" c="dimmed" tt="uppercase" fw={700}>
+                                    Maior categoria
+                                  </Text>
+                                  <Text size="xs" fw={600} truncate>
+                                    {bill.categoryBreakdown[0]?.categoryName ?? "Sem categoria"}
+                                  </Text>
+                                  <Text size="10px" c="dimmed">
+                                    {bill.categoryBreakdown[0]
+                                      ? formatMoney(moneyFromCents(bill.categoryBreakdown[0].amountCents))
+                                      : "Sem compras categorizadas"}
+                                  </Text>
+                                </Box>
+                              </SimpleGrid>
+
                               {limitCents > 0 && (
                                 <Stack gap={4} mt="xs">
-                                  <Progress value={pctUsed} color={pctUsed > 80 ? "red" : "blue"} size="xs" />
+                                  <Progress
+                                    value={pctUsed}
+                                    color={pctUsed > 80 ? "red" : "blue"}
+                                    size="xs"
+                                  />
                                   <Group justify="space-between">
-                                    <Text size="10px" c="dimmed">Limite utilizado: {Math.round(pctUsed)}%</Text>
-                                    <Text size="10px" c="dimmed">Total: {formatMoney(moneyFromCents(limitCents))}</Text>
+                                    <Text size="10px" c="dimmed">
+                                      Limite utilizado: {Math.round(pctUsed)}%
+                                    </Text>
+                                    <Text size="10px" c="dimmed">
+                                      Total: {formatMoney(moneyFromCents(limitCents))}
+                                    </Text>
                                   </Group>
                                 </Stack>
                               )}
@@ -677,7 +793,9 @@ export function ReportsPage({
                     </ThemeIcon>
                     <div>
                       <Text fw={700}>Participação por Meio de Pagamento</Text>
-                      <Text size="xs" c="dimmed">Proporção de gastos efetuados por meio de pagamento.</Text>
+                      <Text size="xs" c="dimmed">
+                        Proporção de gastos efetuados por meio de pagamento.
+                      </Text>
                     </div>
                   </Box>
 
@@ -730,48 +848,76 @@ export function ReportsPage({
           <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="md">
             <Card withBorder padding="md" radius="md">
               <Stack gap="xs">
-                <Text size="xs" c="dimmed" fw={700} tt="uppercase">Média Mensal de Entradas</Text>
+                <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                  Média Mensal de Entradas
+                </Text>
                 <div>
                   <Text size="xl" fw={700} c="teal">
                     {formatMoney(moneyFromCents(Math.round(annualCalculations.avgIncome)))}
                   </Text>
-                  <Text size="xs" c="dimmed">Total: {formatMoney(moneyFromCents(annualCalculations.totalIncome))}</Text>
+                  <Text size="xs" c="dimmed">
+                    Total: {formatMoney(moneyFromCents(annualCalculations.totalIncome))}
+                  </Text>
                 </div>
               </Stack>
             </Card>
 
             <Card withBorder padding="md" radius="md">
               <Stack gap="xs">
-                <Text size="xs" c="dimmed" fw={700} tt="uppercase">Média Mensal de Gastos</Text>
+                <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                  Média Mensal de Gastos
+                </Text>
                 <div>
                   <Text size="xl" fw={700} c="red">
                     {formatMoney(moneyFromCents(Math.round(annualCalculations.avgExpense)))}
                   </Text>
-                  <Text size="xs" c="dimmed">Total: {formatMoney(moneyFromCents(annualCalculations.totalExpense))}</Text>
+                  <Text size="xs" c="dimmed">
+                    Total: {formatMoney(moneyFromCents(annualCalculations.totalExpense))}
+                  </Text>
                 </div>
               </Stack>
             </Card>
 
             <Card withBorder padding="md" radius="md">
               <Stack gap="xs">
-                <Text size="xs" c="dimmed" fw={700} tt="uppercase">Taxa de Poupança Anual</Text>
+                <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                  Taxa de Poupança Anual
+                </Text>
                 <div>
                   <Text size="xl" fw={700} c={annualCalculations.savingsRate >= 0 ? "teal" : "red"}>
                     {annualCalculations.savingsRate.toFixed(1)}%
                   </Text>
-                  <Text size="xs" c="dimmed">Percentual poupado da receita</Text>
+                  <Text size="xs" c="dimmed">
+                    Percentual poupado da receita
+                  </Text>
                 </div>
               </Stack>
             </Card>
 
             <Card withBorder padding="md" radius="md">
               <Stack gap="xs">
-                <Text size="xs" c="dimmed" fw={700} tt="uppercase">Saldo Líquido Anual</Text>
+                <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                  Saldo Líquido Anual
+                </Text>
                 <div>
-                  <Text size="xl" fw={700} c={annualCalculations.totalIncome - annualCalculations.totalExpense >= 0 ? "teal" : "red"}>
-                    {formatMoney(moneyFromCents(annualCalculations.totalIncome - annualCalculations.totalExpense))}
+                  <Text
+                    size="xl"
+                    fw={700}
+                    c={
+                      annualCalculations.totalIncome - annualCalculations.totalExpense >= 0
+                        ? "teal"
+                        : "red"
+                    }
+                  >
+                    {formatMoney(
+                      moneyFromCents(
+                        annualCalculations.totalIncome - annualCalculations.totalExpense
+                      )
+                    )}
                   </Text>
-                  <Text size="xs" c="dimmed">Diferença de caixa no ano</Text>
+                  <Text size="xs" c="dimmed">
+                    Diferença de caixa no ano
+                  </Text>
                 </div>
               </Stack>
             </Card>
@@ -782,15 +928,30 @@ export function ReportsPage({
             <Stack gap="xs">
               <Box>
                 <Text fw={700}>Evolução Anual de Receitas vs Despesas</Text>
-                <Text size="xs" c="dimmed">Comparativo mensal entre entradas realizadas e saídas realizadas no ano.</Text>
+                <Text size="xs" c="dimmed">
+                  Comparativo mensal entre entradas realizadas e saídas realizadas no ano.
+                </Text>
               </Box>
 
               <Box h={320} mt="md">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={annualSummary} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                  <BarChart
+                    data={annualSummary}
+                    margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="monthLabel" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                    <YAxis tickFormatter={formatChartCurrency} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                    <XAxis
+                      dataKey="monthLabel"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis
+                      tickFormatter={formatChartCurrency}
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fontSize: 11 }}
+                    />
                     <Tooltip
                       formatter={formatTooltipCurrency}
                       contentStyle={{
@@ -800,8 +961,18 @@ export function ReportsPage({
                       }}
                     />
                     <Legend verticalAlign="top" height={36} />
-                    <Bar dataKey="incomeCents" name="Receitas" fill="var(--mantine-color-teal-6)" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="expenseCents" name="Despesas" fill="var(--mantine-color-red-6)" radius={[4, 4, 0, 0]} />
+                    <Bar
+                      dataKey="incomeCents"
+                      name="Receitas"
+                      fill="var(--mantine-color-teal-6)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="expenseCents"
+                      name="Despesas"
+                      fill="var(--mantine-color-red-6)"
+                      radius={[4, 4, 0, 0]}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </Box>
@@ -816,7 +987,9 @@ export function ReportsPage({
                 <Stack gap="xs" h="100%">
                   <Box>
                     <Text fw={700}>
-                      {filterCategoryId ? "Subcategorias de Despesas no Ano" : "Composição de Despesas no Ano por Categoria"}
+                      {filterCategoryId
+                        ? "Subcategorias de Despesas no Ano"
+                        : "Composição de Despesas no Ano por Categoria"}
                     </Text>
                     <Text size="xs" c="dimmed">
                       {filterCategoryId
@@ -825,20 +998,35 @@ export function ReportsPage({
                     </Text>
                   </Box>
 
-                  <Box style={{ flexGrow: 1, minHeight: categoriesSpent.length === 0 ? 120 : categoriesSpent.length * 36 + 60 }} mt="md">
+                  <Box
+                    style={{
+                      flexGrow: 1,
+                      minHeight:
+                        categoriesSpent.length === 0 ? 120 : categoriesSpent.length * 36 + 60
+                    }}
+                    mt="md"
+                  >
                     {categoriesSpent.length === 0 ? (
                       <Box p="xl" style={{ textAlign: "center" }}>
-                        <Text c="dimmed" size="sm">Nenhuma despesa registrada para os filtros selecionados.</Text>
+                        <Text c="dimmed" size="sm">
+                          Nenhuma despesa registrada para os filtros selecionados.
+                        </Text>
                       </Box>
                     ) : (
                       <ResponsiveContainer width="100%" height={categoriesSpent.length * 36 + 60}>
                         <BarChart
-                          data={categoriesSpent}
+                          data={buildStackedCategoryData(categoriesSpent)}
                           layout="vertical"
                           margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
                         >
                           <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                          <XAxis type="number" tickFormatter={formatChartCurrency} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                          <XAxis
+                            type="number"
+                            tickFormatter={formatChartCurrency}
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fontSize: 11 }}
+                          />
                           <YAxis
                             type="category"
                             dataKey="categoryName"
@@ -855,14 +1043,18 @@ export function ReportsPage({
                               boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
                             }}
                           />
-                          <Bar dataKey="amountCents" name="Total Gasto" fill="var(--mantine-color-red-6)" radius={[0, 4, 4, 0]} barSize={18}>
-                            {categoriesSpent.map((_, index) => (
-                              <Cell
-                                key={`cell-${index}`}
-                                fill={`var(--mantine-color-red-${Math.min(9, Math.max(5, 9 - index))})`}
-                              />
-                            ))}
-                          </Bar>
+                          <Legend verticalAlign="top" height={36} />
+                          {getPaymentMethodNames(categoriesSpent).map((paymentMethodName, index) => (
+                            <Bar
+                              key={paymentMethodName}
+                              dataKey={paymentMethodName}
+                              stackId="payment-methods"
+                              name={paymentMethodName}
+                              fill={getPaymentMethodColor(index)}
+                              radius={[0, 4, 4, 0]}
+                              barSize={18}
+                            />
+                          ))}
                         </BarChart>
                       </ResponsiveContainer>
                     )}
@@ -881,7 +1073,9 @@ export function ReportsPage({
                     </ThemeIcon>
                     <div>
                       <Text fw={700}>Participação por Meio de Pagamento no Ano</Text>
-                      <Text size="xs" c="dimmed">Proporção acumulada de gastos efetuados por meio de pagamento no ano.</Text>
+                      <Text size="xs" c="dimmed">
+                        Proporção acumulada de gastos efetuados por meio de pagamento no ano.
+                      </Text>
                     </div>
                   </Box>
 
@@ -904,43 +1098,45 @@ export function ReportsPage({
   );
 }
 
-/* ======================================================================
-   Monthly Category Chart Sub-component
-   Fetches the tree data from '/controle-mensal' to render category sums
-   for the selected month, reflecting any applied filters
-   ====================================================================== */
-interface ChartTreeNode {
-  id: string;
-  name: string;
-  nature?: string;
-  realized: number;
-  committed: number;
-  children?: ChartTreeNode[];
+function getPaymentMethodNames(items: CategorySpentItem[]) {
+  return Array.from(
+    new Set(
+      items.flatMap((item) =>
+        item.paymentBreakdown.map((paymentMethod) => paymentMethod.paymentMethodName)
+      )
+    )
+  );
 }
 
-function findCategoryNode(nodes: ChartTreeNode[], name: string): ChartTreeNode | null {
-  for (const node of nodes) {
-    if (node.name.toLowerCase() === name.toLowerCase() && node.id.startsWith("cat-")) {
-      return node;
+function buildStackedCategoryData(items: CategorySpentItem[]): StackedCategoryItem[] {
+  return items.map((item) => {
+    const row: StackedCategoryItem = {
+      categoryId: item.categoryId,
+      categoryName: item.categoryName,
+      amountCents: item.amountCents,
+      paymentBreakdown: item.paymentBreakdown
+    };
+
+    for (const paymentMethod of item.paymentBreakdown) {
+      row[paymentMethod.paymentMethodName] = paymentMethod.amountCents;
     }
-    if (node.children) {
-      const found = findCategoryNode(node.children, name);
-      if (found) return found;
-    }
-  }
-  return null;
+
+    return row;
+  });
 }
 
-function findAllCategoryNodes(nodes: ChartTreeNode[]): ChartTreeNode[] {
-  let list: ChartTreeNode[] = [];
-  for (const node of nodes) {
-    if (node.id.startsWith("cat-") && node.nature === "expense") {
-      list.push(node);
-    } else if (node.children) {
-      list = list.concat(findAllCategoryNodes(node.children));
-    }
-  }
-  return list;
+function getPaymentMethodColor(index: number) {
+  const colors = [
+    "var(--mantine-color-red-6)",
+    "var(--mantine-color-orange-5)",
+    "var(--mantine-color-blue-5)",
+    "var(--mantine-color-teal-5)",
+    "var(--mantine-color-violet-5)",
+    "var(--mantine-color-pink-5)",
+    "var(--mantine-color-cyan-5)",
+    "var(--mantine-color-grape-5)"
+  ];
+  return colors[index % colors.length];
 }
 
 function MonthlyCategoryChart({
@@ -948,81 +1144,55 @@ function MonthlyCategoryChart({
   filterAccountId,
   filterPaymentMethodId,
   filterCategoryId,
-  filterCategoryName
+  view
 }: {
   selectedMonth: string;
   filterAccountId: string;
   filterPaymentMethodId: string;
   filterCategoryId: string;
-  filterCategoryName: string;
+  view: "competence" | "cash";
 }) {
-  const [data, setData] = useState<{ name: string; amountCents: number }[]>([]);
+  const [data, setData] = useState<CategorySpentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       setIsLoading(true);
       try {
-        const queryParams = new URLSearchParams({
-          month: selectedMonth,
-          groupBy: "category"
-        });
+        const queryParams = new URLSearchParams({ month: selectedMonth });
         if (filterAccountId) queryParams.append("accountId", filterAccountId);
         if (filterPaymentMethodId) queryParams.append("paymentMethodId", filterPaymentMethodId);
+        if (filterCategoryId) queryParams.append("categoryId", filterCategoryId);
+        queryParams.append("view", view);
 
-        const res = await fetch(`${apiBaseUrl}/controle-mensal?${queryParams.toString()}`);
+        const res = await fetch(`${apiBaseUrl}/reports/categories-breakdown?${queryParams.toString()}`);
         if (!res.ok) throw new Error();
-        const resData = await res.json();
-        
-        const tree: ChartTreeNode[] = resData.tree ?? [];
-        
-        if (filterCategoryId && filterCategoryName) {
-          // Find that specific category in the tree using recursive deep search
-          const targetNode = findCategoryNode(tree, filterCategoryName);
-          if (targetNode && targetNode.children) {
-            const list = targetNode.children.map((child) => ({
-              name: child.name,
-              amountCents: child.realized + child.committed
-            }));
-            setData(list.sort((a, b) => b.amountCents - a.amountCents));
-          } else {
-            setData([]);
-          }
-        } else {
-          // If no category is selected, extract all macro-categories recursively
-          const categoryNodes = findAllCategoryNodes(tree);
-          if (categoryNodes.length > 0) {
-            const list = categoryNodes.map((n) => ({
-              name: n.name,
-              amountCents: n.realized + n.committed
-            }));
-            setData(list.sort((a, b) => b.amountCents - a.amountCents));
-          } else {
-            setData([]);
-          }
-        }
-      } catch (e) {
-        console.error("Erro ao carregar despesas mensais por categoria:", e);
+        setData(await res.json());
+      } catch (error) {
+        reportClientError("reports.monthlyCategories", error);
+        setData([]);
       } finally {
         setIsLoading(false);
       }
     }
     void loadData();
-  }, [selectedMonth, filterAccountId, filterPaymentMethodId, filterCategoryId, filterCategoryName]);
+  }, [selectedMonth, filterAccountId, filterPaymentMethodId, filterCategoryId, view]);
 
   const formatChartCurrency = (value: number) => {
     return `R$ ${(value / 100).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   };
 
-  const formatTooltipCurrency = (value: string | number | undefined | readonly (string | number)[]) => {
-    const numericValue = typeof value === "number"
-      ? value
-      : Array.isArray(value)
-        ? Number(value[0] || 0)
-        : Number(value || 0);
+  const formatTooltipCurrency = (
+    value: string | number | undefined | readonly (string | number)[]
+  ) => {
+    const numericValue =
+      typeof value === "number"
+        ? value
+        : Array.isArray(value)
+          ? Number(value[0] || 0)
+          : Number(value || 0);
     return formatMoney(moneyFromCents(numericValue));
   };
-
 
   if (isLoading) {
     return (
@@ -1035,7 +1205,9 @@ function MonthlyCategoryChart({
   if (data.length === 0) {
     return (
       <Box p="xl" style={{ textAlign: "center" }}>
-        <Text c="dimmed" size="sm">Nenhum gasto registrado para esta composição.</Text>
+        <Text c="dimmed" size="sm">
+          Nenhum gasto registrado para esta composição.
+        </Text>
       </Box>
     );
   }
@@ -1043,7 +1215,7 @@ function MonthlyCategoryChart({
   const totalSumCents = data.reduce((sum, item) => sum + item.amountCents, 0);
 
   const pieData = data.map((item) => ({
-    name: item.name,
+    name: item.categoryName,
     value: item.amountCents,
     percentage: totalSumCents > 0 ? (item.amountCents / totalSumCents) * 100 : 0
   }));
@@ -1063,11 +1235,12 @@ function MonthlyCategoryChart({
   };
 
   const formatTooltipPie = (value: string | number | undefined | readonly (string | number)[]) => {
-    const numericValue = typeof value === "number"
-      ? value
-      : Array.isArray(value)
-        ? Number(value[0] || 0)
-        : Number(value || 0);
+    const numericValue =
+      typeof value === "number"
+        ? value
+        : Array.isArray(value)
+          ? Number(value[0] || 0)
+          : Number(value || 0);
     const percentage = totalSumCents > 0 ? ((numericValue / totalSumCents) * 100).toFixed(1) : "0";
     return [`${formatMoney(moneyFromCents(numericValue))} (${percentage}%)`, "Gasto"];
   };
@@ -1080,15 +1253,21 @@ function MonthlyCategoryChart({
           <Box style={{ minHeight: 250 }}>
             <ResponsiveContainer width="100%" height={Math.max(250, data.length * 36 + 40)}>
               <BarChart
-                data={data}
+                data={buildStackedCategoryData(data)}
                 layout="vertical"
                 margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
               >
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tickFormatter={formatChartCurrency} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+                <XAxis
+                  type="number"
+                  tickFormatter={formatChartCurrency}
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 11 }}
+                />
                 <YAxis
                   type="category"
-                  dataKey="name"
+                  dataKey="categoryName"
                   tickLine={false}
                   axisLine={false}
                   tick={{ fontSize: 11 }}
@@ -1102,14 +1281,18 @@ function MonthlyCategoryChart({
                     boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
                   }}
                 />
-                <Bar dataKey="amountCents" name="Total Gasto" fill="var(--mantine-color-red-6)" radius={[0, 4, 4, 0]} barSize={18}>
-                  {data.map((_, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={`var(--mantine-color-red-${Math.min(9, Math.max(5, 9 - index))})`}
-                    />
-                  ))}
-                </Bar>
+                <Legend verticalAlign="top" height={36} />
+                {getPaymentMethodNames(data).map((paymentMethodName, index) => (
+                  <Bar
+                    key={paymentMethodName}
+                    dataKey={paymentMethodName}
+                    stackId="payment-methods"
+                    name={paymentMethodName}
+                    fill={getPaymentMethodColor(index)}
+                    radius={[0, 4, 4, 0]}
+                    barSize={18}
+                  />
+                ))}
               </BarChart>
             </ResponsiveContainer>
           </Box>
@@ -1137,16 +1320,20 @@ function MonthlyCategoryChart({
                   <Tooltip formatter={formatTooltipPie} />
                 </PieChart>
               </ResponsiveContainer>
-              
-              <div style={{
-                position: "absolute",
-                top: "50%",
-                left: "50%",
-                transform: "translate(-50%, -50%)",
-                textAlign: "center",
-                pointerEvents: "none"
-              }}>
-                <Text size="10px" c="dimmed" style={{ textTransform: "uppercase" }}>Total</Text>
+
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%, -50%)",
+                  textAlign: "center",
+                  pointerEvents: "none"
+                }}
+              >
+                <Text size="10px" c="dimmed" style={{ textTransform: "uppercase" }}>
+                  Total
+                </Text>
                 <Text fw={700} size="sm" c="red.7">
                   {formatMoney(moneyFromCents(totalSumCents))}
                 </Text>
@@ -1157,13 +1344,15 @@ function MonthlyCategoryChart({
             <SimpleGrid cols={2} spacing={8} style={{ width: "100%" }}>
               {pieData.slice(0, 6).map((item, index) => (
                 <Group key={index} gap={6} wrap="nowrap">
-                  <div style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    backgroundColor: getPieColor(index),
-                    flexShrink: 0
-                  }} />
+                  <div
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      backgroundColor: getPieColor(index),
+                      flexShrink: 0
+                    }}
+                  />
                   <Text size="xs" truncate style={{ flexGrow: 1 }}>
                     {item.name}
                   </Text>
@@ -1204,7 +1393,9 @@ function PaymentMethodsParticipationChart({
   filterCategoryId: string;
   view: "competence" | "cash";
 }) {
-  const [data, setData] = useState<{ paymentMethodId: string; paymentMethodName: string; amountCents: number }[]>([]);
+  const [data, setData] = useState<
+    { paymentMethodId: string; paymentMethodName: string; amountCents: number }[]
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -1221,11 +1412,14 @@ function PaymentMethodsParticipationChart({
         if (filterCategoryId) queryParams.append("categoryId", filterCategoryId);
         queryParams.append("view", view);
 
-        const res = await fetch(`${apiBaseUrl}/reports/payment-methods-participation?${queryParams.toString()}`);
+        const res = await fetch(
+          `${apiBaseUrl}/reports/payment-methods-participation?${queryParams.toString()}`
+        );
         if (!res.ok) throw new Error();
         setData(await res.json());
-      } catch (e) {
-        console.error("Erro ao carregar participação por meios de pagamento:", e);
+      } catch (error) {
+        reportClientError("reports.paymentMethodsParticipation", error);
+        setData([]);
       } finally {
         setIsLoading(false);
       }
@@ -1254,11 +1448,12 @@ function PaymentMethodsParticipationChart({
   };
 
   const formatTooltipPie = (value: string | number | undefined | readonly (string | number)[]) => {
-    const numericValue = typeof value === "number"
-      ? value
-      : Array.isArray(value)
-        ? Number(value[0] || 0)
-        : Number(value || 0);
+    const numericValue =
+      typeof value === "number"
+        ? value
+        : Array.isArray(value)
+          ? Number(value[0] || 0)
+          : Number(value || 0);
     const percentage = totalSumCents > 0 ? ((numericValue / totalSumCents) * 100).toFixed(1) : "0";
     return [`${formatMoney(moneyFromCents(numericValue))} (${percentage}%)`, "Gasto"];
   };
@@ -1274,7 +1469,9 @@ function PaymentMethodsParticipationChart({
   if (data.length === 0) {
     return (
       <Box p="xl" style={{ textAlign: "center" }}>
-        <Text c="dimmed" size="sm">Nenhum gasto registrado para esta composição.</Text>
+        <Text c="dimmed" size="sm">
+          Nenhum gasto registrado para esta composição.
+        </Text>
       </Box>
     );
   }
@@ -1300,16 +1497,20 @@ function PaymentMethodsParticipationChart({
             <Tooltip formatter={formatTooltipPie} />
           </PieChart>
         </ResponsiveContainer>
-        
-        <div style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          textAlign: "center",
-          pointerEvents: "none"
-        }}>
-          <Text size="10px" c="dimmed" style={{ textTransform: "uppercase" }}>Total</Text>
+
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            textAlign: "center",
+            pointerEvents: "none"
+          }}
+        >
+          <Text size="10px" c="dimmed" style={{ textTransform: "uppercase" }}>
+            Total
+          </Text>
           <Text fw={700} size="xs" c="teal.7">
             {formatMoney(moneyFromCents(totalSumCents))}
           </Text>
@@ -1319,13 +1520,15 @@ function PaymentMethodsParticipationChart({
       <SimpleGrid cols={2} spacing="xs" style={{ width: "100%" }} mt="xs">
         {pieData.slice(0, 6).map((item, index) => (
           <Group key={index} gap={6} wrap="nowrap">
-            <div style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              backgroundColor: getPieColor(index),
-              flexShrink: 0
-            }} />
+            <div
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                backgroundColor: getPieColor(index),
+                flexShrink: 0
+              }}
+            />
             <Text size="xs" truncate style={{ flexGrow: 1 }}>
               {item.name}
             </Text>

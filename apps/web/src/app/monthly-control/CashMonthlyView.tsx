@@ -13,7 +13,7 @@ import {
   Switch,
   Table,
   Text,
-  ThemeIcon,
+  ThemeIcon
 } from "@mantine/core";
 import {
   IconAlertCircle,
@@ -24,10 +24,11 @@ import {
   IconInfoCircle,
   IconTrendingDown,
   IconTrendingUp,
-  IconWallet,
+  IconWallet
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { formatMoney, moneyFromCents } from "@finances/domain";
+import { getErrorMessage, reportClientError } from "../shared/errors";
 
 import { formatBusinessDateForDisplay } from "../date-format";
 
@@ -99,9 +100,12 @@ interface CashData {
 
 function getBillStatusLabel(status: string): { label: string; color: string } {
   switch (status) {
-    case "paid": return { label: "Paga", color: "teal" };
-    case "open": return { label: "Aberta", color: "blue" };
-    default: return { label: status, color: "gray" };
+    case "paid":
+      return { label: "Paga", color: "teal" };
+    case "open":
+      return { label: "Aberta", color: "blue" };
+    default:
+      return { label: status, color: "gray" };
   }
 }
 
@@ -118,8 +122,9 @@ function getAccountTypeLabel(type: string) {
 
 function formatMonthName(yearMonth: string) {
   const [year, month] = yearMonth.split("-").map(Number);
-  return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" })
-    .format(new Date(year, month - 1, 1));
+  return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(
+    new Date(year, month - 1, 1)
+  );
 }
 
 interface CashMonthlyViewProps {
@@ -181,12 +186,15 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
       })
       .catch((e: unknown) => {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Erro inesperado.");
+          reportClientError("monthlyControl.cash.load", e);
+          setError(getErrorMessage(e));
           setIsLoading(false);
         }
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [selectedMonth]);
 
   if (isLoading) {
@@ -209,9 +217,10 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
   const pendingBills = billCommitments.filter((b) => b.status !== "paid");
   const totalPendingBills = pendingBills.reduce((s, b) => s + b.totalCents, 0);
 
-  const activeCashSummary = useBudgetSimulation && budgetSimulation
-    ? budgetSimulation.cashSummary
-    : { ...cashSummary, simulatedProjectedBalance: cashSummary.projectedBalance };
+  const activeCashSummary =
+    useBudgetSimulation && budgetSimulation
+      ? budgetSimulation.cashSummary
+      : { ...cashSummary, simulatedProjectedBalance: cashSummary.projectedBalance };
   const projectedBillMonthLabel = budgetSimulation?.simulatedCardBills[0]?.billMonth
     ? formatMonthName(budgetSimulation.simulatedCardBills[0].billMonth)
     : "próximo mês";
@@ -219,14 +228,23 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
   return (
     <Stack gap="lg">
       {/* Simulador de Caixa */}
-      <Paper withBorder radius="md" p="md" style={{ backgroundColor: "var(--mantine-color-blue-0)", borderColor: "var(--mantine-color-blue-2)" }}>
+      <Paper
+        withBorder
+        radius="md"
+        p="md"
+        style={{
+          backgroundColor: "var(--mantine-color-blue-0)",
+          borderColor: "var(--mantine-color-blue-2)"
+        }}
+      >
         <Group justify="space-between" align="center" wrap="nowrap">
           <Stack gap={2}>
             <Text fw={700} size="sm" c="blue.9">
               Simulador de Saldo por Orçamentos
             </Text>
             <Text size="xs" c="blue.8">
-              Projete o saldo final das contas e a fatura dos cartões considerando os limites de orçamento restantes (o que ainda não foi gasto no mês).
+              Projete o saldo final das contas e a fatura dos cartões considerando os limites de
+              orçamento restantes (o que ainda não foi gasto no mês).
             </Text>
           </Stack>
           <Switch
@@ -240,29 +258,38 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
       </Paper>
 
       {/* Alerta de Saldo Negativo Proativo */}
-      {useBudgetSimulation && budgetSimulation && (() => {
-        const negativeAccounts = budgetSimulation.accountSummaries.filter(
-          (acc) => acc.simulatedProjectedBalance < 0
-        );
-        if (negativeAccounts.length > 0) {
-          return (
-            <Alert
-              color="red"
-              variant="filled"
-              icon={<IconAlertCircle size={18} />}
-              title="Alerta: Projeção de Saldo Negativo"
-              radius="md"
-            >
-              Com base nos limites de orçamento definidos, as seguintes contas correntes podem terminar o mês no vermelho:{" "}
-              <strong>
-                {negativeAccounts.map((a) => `${a.name} (${formatMoney(moneyFromCents(a.simulatedProjectedBalance))})`).join(", ")}
-              </strong>
-              . Recomendamos readequar seus orçamentos ou transferir parte dos limites para o Cartão de Crédito.
-            </Alert>
+      {useBudgetSimulation &&
+        budgetSimulation &&
+        (() => {
+          const negativeAccounts = budgetSimulation.accountSummaries.filter(
+            (acc) => acc.simulatedProjectedBalance < 0
           );
-        }
-        return null;
-      })()}
+          if (negativeAccounts.length > 0) {
+            return (
+              <Alert
+                color="red"
+                variant="filled"
+                icon={<IconAlertCircle size={18} />}
+                title="Alerta: Projeção de Saldo Negativo"
+                radius="md"
+              >
+                Com base nos limites de orçamento definidos, as seguintes contas correntes podem
+                terminar o mês no vermelho:{" "}
+                <strong>
+                  {negativeAccounts
+                    .map(
+                      (a) =>
+                        `${a.name} (${formatMoney(moneyFromCents(a.simulatedProjectedBalance))})`
+                    )
+                    .join(", ")}
+                </strong>
+                . Recomendamos readequar seus orçamentos ou transferir parte dos limites para o
+                Cartão de Crédito.
+              </Alert>
+            );
+          }
+          return null;
+        })()}
 
       {/* Resumo consolidado */}
       <Paper withBorder radius="md">
@@ -294,7 +321,9 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
               <Card withBorder padding="md" radius="md">
                 <Stack gap="xs">
                   <Group justify="space-between">
-                    <Text size="xs" c="dimmed" fw={700} tt="uppercase">Saldo inicial</Text>
+                    <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                      Saldo inicial
+                    </Text>
                     <ThemeIcon variant="light" color="gray" size="sm">
                       <IconWallet size={14} />
                     </ThemeIcon>
@@ -302,14 +331,18 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                   <Text size="xl" fw={700} c={cashSummary.openingBalance >= 0 ? "teal" : "red"}>
                     {formatMoney(moneyFromCents(cashSummary.openingBalance))}
                   </Text>
-                  <Text size="xs" c="dimmed">Saldo acumulado até o início do mês</Text>
+                  <Text size="xs" c="dimmed">
+                    Saldo acumulado até o início do mês
+                  </Text>
                 </Stack>
               </Card>
 
               <Card withBorder padding="md" radius="md">
                 <Stack gap="xs">
                   <Group justify="space-between">
-                    <Text size="xs" c="dimmed" fw={700} tt="uppercase">Entradas reais</Text>
+                    <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                      Entradas reais
+                    </Text>
                     <ThemeIcon variant="light" color="teal" size="sm">
                       <IconTrendingUp size={14} />
                     </ThemeIcon>
@@ -323,7 +356,9 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
               <Card withBorder padding="md" radius="md">
                 <Stack gap="xs">
                   <Group justify="space-between">
-                    <Text size="xs" c="dimmed" fw={700} tt="uppercase">Saídas reais</Text>
+                    <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                      Saídas reais
+                    </Text>
                     <ThemeIcon variant="light" color="red" size="sm">
                       <IconTrendingDown size={14} />
                     </ThemeIcon>
@@ -337,7 +372,9 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
               <Card withBorder padding="md" radius="md">
                 <Stack gap="xs">
                   <Group justify="space-between">
-                    <Text size="xs" c="dimmed" fw={700} tt="uppercase">Saldo projetado</Text>
+                    <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                      Saldo projetado
+                    </Text>
                     <Badge
                       color={activeCashSummary.simulatedProjectedBalance >= 0 ? "teal" : "red"}
                       variant="light"
@@ -346,11 +383,17 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                       {activeCashSummary.simulatedProjectedBalance >= 0 ? "Positivo" : "Negativo"}
                     </Badge>
                   </Group>
-                  <Text size="xl" fw={700} c={activeCashSummary.simulatedProjectedBalance >= 0 ? "teal" : "red"}>
+                  <Text
+                    size="xl"
+                    fw={700}
+                    c={activeCashSummary.simulatedProjectedBalance >= 0 ? "teal" : "red"}
+                  >
                     {formatMoney(moneyFromCents(activeCashSummary.simulatedProjectedBalance))}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    {useBudgetSimulation ? "Simulado por orçamento" : `Projetado real: ${formatMoney(moneyFromCents(cashSummary.projectedBalance))}`}
+                    {useBudgetSimulation
+                      ? "Simulado por orçamento"
+                      : `Projetado real: ${formatMoney(moneyFromCents(cashSummary.projectedBalance))}`}
                   </Text>
                 </Stack>
               </Card>
@@ -375,10 +418,15 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
         >
           <div>
             <Text fw={700}>Fluxo por conta</Text>
-            <Text size="xs" c="dimmed">Entradas e saídas reais por conta bancária no mês.</Text>
+            <Text size="xs" c="dimmed">
+              Entradas e saídas reais por conta bancária no mês.
+            </Text>
           </div>
           <Group gap="xs">
-            <Badge color={activeCashSummary.simulatedProjectedBalance >= 0 ? "teal" : "red"} variant="light">
+            <Badge
+              color={activeCashSummary.simulatedProjectedBalance >= 0 ? "teal" : "red"}
+              variant="light"
+            >
               Projetado: {formatMoney(moneyFromCents(activeCashSummary.simulatedProjectedBalance))}
             </Badge>
             {balancesCollapsed ? <IconChevronDown size={20} /> : <IconChevronUp size={20} />}
@@ -399,24 +447,26 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                     <Table.Th style={{ textAlign: "right" }}>Saldo inicial</Table.Th>
                     <Table.Th style={{ textAlign: "right" }}>Entradas</Table.Th>
                     <Table.Th style={{ textAlign: "right" }}>Saídas</Table.Th>
-                    {useBudgetSimulation && <Table.Th style={{ textAlign: "right" }}>Orç. Pendente</Table.Th>}
+                    {useBudgetSimulation && (
+                      <Table.Th style={{ textAlign: "right" }}>Orç. Pendente</Table.Th>
+                    )}
                     <Table.Th style={{ textAlign: "right" }}>Saldo realizado</Table.Th>
                     <Table.Th style={{ textAlign: "right" }}>Projetado</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {accountSummaries.map((account) => {
-                    
-                    const simAcc = useBudgetSimulation && budgetSimulation
-                      ? budgetSimulation.accountSummaries.find(a => a.id === account.id)
-                      : null;
+                    const simAcc =
+                      useBudgetSimulation && budgetSimulation
+                        ? budgetSimulation.accountSummaries.find((a) => a.id === account.id)
+                        : null;
 
                     // simulatedOutflow = budget still unspent that will leave this account
                     const pendingBudgetOutflow = simAcc ? simAcc.simulatedOutflow : 0;
-                    const pendingBudgetInflow  = simAcc ? simAcc.simulatedInflow  : 0;
+                    const pendingBudgetInflow = simAcc ? simAcc.simulatedInflow : 0;
 
-                    const projectedVal = simAcc 
-                      ? simAcc.simulatedProjectedBalance 
+                    const projectedVal = simAcc
+                      ? simAcc.simulatedProjectedBalance
                       : account.projectedBalance;
 
                     return (
@@ -432,7 +482,9 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                               <IconWallet size={14} />
                             </ThemeIcon>
                             <div>
-                              <Text fw={600} size="sm">{account.name}</Text>
+                              <Text fw={600} size="sm">
+                                {account.name}
+                              </Text>
                               <Text size="xs" c="dimmed">
                                 {account.institution || getAccountTypeLabel(account.type)}
                                 {!account.isActive ? " · arquivada" : ""}
@@ -474,7 +526,9 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                         {useBudgetSimulation && (
                           <Table.Td style={{ textAlign: "right" }}>
                             {pendingBudgetOutflow === 0 && pendingBudgetInflow === 0 ? (
-                              <Text size="sm" c="dimmed">—</Text>
+                              <Text size="sm" c="dimmed">
+                                —
+                              </Text>
                             ) : (
                               <Stack gap={2} align="flex-end">
                                 {pendingBudgetOutflow > 0 && (
@@ -492,14 +546,29 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                           </Table.Td>
                         )}
                         <Table.Td style={{ textAlign: "right" }}>
-                          <Text size="sm" fw={600} c={account.realizedBalance >= 0 ? "teal" : "red"}>
+                          <Text
+                            size="sm"
+                            fw={600}
+                            c={account.realizedBalance >= 0 ? "teal" : "red"}
+                          >
                             {formatMoney(moneyFromCents(account.realizedBalance))}
                           </Text>
                         </Table.Td>
                         <Table.Td style={{ textAlign: "right" }}>
-                          <HoverCard width={320} shadow="md" withArrow openDelay={100} position="left">
+                          <HoverCard
+                            width={320}
+                            shadow="md"
+                            withArrow
+                            openDelay={100}
+                            position="left"
+                          >
                             <HoverCard.Target>
-                              <Group gap={4} justify="flex-end" style={{ cursor: "help", display: "inline-flex" }} wrap="nowrap">
+                              <Group
+                                gap={4}
+                                justify="flex-end"
+                                style={{ cursor: "help", display: "inline-flex" }}
+                                wrap="nowrap"
+                              >
                                 <Text size="sm" fw={700} c={projectedVal >= 0 ? "teal" : "red"}>
                                   {formatMoney(moneyFromCents(projectedVal))}
                                 </Text>
@@ -514,54 +583,76 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                                 <Text size="xs" fw={700} tt="uppercase" c="dimmed">
                                   Detalhamento da Projeção {useBudgetSimulation ? "(Simulada)" : ""}
                                 </Text>
-                                
+
                                 <Group justify="space-between" wrap="nowrap">
                                   <Text size="xs">Saldo realizado (atual):</Text>
-                                  <Text size="xs" fw={600} c={account.realizedBalance >= 0 ? "teal" : "red"}>
+                                  <Text
+                                    size="xs"
+                                    fw={600}
+                                    c={account.realizedBalance >= 0 ? "teal" : "red"}
+                                  >
                                     {formatMoney(moneyFromCents(account.realizedBalance))}
                                   </Text>
                                 </Group>
 
-                                {account.plannedInflow ? account.plannedInflow > 0 && (
-                                  <Group justify="space-between" wrap="nowrap">
-                                    <Text size="xs">(+) Entradas planejadas:</Text>
-                                    <Text size="xs" fw={600} c="teal">
-                                      +{formatMoney(moneyFromCents(account.plannedInflow))}
-                                    </Text>
-                                  </Group>
-                                ) : null}
+                                {account.plannedInflow
+                                  ? account.plannedInflow > 0 && (
+                                      <Group justify="space-between" wrap="nowrap">
+                                        <Text size="xs">(+) Entradas planejadas:</Text>
+                                        <Text size="xs" fw={600} c="teal">
+                                          +{formatMoney(moneyFromCents(account.plannedInflow))}
+                                        </Text>
+                                      </Group>
+                                    )
+                                  : null}
 
-                                {account.plannedOutflow ? account.plannedOutflow > 0 && (
-                                  <Group justify="space-between" wrap="nowrap">
-                                    <Text size="xs">(-) Saídas planejadas:</Text>
-                                    <Text size="xs" fw={600} c="red">
-                                      -{formatMoney(moneyFromCents(account.plannedOutflow))}
-                                    </Text>
-                                  </Group>
-                                ) : null}
+                                {account.plannedOutflow
+                                  ? account.plannedOutflow > 0 && (
+                                      <Group justify="space-between" wrap="nowrap">
+                                        <Text size="xs">(-) Saídas planejadas:</Text>
+                                        <Text size="xs" fw={600} c="red">
+                                          -{formatMoney(moneyFromCents(account.plannedOutflow))}
+                                        </Text>
+                                      </Group>
+                                    )
+                                  : null}
 
-                                {account.openCardBills ? account.openCardBills > 0 && (
-                                  <>
-                                    <Group justify="space-between" wrap="nowrap">
-                                      <Text size="xs" fw={600}>(-) Faturas em aberto:</Text>
-                                      <Text size="xs" fw={700} c="orange">
-                                        -{formatMoney(moneyFromCents(account.openCardBills))}
-                                      </Text>
-                                    </Group>
-                                    <Stack gap={2} pl="xs" style={{ borderLeft: "2px solid var(--mantine-color-orange-2)" }}>
-                                      {account.linkedBillsDetail?.map((bill, index) => (
-                                        <Group key={index} justify="space-between" wrap="nowrap">
-                                          <Text size="10px" c="dimmed">
-                                            {bill.cardName} ({bill.billMonth})
+                                {account.openCardBills
+                                  ? account.openCardBills > 0 && (
+                                      <>
+                                        <Group justify="space-between" wrap="nowrap">
+                                          <Text size="xs" fw={600}>
+                                            (-) Faturas em aberto:
                                           </Text>
-                                          <Text size="10px" fw={600} c="dimmed">
-                                            -{formatMoney(moneyFromCents(bill.amountCents))}
+                                          <Text size="xs" fw={700} c="orange">
+                                            -{formatMoney(moneyFromCents(account.openCardBills))}
                                           </Text>
                                         </Group>
-                                      ))}
-                                    </Stack>
-                                  </>
-                                ) : null}
+                                        <Stack
+                                          gap={2}
+                                          pl="xs"
+                                          style={{
+                                            borderLeft: "2px solid var(--mantine-color-orange-2)"
+                                          }}
+                                        >
+                                          {account.linkedBillsDetail?.map((bill, index) => (
+                                            <Group
+                                              key={index}
+                                              justify="space-between"
+                                              wrap="nowrap"
+                                            >
+                                              <Text size="10px" c="dimmed">
+                                                {bill.cardName} ({bill.billMonth})
+                                              </Text>
+                                              <Text size="10px" fw={600} c="dimmed">
+                                                -{formatMoney(moneyFromCents(bill.amountCents))}
+                                              </Text>
+                                            </Group>
+                                          ))}
+                                        </Stack>
+                                      </>
+                                    )
+                                  : null}
 
                                 {useBudgetSimulation && pendingBudgetInflow > 0 && (
                                   <Group justify="space-between" wrap="nowrap">
@@ -581,16 +672,35 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                                   </Group>
                                 )}
 
-                                <Group justify="space-between" wrap="nowrap" pt="xs" style={{ borderTop: "1px solid var(--mantine-color-gray-2)" }}>
-                                  <Text size="xs" fw={700}>Saldo projetado final:</Text>
+                                <Group
+                                  justify="space-between"
+                                  wrap="nowrap"
+                                  pt="xs"
+                                  style={{ borderTop: "1px solid var(--mantine-color-gray-2)" }}
+                                >
+                                  <Text size="xs" fw={700}>
+                                    Saldo projetado final:
+                                  </Text>
                                   <Text size="xs" fw={700} c={projectedVal >= 0 ? "teal" : "red"}>
                                     {formatMoney(moneyFromCents(projectedVal))}
                                   </Text>
                                 </Group>
 
                                 {projectedVal < 0 && (
-                                  <Group gap={4} wrap="nowrap" mt="xs" p={6} style={{ borderRadius: 4, backgroundColor: "var(--mantine-color-red-0)" }}>
-                                    <IconAlertTriangle size={14} color="var(--mantine-color-red-6)" />
+                                  <Group
+                                    gap={4}
+                                    wrap="nowrap"
+                                    mt="xs"
+                                    p={6}
+                                    style={{
+                                      borderRadius: 4,
+                                      backgroundColor: "var(--mantine-color-red-0)"
+                                    }}
+                                  >
+                                    <IconAlertTriangle
+                                      size={14}
+                                      color="var(--mantine-color-red-6)"
+                                    />
                                     <Text size="10px" c="red.9" fw={500}>
                                       Atenção: Saldo projetado negativo!
                                     </Text>
@@ -658,24 +768,26 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                           <ThemeIcon variant="light" color="grape" size="sm">
                             <IconCreditCard size={14} />
                           </ThemeIcon>
-                          <Text size="sm" fw={600}>{bill.cardName}</Text>
+                          <Text size="sm" fw={600}>
+                            {bill.cardName}
+                          </Text>
                         </Group>
                       </Table.Td>
                       <Table.Td>
-                        <Text size="sm" c="dimmed">{bill.billMonth}</Text>
+                        <Text size="sm" c="dimmed">
+                          {bill.billMonth}
+                        </Text>
                       </Table.Td>
                       <Table.Td>
                         <Text size="sm">{formatBusinessDateForDisplay(bill.dueDate)}</Text>
                       </Table.Td>
                       <Table.Td>
-                        <Badge color={color} variant="light" size="sm">{label}</Badge>
+                        <Badge color={color} variant="light" size="sm">
+                          {label}
+                        </Badge>
                       </Table.Td>
                       <Table.Td style={{ textAlign: "right" }}>
-                        <Text
-                          size="sm"
-                          fw={700}
-                          c={bill.status === "paid" ? "teal" : "orange"}
-                        >
+                        <Text size="sm" fw={700} c={bill.status === "paid" ? "teal" : "orange"}>
                           {formatMoney(moneyFromCents(bill.totalCents))}
                         </Text>
                       </Table.Td>
@@ -701,7 +813,8 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
             <div>
               <Text fw={700}>Projeção de faturas de {projectedBillMonthLabel}</Text>
               <Text size="xs" c="dimmed">
-                Estimativa da próxima fatura considerando compras já lançadas nesse mês de fatura e limites de orçamento restantes no cartão.
+                Estimativa da próxima fatura considerando compras já lançadas nesse mês de fatura e
+                limites de orçamento restantes no cartão.
               </Text>
             </div>
           </Group>
@@ -723,11 +836,15 @@ export function CashMonthlyView({ selectedMonth }: CashMonthlyViewProps) {
                         <ThemeIcon variant="light" color="grape" size="sm">
                           <IconCreditCard size={14} />
                         </ThemeIcon>
-                        <Text size="sm" fw={600}>{bill.cardName}</Text>
+                        <Text size="sm" fw={600}>
+                          {bill.cardName}
+                        </Text>
                       </Group>
                     </Table.Td>
                     <Table.Td style={{ textAlign: "right" }}>
-                      <Text size="sm">{formatMoney(moneyFromCents(bill.currentOpenBillCents))}</Text>
+                      <Text size="sm">
+                        {formatMoney(moneyFromCents(bill.currentOpenBillCents))}
+                      </Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: "right" }}>
                       <Text size="sm" c="orange">

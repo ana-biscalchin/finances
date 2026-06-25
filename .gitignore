@@ -3,10 +3,8 @@ dist/
 build/
 .vite/
 
-data/*.sqlite
-data/*.sqlite-*
-apps/api/data/*.sqlite
-apps/api/data/*.sqlite-*
+data/
+**/data/
 backups/
 
 :memory:

@@ -1,4 +1,4 @@
-import { createDatabaseConnection, transactions } from "@finances/database";
+import { createDatabaseConnection, paymentMethods, transactions } from "@finances/database";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -328,6 +328,220 @@ describe("reports API", () => {
         cardId: card.id,
         billMonth: "2026-06",
         amountCents: 9000
+      })
+    );
+  });
+
+  it("should break category reports down by payment method", async () => {
+    const accountRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta categoria",
+        type: "checking",
+        initialBalanceCents: 100000
+      }
+    });
+    const account = accountRes.json();
+
+    const categoryRes = await app.inject({
+      method: "POST",
+      url: "/categories",
+      payload: {
+        nature: "expense",
+        name: "Mercado"
+      }
+    });
+    const category = categoryRes.json();
+
+    const subcategoryRes = await app.inject({
+      method: "POST",
+      url: "/subcategories",
+      payload: {
+        categoryId: category.id,
+        name: "Supermercado",
+        behavior: "variable"
+      }
+    });
+    const subcategory = subcategoryRes.json();
+
+    const conn = createDatabaseConnection(databasePath);
+    conn.db
+      .insert(paymentMethods)
+      .values({ id: "pm-pix", name: "Pix", kind: "instant_transfer" })
+      .onConflictDoNothing()
+      .run();
+    conn.db
+      .insert(paymentMethods)
+      .values({ id: "pm-credit-card", name: "Cartão de crédito", kind: "credit_card" })
+      .onConflictDoNothing()
+      .run();
+    conn.sqlite.close();
+
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão categoria",
+        closingDay: 15,
+        dueDay: 20,
+        paymentAccountId: account.id
+      }
+    });
+    const card = cardRes.json();
+
+    const pixRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        accountId: account.id,
+        paymentMethodId: "pm-pix",
+        subcategoryId: subcategory.id,
+        type: "expense",
+        amountCents: 7000,
+        eventDate: "2026-06-04",
+        description: "Mercado no Pix",
+        status: "confirmed"
+      }
+    });
+    expect(pixRes.statusCode).toBe(201);
+
+    const creditRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        creditCardId: card.id,
+        subcategoryId: subcategory.id,
+        type: "expense",
+        amountCents: 11000,
+        eventDate: "2026-06-05",
+        description: "Mercado no crédito",
+        status: "confirmed"
+      }
+    });
+    expect(creditRes.statusCode).toBe(201);
+
+    const breakdownRes = await app.inject({
+      method: "GET",
+      url: "/reports/categories-breakdown?month=2026-06&view=competence"
+    });
+    expect(breakdownRes.statusCode).toBe(200);
+    const breakdown = breakdownRes.json();
+    expect(breakdown).toContainEqual(
+      expect.objectContaining({
+        categoryId: category.id,
+        categoryName: "Mercado",
+        amountCents: 18000,
+        paymentBreakdown: expect.arrayContaining([
+          expect.objectContaining({
+            paymentMethodId: "pm-credit-card",
+            paymentMethodName: "Cartão de crédito",
+            amountCents: 11000
+          }),
+          expect.objectContaining({
+            paymentMethodId: "pm-pix",
+            paymentMethodName: "Pix",
+            amountCents: 7000
+          })
+        ])
+      })
+    );
+
+    const subcategoryBreakdownRes = await app.inject({
+      method: "GET",
+      url: `/reports/categories-breakdown?year=2026&categoryId=${category.id}&view=competence`
+    });
+    expect(subcategoryBreakdownRes.statusCode).toBe(200);
+    expect(subcategoryBreakdownRes.json()).toContainEqual(
+      expect.objectContaining({
+        categoryId: subcategory.id,
+        categoryName: "Supermercado",
+        amountCents: 18000
+      })
+    );
+  });
+
+  it("should expose future installments and category composition in credit card summaries", async () => {
+    const accountRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Conta parcelas",
+        type: "checking",
+        initialBalanceCents: 100000
+      }
+    });
+    const account = accountRes.json();
+
+    const categoryRes = await app.inject({
+      method: "POST",
+      url: "/categories",
+      payload: {
+        nature: "expense",
+        name: "Eletrônicos"
+      }
+    });
+    const category = categoryRes.json();
+
+    const subcategoryRes = await app.inject({
+      method: "POST",
+      url: "/subcategories",
+      payload: {
+        categoryId: category.id,
+        name: "Notebook",
+        behavior: "extra"
+      }
+    });
+    const subcategory = subcategoryRes.json();
+
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão parcelas",
+        closingDay: 15,
+        dueDay: 20,
+        paymentAccountId: account.id
+      }
+    });
+    const card = cardRes.json();
+
+    const purchaseRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        creditCardId: card.id,
+        subcategoryId: subcategory.id,
+        type: "expense",
+        amountCents: 30000,
+        eventDate: "2026-06-05",
+        description: "Notebook parcelado",
+        status: "confirmed",
+        installmentCount: 3
+      }
+    });
+    expect(purchaseRes.statusCode).toBe(201);
+
+    const summaryRes = await app.inject({
+      method: "GET",
+      url: "/reports/credit-cards-summary?month=2026-06"
+    });
+    expect(summaryRes.statusCode).toBe(200);
+    const summary = summaryRes.json();
+    expect(summary).toContainEqual(
+      expect.objectContaining({
+        cardId: card.id,
+        billMonth: "2026-06",
+        amountCents: 10000,
+        futureCommittedCents: 20000,
+        futureInstallmentMonths: ["2026-07", "2026-08"],
+        categoryBreakdown: [
+          {
+            categoryId: category.id,
+            categoryName: "Eletrônicos",
+            amountCents: 10000
+          }
+        ]
       })
     );
   });

@@ -2,6 +2,7 @@ import {
   categories,
   createDatabaseConnection,
   creditCardBills,
+  paymentMethods,
   subcategories,
   transactions,
   installments
@@ -22,10 +23,12 @@ type ImportPreviewItem = {
   description: string;
   amountCents: number;
   type: "income" | "expense";
+  accountId?: string | null;
   creditCardId: string | null;
   budgetMonth?: string | null;
   installmentNumber?: number | null;
   installmentCount?: number | null;
+  isDuplicate?: boolean;
 };
 
 describe("transactions & account balances business rules", () => {
@@ -471,6 +474,112 @@ describe("transactions & account balances business rules", () => {
     expect(body).toContain("Conta A");
   });
 
+  it("should filter transactions explicitly by missing account, payment method and category", async () => {
+    const connection = createDatabaseConnection(databasePath);
+    connection.db
+      .insert(paymentMethods)
+      .values({ id: "pm-test-pix", name: "Pix teste", kind: "instant_transfer" })
+      .run();
+    connection.db
+      .insert(categories)
+      .values({ id: "cat-test-expense-filter", nature: "expense", name: "Despesas filtro" })
+      .run();
+    connection.db
+      .insert(subcategories)
+      .values({
+        id: "sub-test-market-filter",
+        categoryId: "cat-test-expense-filter",
+        name: "Mercado filtro",
+        behavior: "variable"
+      })
+      .run();
+    connection.sqlite.close();
+
+    const examples = [
+      {
+        description: "Sem conta",
+        accountId: null,
+        paymentMethodId: "pm-test-pix",
+        subcategoryId: "sub-test-market-filter"
+      },
+      {
+        description: "Sem forma",
+        accountId: accountAId,
+        paymentMethodId: null,
+        subcategoryId: "sub-test-market-filter"
+      },
+      {
+        description: "Sem categoria",
+        accountId: accountAId,
+        paymentMethodId: "pm-test-pix",
+        subcategoryId: null
+      },
+      {
+        description: "Completo",
+        accountId: accountAId,
+        paymentMethodId: "pm-test-pix",
+        subcategoryId: "sub-test-market-filter"
+      }
+    ];
+
+    for (const example of examples) {
+      const createRes = await app.inject({
+        method: "POST",
+        url: "/transactions",
+        payload: {
+          type: "expense",
+          description: example.description,
+          amountCents: 1000,
+          eventDate: "2026-06-12",
+          accountId: example.accountId,
+          paymentMethodId: example.paymentMethodId,
+          subcategoryId: example.subcategoryId,
+          status: "confirmed"
+        }
+      });
+      expect(createRes.statusCode).toBe(201);
+    }
+
+    const missingAccountRes = await app.inject({
+      method: "GET",
+      url: "/transactions",
+      query: { budgetMonth: "2026-06", accountId: "__missing__" }
+    });
+    expect(missingAccountRes.statusCode).toBe(200);
+    expect(missingAccountRes.json().map((tx: { description: string }) => tx.description)).toEqual([
+      "Sem conta"
+    ]);
+
+    const missingPaymentRes = await app.inject({
+      method: "GET",
+      url: "/transactions",
+      query: { budgetMonth: "2026-06", paymentMethodId: "__missing__" }
+    });
+    expect(missingPaymentRes.statusCode).toBe(200);
+    expect(missingPaymentRes.json().map((tx: { description: string }) => tx.description)).toEqual([
+      "Sem forma"
+    ]);
+
+    const missingCategoryRes = await app.inject({
+      method: "GET",
+      url: "/transactions",
+      query: { budgetMonth: "2026-06", subcategoryId: "__missing__" }
+    });
+    expect(missingCategoryRes.statusCode).toBe(200);
+    expect(missingCategoryRes.json().map((tx: { description: string }) => tx.description)).toEqual([
+      "Sem categoria"
+    ]);
+
+    const exportRes = await app.inject({
+      method: "GET",
+      url: "/transactions/export",
+      query: { budgetMonth: "2026-06", subcategoryId: "__missing__" }
+    });
+    expect(exportRes.statusCode).toBe(200);
+    expect(exportRes.body).toContain("Sem categoria");
+    expect(exportRes.body).not.toContain("Completo");
+  });
+
   it("should preview imported transactions and identify duplicates", async () => {
     const connection = createDatabaseConnection(databasePath);
     connection.db.insert(categories).values({
@@ -609,6 +718,62 @@ describe("transactions & account balances business rules", () => {
     conn.sqlite.close();
   });
 
+  it("should persist payment method selected before confirming imported transactions", async () => {
+    const setupConn = createDatabaseConnection(databasePath);
+    setupConn.db
+      .insert(paymentMethods)
+      .values({
+        id: "pm-import-test",
+        name: "Pix Import Test",
+        kind: "instant_transfer",
+        sortOrder: 1,
+        isDefault: false,
+        isActive: true
+      })
+      .run();
+    setupConn.sqlite.close();
+
+    const confirmRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-confirm",
+      payload: {
+        transactions: [
+          {
+            eventDate: "2026-06-17",
+            description: "Imported with selected payment method",
+            amountCents: 1200,
+            type: "expense",
+            accountId: accountAId,
+            paymentMethodId: "pm-import-test",
+            status: "confirmed"
+          }
+        ]
+      }
+    });
+
+    expect(confirmRes.statusCode).toBe(201);
+
+    const conn = createDatabaseConnection(databasePath);
+    const paymentMethod = conn.db
+      .select()
+      .from(paymentMethods)
+      .where(eq(paymentMethods.id, "pm-import-test"))
+      .get();
+    const imported = conn.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.description, "Imported with selected payment method"))
+      .get();
+
+    expect(paymentMethod?.name).toBe("Pix Import Test");
+    expect(imported).toMatchObject({
+      accountId: accountAId,
+      paymentMethodId: "pm-import-test",
+      amountCents: 1200
+    });
+    conn.sqlite.close();
+  });
+
   it("should import credit card CSV rows into the correct bill month", async () => {
     const cardRes = await app.inject({
       method: "POST",
@@ -719,6 +884,58 @@ describe("transactions & account balances business rules", () => {
     );
     expect(imported.every((t) => t.creditCardBillId)).toBe(true);
     conn.sqlite.close();
+  });
+
+  it("should keep single purchase rows in the opened bill month during bill import", async () => {
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Corte Variável",
+        institution: "Banco Cartão",
+        closingDay: 11,
+        dueDay: 15,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+
+    expect(cardRes.statusCode).toBe(201);
+    const cardId = cardRes.json().id as string;
+
+    const previewRes = await app.inject({
+      method: "POST",
+      url: "/transactions/import-preview",
+      payload: {
+        csvContent: [
+          "Data;Descrição;Valor",
+          "10/01/2026;Compra que o banco cobrou em fevereiro;42,90"
+        ].join("\n"),
+        mappings: {
+          eventDate: "Data",
+          description: "Descrição",
+          amount: "Valor"
+        },
+        dateFormat: "DMY",
+        defaultCreditCardId: cardId,
+        importMode: "credit_card_bill",
+        billMonth: "2026-02"
+      }
+    });
+
+    expect(previewRes.statusCode).toBe(200);
+    const preview = previewRes.json<ImportPreviewItem[]>();
+    expect(preview).toEqual([
+      expect.objectContaining({
+        eventDate: "2026-01-10",
+        description: "Compra que o banco cobrou em fevereiro",
+        amountCents: 4290,
+        type: "expense",
+        accountId: null,
+        creditCardId: cardId,
+        budgetMonth: "2026-02"
+      })
+    ]);
   });
 
   it("should expand remaining credit card bill installments from CSV columns and avoid duplicates on confirm", async () => {
@@ -1576,5 +1793,86 @@ describe("transactions & account balances business rules", () => {
       query: { month: "2026-06" }
     });
     expect(billRes2.json().totalCents).toBe(-15000);
+  });
+
+  it("should enforce paid bill constraints: block creation and deletion, but allow updates of existing details", async () => {
+    // 1. Create card
+    const cardRes = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão Bloqueio Fatura Teste",
+        institution: "Banco",
+        closingDay: 15,
+        dueDay: 10,
+        paymentAccountId: accountAId,
+        limitCents: 500000
+      }
+    });
+    const cardId = cardRes.json().id;
+
+    // 2. Fetch bill
+    const billRes1 = await app.inject({
+      method: "GET",
+      url: `/credit-cards/${cardId}/bills`,
+      query: { month: "2026-06" }
+    });
+    const billId = billRes1.json().bill.id;
+
+    // 3. Create a transaction
+    const postRes1 = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${cardId}/bills/${billId}/transactions`,
+      payload: {
+        description: "Compra inicial",
+        amountCents: 5000,
+        eventDate: "2026-06-10",
+        type: "expense"
+      }
+    });
+    expect(postRes1.statusCode).toBe(201);
+    const tx = postRes1.json();
+
+    // 4. Pay the bill
+    const payRes = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${cardId}/bills/${billId}/pay`,
+      payload: { accountId: accountAId }
+    });
+    expect(payRes.statusCode).toBe(204);
+
+    // 5. Try to create another transaction (should be blocked)
+    const postRes2 = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${cardId}/bills/${billId}/transactions`,
+      payload: {
+        description: "Compra bloqueada",
+        amountCents: 1000,
+        eventDate: "2026-06-12",
+        type: "expense"
+      }
+    });
+    expect(postRes2.statusCode).toBe(400);
+
+    // 6. Try to delete the transaction (should be blocked)
+    const deleteRes = await app.inject({
+      method: "DELETE",
+      url: `/credit-cards/${cardId}/bills/${billId}/transactions/${tx.id}`
+    });
+    expect(deleteRes.statusCode).toBe(400);
+
+    // 7. Update transaction details (date/description/category) (should succeed)
+    const putRes = await app.inject({
+      method: "PUT",
+      url: `/credit-cards/${cardId}/bills/${billId}/transactions/${tx.id}`,
+      payload: {
+        description: "Compra alterada",
+        amountCents: 6000,
+        eventDate: "2026-06-11",
+        type: "expense"
+      }
+    });
+    expect(putRes.statusCode).toBe(200);
+    expect(putRes.json().description).toBe("Compra alterada");
   });
 });

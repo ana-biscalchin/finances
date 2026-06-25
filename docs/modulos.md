@@ -23,10 +23,12 @@ Funcoes principais:
 
 - Selecionar mes de analise.
 - Ver valores planejados, realizados, comprometidos e disponiveis.
-- Agrupar por categoria ou por meio de pagamento.
+- Alternar entre regime de competencia e regime de caixa.
+- Agrupar a visao de competencia por categoria e subcategoria.
 - Editar planejamento mensal inline.
+- Editar planejamentos por subcategoria, conta/fonte e meio opcional no detalhe.
 - Separar gasto de caixa e gasto de cartao.
-- Mostrar resumo por conta.
+- Mostrar resumo por conta na visao de competencia e fluxo/saldos na visao de caixa.
 - Calcular pagamento de fatura a partir das faturas com vencimento no mes.
 
 Arquivos principais:
@@ -109,7 +111,6 @@ Arquivos principais:
 
 - `apps/api/src/modules/credit-cards.ts`
 - `apps/web/src/app/cards/BillsPage.tsx`
-- `apps/web/src/app/cards/CreditCardsPage.tsx`
 - `docs/regras-cartao.md`
 
 ### Orcamentos
@@ -119,9 +120,9 @@ Status: implementado dentro do modulo de controle mensal.
 Funcoes principais:
 
 - Criar e atualizar valores planejados por mes.
-- Planejar por subcategoria, categoria, meio de pagamento e fonte/conta.
+- Planejar por subcategoria e, quando necessario, detalhar por fonte/conta e meio de pagamento opcional.
 - Criar alocacoes combinando subcategoria + conta/carteira + meio opcional.
-- Comparar planejado vs realizado por categoria, meio de pagamento e fonte.
+- Comparar planejado vs realizado por categoria e abrir o detalhamento por fonte/metodo.
 - Copiar orcamentos de um mes para outro.
 - Remover planejamento quando o valor informado e zero.
 

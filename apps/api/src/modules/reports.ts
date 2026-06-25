@@ -3,6 +3,7 @@ import {
   categories as dbCategories,
   creditCards,
   creditCardBills,
+  installments,
   paymentMethods,
   subcategories,
   transactions,
@@ -17,7 +18,7 @@ import {
   isConsumptionExpense,
   isReportableIncome
 } from "@finances/domain";
-import { and, eq, gte, inArray, isNotNull, lt, ne, or } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNotNull, lt, ne, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
@@ -85,7 +86,8 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       // only have creditCardId + budgetMonth, without creditCardBillId.
       const billTransactions = db
         .select({
-          amountCents: transactions.amountCents
+          amountCents: transactions.amountCents,
+          subcategoryId: transactions.subcategoryId
         })
         .from(transactions)
         .where(
@@ -102,6 +104,26 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         .all();
 
       const amountCents = billTransactions.reduce((sum, t) => sum + t.amountCents, 0);
+      const categoryBreakdown = buildCategoryBreakdown(db, billTransactions);
+      const futureInstallments = db
+        .select({
+          amountCents: installments.amountCents,
+          dueMonth: installments.dueMonth,
+          transactionStatus: transactions.status
+        })
+        .from(installments)
+        .leftJoin(transactions, eq(installments.purchaseTransactionId, transactions.id))
+        .where(
+          and(
+            eq(transactions.creditCardId, bill.creditCardId),
+            gt(installments.dueMonth, bill.billMonth),
+            ne(transactions.status, "canceled")
+          )
+        )
+        .all();
+
+      const futureCommittedCents = futureInstallments.reduce((sum, item) => sum + item.amountCents, 0);
+      const futureMonths = [...new Set(futureInstallments.map((item) => item.dueMonth))].sort();
 
       summaryList.push({
         cardId: card.id,
@@ -112,11 +134,150 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         dueDate: bill.dueDate,
         closingDate: bill.closingDate || "",
         amountCents,
+        futureCommittedCents,
+        futureInstallmentMonths: futureMonths,
+        categoryBreakdown,
         status: bill.status as "open" | "paid"
       });
     }
 
     return summaryList.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  });
+
+  app.get("/reports/categories-breakdown", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    const monthStr = typeof query.month === "string" ? query.month : undefined;
+    const yearStr = typeof query.year === "string" ? query.year : undefined;
+    const accountId = typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
+    const paymentMethodId = typeof query.paymentMethodId === "string" && query.paymentMethodId ? query.paymentMethodId : undefined;
+    const categoryId = typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
+    const view = typeof query.view === "string" && query.view === "cash" ? "cash" : "competence";
+
+    if (!monthStr && !yearStr) {
+      return reply.code(400).send({ message: "Defina o mês (month) ou o ano (year) para consulta." });
+    }
+
+    const txFilters = [eq(transactions.type, "expense"), ne(transactions.status, "canceled")];
+
+    if (monthStr) {
+      try {
+        const month = assertYearMonth(monthStr);
+        txFilters.push(
+          view === "cash"
+            ? and(gte(transactions.eventDate, `${month}-01`), lt(transactions.eventDate, `${advanceMonth(month, 1)}-01`))!
+            : eq(transactions.budgetMonth, month)
+        );
+      } catch {
+        return reply.code(400).send({ message: "Mês inválido. Use o formato YYYY-MM." });
+      }
+    } else if (yearStr) {
+      if (!/^\d{4}$/.test(yearStr)) {
+        return reply.code(400).send({ message: "Ano inválido. Use o formato YYYY." });
+      }
+      const yearRange = getYearRange(yearStr);
+      txFilters.push(
+        view === "cash"
+          ? and(gte(transactions.eventDate, yearRange.startDate), lt(transactions.eventDate, yearRange.endDate))!
+          : and(gte(transactions.budgetMonth, yearRange.startMonth), lt(transactions.budgetMonth, yearRange.endMonth))!
+      );
+    }
+
+    if (accountId) {
+      txFilters.push(eq(transactions.accountId, accountId));
+    }
+    if (paymentMethodId) {
+      txFilters.push(
+        paymentMethodId === "pm-credit-card" && view === "competence"
+          ? isNotNull(transactions.creditCardId)
+          : eq(transactions.paymentMethodId, paymentMethodId)
+      );
+    }
+
+    const subcategoryRows = db
+      .select({
+        id: subcategories.id,
+        name: subcategories.name,
+        categoryId: subcategories.categoryId,
+        categoryName: dbCategories.name
+      })
+      .from(subcategories)
+      .leftJoin(dbCategories, eq(subcategories.categoryId, dbCategories.id))
+      .all();
+
+    const subById = new Map(subcategoryRows.map((row) => [row.id, row]));
+    const categorySubIds = categoryId
+      ? subcategoryRows.filter((row) => row.categoryId === categoryId).map((row) => row.id)
+      : [];
+
+    if (categoryId) {
+      if (categorySubIds.length === 0) {
+        return [];
+      }
+      txFilters.push(inArray(transactions.subcategoryId, categorySubIds));
+    }
+
+    const expenses = db
+      .select({
+        amountCents: transactions.amountCents,
+        subcategoryId: transactions.subcategoryId,
+        paymentMethodId: transactions.paymentMethodId,
+        type: transactions.type,
+        status: transactions.status,
+        creditCardId: transactions.creditCardId,
+        creditCardBillId: transactions.creditCardBillId,
+        linkedTransactionId: transactions.linkedTransactionId
+      })
+      .from(transactions)
+      .where(and(...txFilters))
+      .all();
+
+    const paymentMethodMap = getPaymentMethodMap(db);
+    const groups = new Map<string, {
+      categoryId: string;
+      categoryName: string;
+      amountCents: number;
+      paymentBreakdown: Map<string, number>;
+    }>();
+
+    for (const tx of expenses) {
+      const isExpense = view === "cash" ? isCashExpense(tx) : isConsumptionExpense(tx);
+      if (!isExpense || !tx.subcategoryId) continue;
+
+      const sub = subById.get(tx.subcategoryId);
+      if (!sub) continue;
+
+      const groupId = categoryId ? sub.id : sub.categoryId;
+      const groupName = categoryId ? sub.name : (sub.categoryName ?? "Outros");
+      const group = groups.get(groupId) ?? {
+        categoryId: groupId,
+        categoryName: groupName,
+        amountCents: 0,
+        paymentBreakdown: new Map<string, number>()
+      };
+
+      const resolvedPaymentMethodId = resolveReportPaymentMethodId(tx);
+      group.amountCents += tx.amountCents;
+      group.paymentBreakdown.set(
+        resolvedPaymentMethodId,
+        (group.paymentBreakdown.get(resolvedPaymentMethodId) ?? 0) + tx.amountCents
+      );
+      groups.set(groupId, group);
+    }
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        categoryId: group.categoryId,
+        categoryName: group.categoryName,
+        amountCents: group.amountCents,
+        paymentBreakdown: Array.from(group.paymentBreakdown.entries())
+          .map(([id, amountCents]) => ({
+            paymentMethodId: id === "null" ? "" : id,
+            paymentMethodName: getPaymentMethodName(paymentMethodMap, id),
+            amountCents
+          }))
+          .sort((a, b) => b.amountCents - a.amountCents)
+      }))
+      .sort((a, b) => b.amountCents - a.amountCents);
   });
 
   // 2. GET /reports/daily-evolution?month=YYYY-MM
@@ -621,4 +782,61 @@ function getYearRange(year: string) {
     startMonth: `${year}-01`,
     endMonth: `${nextYear}-01`
   };
+}
+
+function getPaymentMethodMap(db: DatabaseConnection["db"]) {
+  const allPaymentMethods = db.select().from(paymentMethods).all();
+  return new Map(allPaymentMethods.map((paymentMethod) => [paymentMethod.id, paymentMethod]));
+}
+
+function resolveReportPaymentMethodId(transaction: {
+  creditCardId?: string | null;
+  paymentMethodId?: string | null;
+}) {
+  return transaction.creditCardId ? "pm-credit-card" : (transaction.paymentMethodId || "null");
+}
+
+function getPaymentMethodName(
+  paymentMethodMap: ReturnType<typeof getPaymentMethodMap>,
+  paymentMethodId: string
+) {
+  if (paymentMethodId === "null") return "Geral / Sem Meio Específico";
+  return paymentMethodMap.get(paymentMethodId)?.name ?? "Meio não identificado";
+}
+
+function buildCategoryBreakdown(
+  db: DatabaseConnection["db"],
+  billTransactions: { amountCents: number; subcategoryId: string | null }[]
+) {
+  const subcategoryRows = db
+    .select({
+      id: subcategories.id,
+      categoryId: subcategories.categoryId,
+      categoryName: dbCategories.name
+    })
+    .from(subcategories)
+    .leftJoin(dbCategories, eq(subcategories.categoryId, dbCategories.id))
+    .all();
+  const subcategoryMap = new Map(subcategoryRows.map((row) => [row.id, row]));
+  const categorySums = new Map<string, { categoryName: string; amountCents: number }>();
+
+  for (const transaction of billTransactions) {
+    if (!transaction.subcategoryId) continue;
+    const subcategory = subcategoryMap.get(transaction.subcategoryId);
+    if (!subcategory) continue;
+    const current = categorySums.get(subcategory.categoryId) ?? {
+      categoryName: subcategory.categoryName ?? "Outros",
+      amountCents: 0
+    };
+    current.amountCents += transaction.amountCents;
+    categorySums.set(subcategory.categoryId, current);
+  }
+
+  return Array.from(categorySums.entries())
+    .map(([categoryId, value]) => ({
+      categoryId,
+      categoryName: value.categoryName,
+      amountCents: value.amountCents
+    }))
+    .sort((a, b) => b.amountCents - a.amountCents);
 }

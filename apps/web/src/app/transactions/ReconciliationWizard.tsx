@@ -28,6 +28,7 @@ import {
 } from "@tabler/icons-react";
 import { useState, useMemo, useEffect } from "react";
 import { formatMoney, moneyFromCents } from "@finances/domain";
+import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
 
 type Account = {
   id: string;
@@ -98,7 +99,14 @@ type Props = {
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
-export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, creditCards, categories }: Props) {
+export function ReconciliationWizard({
+  isOpen,
+  onClose,
+  onSuccess,
+  accounts,
+  creditCards,
+  categories
+}: Props) {
   const [step, setStep] = useState<1 | 2>(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -204,7 +212,9 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
       // Parse CSV into rows on client first
       const rows = parseCsvToRows(csvTextContent, mappings, dateFormat);
       if (rows.length === 0) {
-        throw new Error("Nenhuma linha válida encontrada no CSV. Verifique o mapeamento das colunas.");
+        throw new Error(
+          "Nenhuma linha válida encontrada no CSV. Verifique o mapeamento das colunas."
+        );
       }
 
       const payload = {
@@ -220,8 +230,7 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
       });
 
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.message || "Erro ao consultar matches no backend.");
+        throw new Error(await getResponseError(response, "Erro ao consultar matches no backend."));
       }
 
       const results = (await response.json()) as MatchResult[];
@@ -255,7 +264,8 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
       setSelectedItemIndex(0);
       setStep(2);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro desconhecido.");
+      reportClientError("reconciliation.preview", err);
+      setError(getErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -271,7 +281,8 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
 
       // Basic validation: ensure all "create" actions have subcategory
       const missingCategory = resolutionList.some(
-        (res) => res.action === "create" && (!res.newTransaction || !res.newTransaction.subcategoryId)
+        (res) =>
+          res.action === "create" && (!res.newTransaction || !res.newTransaction.subcategoryId)
       );
 
       if (missingCategory) {
@@ -291,21 +302,27 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
       });
 
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.message || "Erro ao enviar resoluções de conciliação.");
+        throw new Error(
+          await getResponseError(response, "Erro ao enviar resoluções de conciliação.")
+        );
       }
 
       onSuccess();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro inesperado.");
+      reportClientError("reconciliation.confirm", err);
+      setError(getErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
   };
 
   // Update single resolution action
-  const updateAction = (index: number, action: "match" | "create" | "ignore", extra?: Partial<Resolution>) => {
+  const updateAction = (
+    index: number,
+    action: "match" | "create" | "ignore",
+    extra?: Partial<Resolution>
+  ) => {
     setResolutions((prev) => {
       const current = prev[index];
       let newTransaction = current.newTransaction;
@@ -369,7 +386,9 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
   // Helper stats
   const stats = useMemo(() => {
     if (previewItems.length === 0) return { exact: 0, soft: 0, none: 0 };
-    let exact = 0, soft = 0, none = 0;
+    let exact = 0,
+      soft = 0,
+      none = 0;
     previewItems.forEach((item) => {
       if (item.status === "exact_match") exact++;
       else if (item.status === "soft_match") soft++;
@@ -431,7 +450,10 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
                   placeholder="Selecione o cartão"
                   value={targetId}
                   onChange={(val) => setTargetId(val || "")}
-                  data={activeCards.map((c) => ({ value: c.id, label: c.institution ? `${c.name} (${c.institution})` : c.name }))}
+                  data={activeCards.map((c) => ({
+                    value: c.id,
+                    label: c.institution ? `${c.name} (${c.institution})` : c.name
+                  }))}
                 />
               )}
             </SimpleGrid>
@@ -554,8 +576,12 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
                         radius="sm"
                         style={{
                           cursor: "pointer",
-                          backgroundColor: isSelected ? "var(--mantine-color-teal-light)" : "transparent",
-                          borderColor: isSelected ? "var(--mantine-color-teal-filled)" : "var(--mantine-color-default-border)"
+                          backgroundColor: isSelected
+                            ? "var(--mantine-color-teal-light)"
+                            : "transparent",
+                          borderColor: isSelected
+                            ? "var(--mantine-color-teal-filled)"
+                            : "var(--mantine-color-default-border)"
                         }}
                         onClick={() => setSelectedItemIndex(idx)}
                       >
@@ -570,7 +596,8 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
                           </Box>
                           <Stack gap={2} align="flex-end">
                             <Text fw={700} size="sm" color={amount < 0 ? "red" : "green"}>
-                              {amount < 0 ? "-" : "+"} {formatMoney(moneyFromCents(Math.abs(amount)))}
+                              {amount < 0 ? "-" : "+"}{" "}
+                              {formatMoney(moneyFromCents(Math.abs(amount)))}
                             </Text>
                             <Badge color={badgeColor} size="xs" variant="filled">
                               {badgeLabel}
@@ -591,7 +618,10 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
                   <Stack gap="md">
                     <Group justify="space-between">
                       <Title order={5}>Resolução do Item</Title>
-                      <Badge size="lg" color={selectedItem.csvRow.amountCents < 0 ? "red" : "green"}>
+                      <Badge
+                        size="lg"
+                        color={selectedItem.csvRow.amountCents < 0 ? "red" : "green"}
+                      >
                         {formatMoney(moneyFromCents(Math.abs(selectedItem.csvRow.amountCents)))}
                       </Badge>
                     </Group>
@@ -653,8 +683,12 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
                               radius="sm"
                               style={{
                                 cursor: "pointer",
-                                borderColor: isBest ? "var(--mantine-color-green-filled)" : "var(--mantine-color-default-border)",
-                                backgroundColor: isBest ? "var(--mantine-color-green-light)" : "transparent"
+                                borderColor: isBest
+                                  ? "var(--mantine-color-green-filled)"
+                                  : "var(--mantine-color-default-border)",
+                                backgroundColor: isBest
+                                  ? "var(--mantine-color-green-light)"
+                                  : "transparent"
                               }}
                               onClick={() =>
                                 updateAction(selectedItemIndex, "match", {
@@ -702,7 +736,9 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
                           label="Observações/Notas (Opcional)"
                           placeholder="Notas da transação"
                           value={customNotes}
-                          onChange={(e) => handleUpdateCustomTransaction(customSubcategoryId, e.target.value)}
+                          onChange={(e) =>
+                            handleUpdateCustomTransaction(customSubcategoryId, e.target.value)
+                          }
                         />
                       </Stack>
                     )}
@@ -710,7 +746,8 @@ export function ReconciliationWizard({ isOpen, onClose, onSuccess, accounts, cre
                     {/* IGNORE DETAILS */}
                     {selectedResolution?.action === "ignore" && (
                       <Alert mt="sm" color="red" icon={<IconTrash size={16} />}>
-                        Esta linha do extrato será descartada e nenhuma alteração será feita no sistema.
+                        Esta linha do extrato será descartada e nenhuma alteração será feita no
+                        sistema.
                       </Alert>
                     )}
                   </Stack>

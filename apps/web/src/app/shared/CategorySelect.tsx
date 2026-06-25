@@ -1,4 +1,13 @@
-import { Select, Badge, Box, type OptionsFilter, type ComboboxParsedItem, type ComboboxItem } from "@mantine/core";
+import {
+  Select,
+  Badge,
+  Box,
+  Stack,
+  Text,
+  type OptionsFilter,
+  type ComboboxParsedItem,
+  type ComboboxItem
+} from "@mantine/core";
 import { useState } from "react";
 import { buildCategoryGroups, renderCategoryOption, type SharedCategory } from "./transaction-ui";
 import { getCategoryColor } from "@finances/domain";
@@ -6,39 +15,24 @@ import { getCategoryColor } from "@finances/domain";
 const emptySelectValue = "__none__";
 
 interface CategorySelectProps {
-  /** Lista de categorias carregada da API */
   categories: SharedCategory[];
-  /** Valor atual (subcategoryId ou emptySelectValue) */
   value: string;
-  /** Chamado quando o valor muda */
   onChange: (value: string) => void;
-  /** Label do campo (default: "Categoria") */
   label?: string;
-  /** Placeholder quando nenhum item está selecionado */
   placeholder?: string;
-  /** Texto da opção "nenhum" inserida no topo da lista */
   emptyOptionLabel?: string;
-  /** Se true, adiciona opção vazia no topo. Default: true */
   includeEmpty?: boolean;
-  /** Filtra apenas categorias com estas naturezas */
   filterNatures?: string[];
-  /** Torna o campo obrigatório */
   required?: boolean;
-  /** Desabilita o campo */
   disabled?: boolean;
-  /** Tamanho Mantine do campo */
   size?: "xs" | "sm" | "md" | "lg";
-  /** Variant Mantine */
   variant?: "default" | "filled" | "unstyled";
-  /** Estilos extras passados para o Select interno */
   styles?: React.ComponentProps<typeof Select>["styles"];
-  /** Propriedades extras do Combobox/Select interno */
   comboboxProps?: React.ComponentProps<typeof Select>["comboboxProps"];
-  /** Chamado quando o dropdown fecha */
   onDropdownClose?: () => void;
+  extraOptions?: Array<{ value: string; label: string }>;
 }
 
-/** Normaliza texto para comparação: sem acento, minúsculo, sem espaços extras */
 function normalize(str: string | undefined | null): string {
   if (!str) return "";
   return str
@@ -48,13 +42,6 @@ function normalize(str: string | undefined | null): string {
     .trim();
 }
 
-/**
- * Filtro customizado para CategorySelect.
- * Retorna as opções que contenham o termo e ordena:
- * 1. Prefixo do nome da subcategoria
- * 2. Prefixo do nome da categoria pai (grupo)
- * 3. Substring em qualquer posição
- */
 const categoryFilter: OptionsFilter = ({ options, search }) => {
   const q = normalize(search);
   if (!q) return options;
@@ -83,7 +70,7 @@ const categoryFilter: OptionsFilter = ({ options, search }) => {
       if (scored.length > 0) {
         result.push({
           group: item.group,
-          items: scored.map((x) => x.opt),
+          items: scored.map((x) => x.opt)
         });
       }
     } else {
@@ -113,15 +100,16 @@ export function CategorySelect({
   styles,
   comboboxProps,
   onDropdownClose,
+  extraOptions = []
 }: CategorySelectProps) {
   const [searchValue, setSearchValue] = useState("");
 
   const data = [
     ...(includeEmpty ? [{ value: emptySelectValue, label: emptyOptionLabel }] : []),
-    ...buildCategoryGroups(categories, filterNatures),
+    ...extraOptions,
+    ...buildCategoryGroups(categories, filterNatures)
   ];
 
-  // Label amigável para mostrar no input quando há um valor selecionado
   const selectedLabel = (() => {
     for (const item of data) {
       if ("items" in item) {
@@ -145,11 +133,9 @@ export function CategorySelect({
       searchValue={searchValue}
       onSearchChange={setSearchValue}
       onFocus={() => {
-        // Limpa o searchValue ao focar para permitir digitação imediata
         setSearchValue("");
       }}
       onBlur={() => {
-        // Restaura o label selecionado quando perde o foco (sem alterar o value)
         setSearchValue(selectedLabel ?? "");
       }}
       renderOption={renderCategoryOption}
@@ -171,6 +157,7 @@ interface QuickCategoryEditProps {
   onChange: (value: string) => void;
   filterNatures?: string[];
   emptyOptionLabel?: string;
+  disabled?: boolean;
 }
 
 export function QuickCategoryEdit({
@@ -179,21 +166,41 @@ export function QuickCategoryEdit({
   onChange,
   filterNatures,
   emptyOptionLabel = "Sem categoria",
+  disabled
 }: QuickCategoryEditProps) {
   const [isEditing, setIsEditing] = useState(false);
 
-  // Find subcategory name and parent category color
   const subcategory = categories
     .flatMap((c) =>
       c.subcategories.map((sub) => ({
         ...sub,
         categoryId: c.id,
+        categoryName: c.name
       }))
     )
     .find((sub) => sub.id === value);
 
   const displayLabel = subcategory ? subcategory.name : emptyOptionLabel;
   const badgeColor = subcategory ? getCategoryColor(subcategory.categoryId) : "gray";
+  const categoryLabel = subcategory?.categoryName ?? "Sem categoria";
+
+  if (disabled) {
+    return (
+      <Stack gap={3} style={{ maxWidth: "100%" }}>
+        <Text size="sm" fw={600} truncate="end">
+          {displayLabel}
+        </Text>
+        <Badge
+          variant="light"
+          color={badgeColor}
+          size="xs"
+          style={{ alignSelf: "flex-start", maxWidth: "100%", textTransform: "none" }}
+        >
+          {categoryLabel}
+        </Badge>
+      </Stack>
+    );
+  }
 
   if (isEditing) {
     return (
@@ -218,14 +225,15 @@ export function QuickCategoryEdit({
   }
 
   return (
-    <Badge
-      variant="light"
-      color={badgeColor}
-      size="sm"
+    <Stack
+      gap={3}
       role="button"
       tabIndex={0}
       title="Clique para editar a categoria"
-      style={{ cursor: "pointer", textTransform: "none" }}
+      style={{
+        cursor: "pointer",
+        maxWidth: "100%"
+      }}
       onClick={() => setIsEditing(true)}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
@@ -234,7 +242,17 @@ export function QuickCategoryEdit({
         }
       }}
     >
-      {displayLabel}
-    </Badge>
+      <Text size="sm" fw={600} truncate="end">
+        {displayLabel}
+      </Text>
+      <Badge
+        variant="light"
+        color={badgeColor}
+        size="xs"
+        style={{ alignSelf: "flex-start", maxWidth: "100%", textTransform: "none" }}
+      >
+        {categoryLabel}
+      </Badge>
+    </Stack>
   );
 }

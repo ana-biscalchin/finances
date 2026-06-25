@@ -145,19 +145,13 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
     const allCards = db.select().from(dbCreditCards).all();
     const allAccounts = db.select().from(dbAccounts).all();
 
-    const monthBudgets = db
-      .select()
-      .from(budgets)
-      .where(eq(budgets.budgetMonth, month))
-      .all();
+    const monthBudgets = db.select().from(budgets).where(eq(budgets.budgetMonth, month)).all();
 
     const monthTransactions = db
       .select()
       .from(dbTransactions)
       .where(eq(dbTransactions.budgetMonth, month))
       .all();
-
-
 
     const categoryMap = new Map(allCategories.map((c) => [c.id, c]));
     const subcategoryMap = new Map(allSubcategories.map((s) => [s.id, s]));
@@ -177,27 +171,33 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
     const billsDueInMonth = db
       .select()
       .from(dbCreditCardBills)
-      .where(and(gte(dbCreditCardBills.dueDate, `${month}-01`), lt(dbCreditCardBills.dueDate, nextMonthStart)))
+      .where(
+        and(
+          gte(dbCreditCardBills.dueDate, `${month}-01`),
+          lt(dbCreditCardBills.dueDate, nextMonthStart)
+        )
+      )
       .all();
 
     const billIds = billsDueInMonth.map((b) => b.id);
-    const billPayments = billIds.length > 0
-      ? db
-          .select({
-            creditCardBillId: dbTransactions.creditCardBillId,
-            paymentMethodId: dbTransactions.paymentMethodId,
-          })
-          .from(dbTransactions)
-          .where(
-            and(
-              inArray(dbTransactions.creditCardBillId, billIds),
-              eq(dbTransactions.type, "expense"),
-              isNull(dbTransactions.creditCardId),
-              ne(dbTransactions.status, "canceled")
+    const billPayments =
+      billIds.length > 0
+        ? db
+            .select({
+              creditCardBillId: dbTransactions.creditCardBillId,
+              paymentMethodId: dbTransactions.paymentMethodId
+            })
+            .from(dbTransactions)
+            .where(
+              and(
+                inArray(dbTransactions.creditCardBillId, billIds),
+                eq(dbTransactions.type, "expense"),
+                isNull(dbTransactions.creditCardId),
+                ne(dbTransactions.status, "canceled")
+              )
             )
-          )
-          .all()
-      : [];
+            .all()
+        : [];
 
     const billPmSums = new Map<string, { realized: number; committed: number }>();
     const billTotalCentsMap = new Map<string, number>();
@@ -206,9 +206,7 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
 
     function getBillPaymentMethodId(bill: typeof dbCreditCardBills.$inferSelect): string | null {
       if (bill.status === "paid") {
-        const paymentTransaction = billPayments.find(
-          (t) => t.creditCardBillId === bill.id
-        );
+        const paymentTransaction = billPayments.find((t) => t.creditCardBillId === bill.id);
         if (paymentTransaction?.paymentMethodId) return paymentTransaction.paymentMethodId;
       }
 
@@ -260,7 +258,10 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
     const UNCATEGORIZED_SUB_INCOME_ID = "virtual-sub-uncategorized-income";
     const UNCATEGORIZED_SUB_EXPENSE_ID = "virtual-sub-uncategorized-expense";
 
-    function getSubcategoryDetails(subId: string, defaultNature: "income" | "expense" | "transfer") {
+    function getSubcategoryDetails(
+      subId: string,
+      defaultNature: "income" | "expense" | "transfer"
+    ) {
       if (subId === UNCATEGORIZED_SUB_INCOME_ID) {
         return {
           subName: "Sem subcategoria",
@@ -297,13 +298,10 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       };
     }
 
-
-
     function getFirstSubIdForCategory(catId: string): string | null {
       const sub = allSubcategories.find((s) => s.categoryId === catId && s.isActive);
       return sub?.id ?? null;
     }
-
 
     function calculateAvailable(
       nature: "income" | "expense" | "mixed" | "transfer",
@@ -341,15 +339,10 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       .select({
         accountId: dbTransactions.accountId,
         type: dbTransactions.type,
-        amountCents: dbTransactions.amountCents,
+        amountCents: dbTransactions.amountCents
       })
       .from(dbTransactions)
-      .where(
-        and(
-          lt(dbTransactions.eventDate, monthStart),
-          ne(dbTransactions.status, "canceled")
-        )
-      )
+      .where(and(lt(dbTransactions.eventDate, monthStart), ne(dbTransactions.status, "canceled")))
       .all();
 
     const currentMonthTransactions = db
@@ -366,9 +359,7 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
 
     const accountSummaries: AccountMonthlySummary[] = allAccounts
       .map((account) => {
-        const accountPastTransactions = pastTx.filter(
-          (t) => t.accountId === account.id
-        );
+        const accountPastTransactions = pastTx.filter((t) => t.accountId === account.id);
         const accountCurrentTransactions = currentMonthTransactions.filter(
           (t) => t.accountId === account.id
         );
@@ -386,7 +377,8 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
         for (const transaction of accountCurrentTransactions) {
           const delta = getAccountDelta(transaction);
 
-          const isRealized = transaction.status === "confirmed" || transaction.status === "reconciled";
+          const isRealized =
+            transaction.status === "confirmed" || transaction.status === "reconciled";
           const isPlanned = transaction.status === "planned";
 
           if (isRealized && delta > 0) {
@@ -401,7 +393,12 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
         }
 
         let openCardBills = 0;
-        const linkedBillsDetail: { cardName: string; billMonth: string; amountCents: number; dueDate: string }[] = [];
+        const linkedBillsDetail: {
+          cardName: string;
+          billMonth: string;
+          amountCents: number;
+          dueDate: string;
+        }[] = [];
         const linkedCards: string[] = [];
 
         // Find active cards linked to this account
@@ -479,18 +476,20 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
           billMonth: bill.billMonth,
           dueDate: bill.dueDate,
           status: bill.status,
-          totalCents,
+          totalCents
         };
       });
 
       // --- CÁLCULO DE SIMULAÇÃO DE ORÇAMENTO ---
-      const primaryAccount = allAccounts.find((a) => a.isPrimary && a.isActive) ||
+      const primaryAccount =
+        allAccounts.find((a) => a.isPrimary && a.isActive) ||
         allAccounts.find((a) => a.type === "checking" && a.isActive) ||
         allAccounts[0];
 
       const benefitAccount = allAccounts.find((a) => a.type === "benefit" && a.isActive);
 
-      const defaultCard = allCards.find((c) => c.isDefault && c.isActive) ||
+      const defaultCard =
+        allCards.find((c) => c.isDefault && c.isActive) ||
         allCards.find((c) => c.isActive) ||
         allCards[0];
 
@@ -499,7 +498,8 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       let simulatedCardRemaining = 0;
 
       for (const b of monthBudgets) {
-        const subId = b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
+        const subId =
+          b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
         if (!subId) continue;
 
         const details = getSubcategoryDetails(subId, "expense");
@@ -520,7 +520,7 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
         });
 
         const realizedSum = realizedTxs.reduce((sum, t) => {
-          const sign = (t.type === "refund" || t.type === "chargeback") ? -1 : 1;
+          const sign = t.type === "refund" || t.type === "chargeback" ? -1 : 1;
           return sum + t.amountCents * sign;
         }, 0);
         const remainingAmount = Math.max(0, budgetedAmount - realizedSum);
@@ -532,16 +532,25 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
             } else if (b.paymentMethodId === "pm-prepaid-card") {
               const acc = benefitAccount || primaryAccount;
               if (acc) {
-                accountSimulatedOutflowMap.set(acc.id, (accountSimulatedOutflowMap.get(acc.id) ?? 0) + remainingAmount);
+                accountSimulatedOutflowMap.set(
+                  acc.id,
+                  (accountSimulatedOutflowMap.get(acc.id) ?? 0) + remainingAmount
+                );
               }
             } else {
               if (primaryAccount) {
-                accountSimulatedOutflowMap.set(primaryAccount.id, (accountSimulatedOutflowMap.get(primaryAccount.id) ?? 0) + remainingAmount);
+                accountSimulatedOutflowMap.set(
+                  primaryAccount.id,
+                  (accountSimulatedOutflowMap.get(primaryAccount.id) ?? 0) + remainingAmount
+                );
               }
             }
           } else if (details.nature === "income") {
             if (primaryAccount) {
-              accountSimulatedInflowMap.set(primaryAccount.id, (accountSimulatedInflowMap.get(primaryAccount.id) ?? 0) + remainingAmount);
+              accountSimulatedInflowMap.set(
+                primaryAccount.id,
+                (accountSimulatedInflowMap.get(primaryAccount.id) ?? 0) + remainingAmount
+              );
             }
           }
         }
@@ -558,9 +567,16 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
         };
       });
 
-      const totalSimulatedOutflow = Array.from(accountSimulatedOutflowMap.values()).reduce((a, b) => a + b, 0);
-      const totalSimulatedInflow = Array.from(accountSimulatedInflowMap.values()).reduce((a, b) => a + b, 0);
-      const simulatedProjectedBalance = totalProjectedBalance - totalSimulatedOutflow + totalSimulatedInflow;
+      const totalSimulatedOutflow = Array.from(accountSimulatedOutflowMap.values()).reduce(
+        (a, b) => a + b,
+        0
+      );
+      const totalSimulatedInflow = Array.from(accountSimulatedInflowMap.values()).reduce(
+        (a, b) => a + b,
+        0
+      );
+      const simulatedProjectedBalance =
+        totalProjectedBalance - totalSimulatedOutflow + totalSimulatedInflow;
 
       const projectedBillMonth = advanceMonth(month, 1);
       const projectedBillTransactions = db
@@ -598,7 +614,7 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
           realizedInflow: totalRealizedInflow,
           realizedOutflow: totalRealizedOutflow,
           realizedBalance: totalRealizedBalance,
-          projectedBalance: totalProjectedBalance,
+          projectedBalance: totalProjectedBalance
         },
         accountSummaries,
         billCommitments,
@@ -632,14 +648,14 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       }
     };
 
-    // groupBy === "category"
     const categoryAccumulator = new Map<string, Accumulator>();
 
     for (const sub of allSubcategories) {
       if (!sub.isActive) continue;
       const cat = categoryMap.get(sub.categoryId);
       if (!cat || !cat.isActive) continue;
-      const nature = cat.nature === "income" ? "income" : cat.nature === "transfer" ? "transfer" : "expense";
+      const nature =
+        cat.nature === "income" ? "income" : cat.nature === "transfer" ? "transfer" : "expense";
       const catName = cat.name;
       const key = `${nature}|${sub.behavior}|${catName}|${sub.id}`;
       categoryAccumulator.set(key, {
@@ -671,7 +687,8 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
     }
 
     for (const b of monthBudgets) {
-      const subId = b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
+      const subId =
+        b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
       if (!subId) continue;
       const key = getAccumulatorKey(subId, "expense");
       const acc = categoryAccumulator.get(key)!;
@@ -685,7 +702,8 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
     // Per-subcategory breakdown by source & payment method (budgets)
     const subBudgetByMethod = new Map<string, Map<string, number>>();
     for (const b of monthBudgets) {
-      const subId = b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
+      const subId =
+        b.subcategoryId || (b.categoryId ? getFirstSubIdForCategory(b.categoryId) : null);
       if (!subId) continue;
       if (!subBudgetByMethod.has(subId)) subBudgetByMethod.set(subId, new Map());
 
@@ -708,8 +726,11 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
 
     for (const t of monthTransactions) {
       if (t.status === "canceled") continue;
-      const subId = t.subcategoryId ?? (t.type === "income" ? UNCATEGORIZED_SUB_INCOME_ID : UNCATEGORIZED_SUB_EXPENSE_ID);
-      const defaultNature = t.type === "income" ? "income" : t.type === "transfer" ? "transfer" : "expense";
+      const subId =
+        t.subcategoryId ??
+        (t.type === "income" ? UNCATEGORIZED_SUB_INCOME_ID : UNCATEGORIZED_SUB_EXPENSE_ID);
+      const defaultNature =
+        t.type === "income" ? "income" : t.type === "transfer" ? "transfer" : "expense";
       const keyAcc = getAccumulatorKey(subId, defaultNature);
       const acc = categoryAccumulator.get(keyAcc)!;
 
@@ -717,7 +738,8 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       const isCommitted = t.status === "planned";
       const isCredit = t.creditCardId !== null || t.paymentMethodId === "pm-credit-card";
 
-      const amountCents = (t.type === "refund" || t.type === "chargeback") ? -t.amountCents : t.amountCents;
+      const amountCents =
+        t.type === "refund" || t.type === "chargeback" ? -t.amountCents : t.amountCents;
 
       if (isRealized) {
         acc.realized += amountCents;
@@ -830,7 +852,10 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       for (const [catName, subItems] of sortedCatEntries) {
         const subChildren: TreeNode[] = subItems
           .map(({ subId, behavior, acc }) => {
-            const details = getSubcategoryDetails(subId, nature as "income" | "expense" | "transfer");
+            const details = getSubcategoryDetails(
+              subId,
+              nature as "income" | "expense" | "transfer"
+            );
 
             // Build per-payment-method breakdown for this subcategory
             const budgetMap = subBudgetByMethod.get(subId);
@@ -841,19 +866,20 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
               ...(realizedMap?.keys() ?? []),
               ...(committedMap?.keys() ?? [])
             ]);
-            const byPaymentMethod = allKeys.size > 0
-              ? [...allKeys].map((key) => {
-                  const [accId, cardId, pmId] = key.split("|");
-                  return {
-                    accountId: accId === "null" ? null : accId,
-                    creditCardId: cardId === "null" ? null : cardId,
-                    paymentMethodId: pmId === "null" ? null : pmId,
-                    budgeted: budgetMap?.get(key) ?? 0,
-                    realized: realizedMap?.get(key) ?? 0,
-                    committed: committedMap?.get(key) ?? 0
-                  };
-                })
-              : undefined;
+            const byPaymentMethod =
+              allKeys.size > 0
+                ? [...allKeys].map((key) => {
+                    const [accId, cardId, pmId] = key.split("|");
+                    return {
+                      accountId: accId === "null" ? null : accId,
+                      creditCardId: cardId === "null" ? null : cardId,
+                      paymentMethodId: pmId === "null" ? null : pmId,
+                      budgeted: budgetMap?.get(key) ?? 0,
+                      realized: realizedMap?.get(key) ?? 0,
+                      committed: committedMap?.get(key) ?? 0
+                    };
+                  })
+                : undefined;
 
             return {
               id: `sub-${subId}`,
@@ -894,7 +920,10 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
         const catRealizedCash = subChildren.reduce((sum, c) => sum + (c.realizedCash ?? 0), 0);
         const catRealizedCredit = subChildren.reduce((sum, c) => sum + (c.realizedCredit ?? 0), 0);
         const catCommittedCash = subChildren.reduce((sum, c) => sum + (c.committedCash ?? 0), 0);
-        const catCommittedCredit = subChildren.reduce((sum, c) => sum + (c.committedCredit ?? 0), 0);
+        const catCommittedCredit = subChildren.reduce(
+          (sum, c) => sum + (c.committedCredit ?? 0),
+          0
+        );
 
         natureChildren.push({
           id: `cat-${nature}-${catName}`,
@@ -921,10 +950,22 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
         const natureBudgeted = natureChildren.reduce((sum, c) => sum + c.budgeted, 0);
         const natureRealized = natureChildren.reduce((sum, c) => sum + c.realized, 0);
         const natureCommitted = natureChildren.reduce((sum, c) => sum + c.committed, 0);
-        const natureRealizedCash = natureChildren.reduce((sum, c) => sum + (c.realizedCash ?? 0), 0);
-        const natureRealizedCredit = natureChildren.reduce((sum, c) => sum + (c.realizedCredit ?? 0), 0);
-        const natureCommittedCash = natureChildren.reduce((sum, c) => sum + (c.committedCash ?? 0), 0);
-        const natureCommittedCredit = natureChildren.reduce((sum, c) => sum + (c.committedCredit ?? 0), 0);
+        const natureRealizedCash = natureChildren.reduce(
+          (sum, c) => sum + (c.realizedCash ?? 0),
+          0
+        );
+        const natureRealizedCredit = natureChildren.reduce(
+          (sum, c) => sum + (c.realizedCredit ?? 0),
+          0
+        );
+        const natureCommittedCash = natureChildren.reduce(
+          (sum, c) => sum + (c.committedCash ?? 0),
+          0
+        );
+        const natureCommittedCredit = natureChildren.reduce(
+          (sum, c) => sum + (c.committedCredit ?? 0),
+          0
+        );
 
         tree.push({
           id: `nature-${nature}`,
@@ -968,11 +1009,7 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       return;
     }
 
-    const items = db
-      .select()
-      .from(budgets)
-      .where(eq(budgets.budgetMonth, month))
-      .all();
+    const items = db.select().from(budgets).where(eq(budgets.budgetMonth, month)).all();
 
     reply.send(items);
   });
@@ -992,7 +1029,11 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       const paymentMethodId = parseOptionalString(body.paymentMethodId, "paymentMethodId");
 
       // Verify subcategory exists
-      const sub = db.select().from(dbSubcategories).where(eq(dbSubcategories.id, subcategoryId)).get();
+      const sub = db
+        .select()
+        .from(dbSubcategories)
+        .where(eq(dbSubcategories.id, subcategoryId))
+        .get();
       if (!sub) {
         reply.code(400).send({ message: "Subcategoria não encontrada." });
         return;
@@ -1009,7 +1050,11 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
 
       // Verify payment method exists if provided
       if (paymentMethodId) {
-        const pm = db.select().from(dbPaymentMethods).where(eq(dbPaymentMethods.id, paymentMethodId)).get();
+        const pm = db
+          .select()
+          .from(dbPaymentMethods)
+          .where(eq(dbPaymentMethods.id, paymentMethodId))
+          .get();
         if (!pm) {
           reply.code(400).send({ message: "Meio de pagamento não encontrado." });
           return;
@@ -1084,7 +1129,11 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
         return;
       }
 
-      const sourceBudgets = db.select().from(budgets).where(eq(budgets.budgetMonth, fromMonth)).all();
+      const sourceBudgets = db
+        .select()
+        .from(budgets)
+        .where(eq(budgets.budgetMonth, fromMonth))
+        .all();
 
       db.delete(budgets).where(eq(budgets.budgetMonth, toMonth)).run();
 

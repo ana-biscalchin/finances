@@ -24,11 +24,7 @@ import {
   Title,
   Tooltip
 } from "@mantine/core";
-import {
-  formatMoney,
-  moneyFromCents,
-  parseMoneyToCents
-} from "@finances/domain";
+import { formatMoney, moneyFromCents, parseMoneyToCents } from "@finances/domain";
 import {
   IconCreditCard,
   IconCheck,
@@ -47,16 +43,11 @@ import {
 import { useClipboard } from "@mantine/hooks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  formatBusinessDateForDisplay,
-  getTodayBusinessDate
-} from "../date-format";
+import { formatBusinessDateForDisplay, getTodayBusinessDate } from "../date-format";
 import { BusinessDateInput } from "../shared/BusinessDateInput";
 import { parseCsvHeaderLine } from "../shared/csv-utils";
-import {
-  getResponseError,
-  getAmountColor
-} from "../shared/transaction-ui";
+import { formatCategoryPromptGroups, getAmountColor } from "../shared/transaction-ui";
+import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
 import { CategorySelect, QuickCategoryEdit } from "../shared/CategorySelect";
 import { MonthSelector } from "../shared/MonthSelector";
 import { QuickAmountEdit, QuickDateEdit, QuickTextEdit } from "../shared/QuickEditFields";
@@ -193,8 +184,8 @@ function FaturasView() {
     if (!saved) return {};
     try {
       return JSON.parse(saved);
-    } catch (error) {
-      console.error(error);
+    } catch {
+      localStorage.removeItem("faturas-collapsed-cards");
       return {};
     }
   });
@@ -217,7 +208,8 @@ function FaturasView() {
       if (!res.ok) throw new Error("Não foi possível carregar os cartões.");
       setCards(await res.json());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro inesperado.");
+      reportClientError("bills.loadCards", e);
+      setError(getErrorMessage(e));
     } finally {
       setIsLoadingCards(false);
     }
@@ -229,7 +221,8 @@ function FaturasView() {
       if (!res.ok) throw new Error("Não foi possível carregar as categorias.");
       setCategories(await res.json());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro inesperado.");
+      reportClientError("bills.loadCategories", e);
+      setError(getErrorMessage(e));
       throw e;
     }
   }
@@ -240,7 +233,8 @@ function FaturasView() {
       if (!res.ok) throw new Error("Não foi possível carregar as contas.");
       setAccounts(await res.json());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro inesperado.");
+      reportClientError("bills.loadAccounts", e);
+      setError(getErrorMessage(e));
     }
   }
 
@@ -270,7 +264,8 @@ function FaturasView() {
       }
       await loadBillForCard(cardId, selectedMonth);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro inesperado.");
+      reportClientError("bills.markAsPaid", e);
+      setError(getErrorMessage(e));
     }
   }
 
@@ -284,7 +279,8 @@ function FaturasView() {
       }
       await loadBillForCard(cardId, selectedMonth);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro inesperado.");
+      reportClientError("bills.revertPayment", e);
+      setError(getErrorMessage(e));
       throw e;
     }
   }
@@ -293,15 +289,12 @@ function FaturasView() {
   // fetches that would reset child component state (e.g. the create form).
   const loadedBillKeysRef = useRef<Set<string>>(new Set());
 
-  const loadBillForCardStable = useCallback(
-    (cardId: string, month: string, force = false) => {
-      const key = `${cardId}::${month}`;
-      if (!force && loadedBillKeysRef.current.has(key)) return;
-      loadedBillKeysRef.current.add(key);
-      void loadBillForCard(cardId, month);
-    },
-    []
-  );
+  const loadBillForCardStable = useCallback((cardId: string, month: string, force = false) => {
+    const key = `${cardId}::${month}`;
+    if (!force && loadedBillKeysRef.current.has(key)) return;
+    loadedBillKeysRef.current.add(key);
+    void loadBillForCard(cardId, month);
+  }, []);
 
   useEffect(() => {
     void loadCards();
@@ -325,7 +318,11 @@ function FaturasView() {
         onChange={setSelectedMonth}
       />
 
-      {error ? <Alert color="red" variant="light">{error}</Alert> : null}
+      {error ? (
+        <Alert color="red" variant="light">
+          {error}
+        </Alert>
+      ) : null}
 
       {isLoadingCards ? (
         <Group justify="center" p="xl">
@@ -336,9 +333,7 @@ function FaturasView() {
           <Stack align="center" gap="xs">
             <IconCreditCard size={40} opacity={0.3} />
             <Title order={4}>Nenhum cartão ativo</Title>
-            <Text c="dimmed">
-              Cadastre um cartão em Contas para ver as faturas aqui.
-            </Text>
+            <Text c="dimmed">Cadastre um cartão em Contas para ver as faturas aqui.</Text>
           </Stack>
         </Paper>
       ) : (
@@ -389,6 +384,7 @@ function CardBillPanel({
   onReload: () => void;
 }) {
   const [filterSubcategoryId, setFilterSubcategoryId] = useState<string>(emptySelectValue);
+  const [sortBy, setSortBy] = useState<string>("date-desc");
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set());
   const [bulkSubcategoryId, setBulkSubcategoryId] = useState<string>(emptySelectValue);
   const [isBulkSaving, setIsBulkSaving] = useState(false);
@@ -430,29 +426,22 @@ function CardBillPanel({
   });
   const [importDateFormat, setImportDateFormat] = useState<"DMY" | "MDY" | "YMD">("DMY");
   const [previewTransactions, setPreviewTransactions] = useState<ImportPreviewItem[]>([]);
-  const [previewInstallmentFilter, setPreviewInstallmentFilter] =
-    useState<"all" | "single" | "installment">("all");
+  const [previewInstallmentFilter, setPreviewInstallmentFilter] = useState<
+    "all" | "single" | "installment"
+  >("all");
   const [selectedImportTempIds, setSelectedImportTempIds] = useState<Set<string>>(new Set());
   const [isImportPreviewLoading, setIsImportPreviewLoading] = useState(false);
   const [isImportConfirming, setIsImportConfirming] = useState(false);
   const [importModalError, setImportModalError] = useState<string | null>(null);
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
-  const [paymentAccountId, setPaymentAccountId] = useState<string>(card.paymentAccountId ?? emptySelectValue);
+  const [paymentAccountId, setPaymentAccountId] = useState<string>(
+    card.paymentAccountId ?? emptySelectValue
+  );
   const [isPayingBill, setIsPayingBill] = useState(false);
 
   const clipboard = useClipboard({ timeout: 2000 });
 
   const billPromptText = useMemo(() => {
-    const expenses: string[] = [];
-
-    for (const cat of categories) {
-      for (const sub of cat.subcategories) {
-        if (cat.nature === "expense") {
-          expenses.push(sub.name);
-        }
-      }
-    }
-
     return `Por favor, converta o texto da fatura de cartão de crédito abaixo em um arquivo CSV estruturado.
 Use como separador o ponto e vírgula (;). O cabeçalho deve ser exatamente: Data;Descricao;Valor;Categoria;Parcela;TotalParcelas
 
@@ -460,8 +449,8 @@ Siga rigorosamente estas regras:
 1. Data: Converta todas as datas para o formato DD/MM/AAAA.
 2. Descrição: Simplifique e limpe a descrição do lançamento (remova identificadores longos, números ou códigos, deixando apenas o nome legível do estabelecimento, ex: "Uber *Trip" vira "Uber", "Pao de Acucar Sp" vira "Pão de Açúcar"). Se o lançamento for parcelado no texto original (ex: "Compra 1/3" ou "Compra - 2 de 5"), remova a indicação de parcelas da descrição (pois ela irá para as colunas Parcela e TotalParcelas).
 3. Valor: Escreva no formato decimal brasileiro positivo (usando vírgula para centavos, ex: 120,50). No caso de faturas, todas as compras normais entram como despesa (valor positivo). Se for um estorno ou crédito na fatura, represente com sinal de menos (ex: -50,00). IMPORTANTE: Sempre envolva o valor com aspas duplas (ex: "120,50" ou "-50,00") para que a vírgula do centavo não quebre o alinhamento das colunas.
-4. Categoria: Tente inferir a categoria correta com base na descrição, escolhendo uma das categorias abaixo:
-   - Despesas: ${expenses.join(", ")}
+4. Categoria: Preencha com o nome da subcategoria de despesa mais adequada. Use a categoria pai abaixo apenas como contexto:
+${formatCategoryPromptGroups(categories, ["expense"])}
 5. Parcela: Se a compra for parcelada, extraia o número da parcela atual sendo cobrada nesta fatura (ex: na compra "Mercado 2/3", a parcela atual é 2). Deixe em branco se for à vista.
 6. TotalParcelas: Se a compra for parcelada, extraia o número total de parcelas (ex: na compra "Mercado 2/3", o total de parcelas é 3). Deixe em branco se for à vista.
 
@@ -470,7 +459,7 @@ Texto da fatura a ser convertido:
   }, [categories]);
 
   const isPaid = billData?.bill.status === "paid";
-  const isClosed = billData?.bill.closingDate ? (today >= billData.bill.closingDate) : false;
+  const isClosed = billData?.bill.closingDate ? today >= billData.bill.closingDate : false;
 
   let statusLabel = "Aberta";
   let statusColor = "blue";
@@ -485,13 +474,14 @@ Texto da fatura a ser convertido:
 
   const sourceTransactions = billData?.transactions ?? [];
   const transactions = useMemo(() => {
-    return sourceTransactions.filter((transaction) => {
+    const filtered = sourceTransactions.filter((transaction) => {
       if (transaction.status === "canceled" || transaction.status === "planned") {
         return false;
       }
 
       if (filterSubcategoryId !== emptySelectValue) {
-        const desiredSubcategoryId = filterSubcategoryId === "__clear__" ? null : filterSubcategoryId;
+        const desiredSubcategoryId =
+          filterSubcategoryId === "__clear__" ? null : filterSubcategoryId;
         if (transaction.subcategoryId !== desiredSubcategoryId) {
           return false;
         }
@@ -499,7 +489,23 @@ Texto da fatura a ser convertido:
 
       return true;
     });
-  }, [filterSubcategoryId, sourceTransactions]);
+
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "date-asc") {
+        return a.eventDate.localeCompare(b.eventDate);
+      }
+      if (sortBy === "date-desc") {
+        return b.eventDate.localeCompare(a.eventDate);
+      }
+      if (sortBy === "name-asc") {
+        return a.description.localeCompare(b.description, "pt-BR");
+      }
+      if (sortBy === "name-desc") {
+        return b.description.localeCompare(a.description, "pt-BR");
+      }
+      return 0;
+    });
+  }, [filterSubcategoryId, sourceTransactions, sortBy]);
   const totalCents = billData?.totalCents ?? 0;
   const selectedTransactions = useMemo(
     () => sourceTransactions.filter((transaction) => selectedTransactionIds.has(transaction.id)),
@@ -507,7 +513,9 @@ Texto da fatura a ser convertido:
   );
   const filteredPreviewTransactions = useMemo(() => {
     if (previewInstallmentFilter === "single") {
-      return previewTransactions.filter((item) => !item.installmentNumber || !item.installmentCount);
+      return previewTransactions.filter(
+        (item) => !item.installmentNumber || !item.installmentCount
+      );
     }
 
     if (previewInstallmentFilter === "installment") {
@@ -517,7 +525,9 @@ Texto da fatura a ser convertido:
     return previewTransactions;
   }, [previewInstallmentFilter, previewTransactions]);
   const previewSingleCount = useMemo(
-    () => previewTransactions.filter((item) => !item.installmentNumber || !item.installmentCount).length,
+    () =>
+      previewTransactions.filter((item) => !item.installmentNumber || !item.installmentCount)
+        .length,
     [previewTransactions]
   );
   const previewInstallmentCount = previewTransactions.length - previewSingleCount;
@@ -526,7 +536,8 @@ Texto da fatura a ser convertido:
     [filteredPreviewTransactions]
   );
   const allVisiblePreviewSelected =
-    visiblePreviewIds.length > 0 && visiblePreviewIds.every((tempId) => selectedImportTempIds.has(tempId));
+    visiblePreviewIds.length > 0 &&
+    visiblePreviewIds.every((tempId) => selectedImportTempIds.has(tempId));
   const accountOptions = useMemo(
     () => accounts.map((account) => ({ value: account.id, label: account.name })),
     [accounts]
@@ -580,7 +591,8 @@ Texto da fatura a ser convertido:
       await onMarkAsPaid(billData.bill.id, paymentAccountId);
       setIsPayModalOpen(false);
     } catch (error) {
-      setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.createTransaction", error);
+      setPanelError(getErrorMessage(error));
     } finally {
       setIsPayingBill(false);
     }
@@ -597,7 +609,8 @@ Texto da fatura a ser convertido:
     try {
       await onRevertPayment(billData.bill.id);
     } catch (error) {
-      setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.deleteTransaction", error);
+      setPanelError(getErrorMessage(error));
     }
   }
 
@@ -644,7 +657,10 @@ Texto da fatura a ser convertido:
   async function updateCardTransaction(
     transaction: CardTransaction,
     changes: Partial<
-      Pick<CardTransaction, "type" | "description" | "amountCents" | "eventDate" | "subcategoryId" | "status" | "notes"> & {
+      Pick<
+        CardTransaction,
+        "type" | "description" | "amountCents" | "eventDate" | "subcategoryId" | "status" | "notes"
+      > & {
         installmentCount?: number;
         preserveBillMonth?: boolean;
       }
@@ -717,7 +733,8 @@ Texto da fatura a ser convertido:
             description,
             amountCents,
             eventDate: createForm.eventDate,
-            subcategoryId: createForm.subcategoryId === emptySelectValue ? null : createForm.subcategoryId,
+            subcategoryId:
+              createForm.subcategoryId === emptySelectValue ? null : createForm.subcategoryId,
             status: createForm.status,
             notes: createForm.notes.trim() || null,
             installmentCount: createForm.installmentCount
@@ -733,7 +750,8 @@ Texto da fatura a ser convertido:
       setIsCreateDrawerOpen(true);
       onReload();
     } catch (error) {
-      setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.createCardTransaction", error);
+      setPanelError(getErrorMessage(error));
     } finally {
       setIsSavingCreate(false);
     }
@@ -764,7 +782,8 @@ Texto da fatura a ser convertido:
       });
       onReload();
     } catch (error) {
-      setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.deleteCardTransaction", error);
+      setPanelError(getErrorMessage(error));
       onReload();
     }
   }
@@ -778,7 +797,8 @@ Texto da fatura a ser convertido:
       await updateCardTransaction(transaction, { subcategoryId, preserveBillMonth: true });
       onReload();
     } catch (error) {
-      setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.updateCategoryInline", error);
+      setPanelError(getErrorMessage(error));
       onReload();
     }
   }
@@ -786,7 +806,10 @@ Texto da fatura a ser convertido:
   async function updateCardTransactionInline(
     transaction: CardTransaction,
     changes: Partial<
-      Pick<CardTransaction, "description" | "amountCents" | "eventDate" | "subcategoryId" | "status" | "notes">
+      Pick<
+        CardTransaction,
+        "description" | "amountCents" | "eventDate" | "subcategoryId" | "status" | "notes"
+      >
     >
   ) {
     setPanelError(null);
@@ -797,7 +820,8 @@ Texto da fatura a ser convertido:
       });
       onReload();
     } catch (error) {
-      setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.updateTransactionInline", error);
+      setPanelError(getErrorMessage(error));
       onReload();
     }
   }
@@ -836,13 +860,16 @@ Texto da fatura a ser convertido:
         subcategoryId: editForm.subcategoryId === emptySelectValue ? null : editForm.subcategoryId,
         status: editForm.status,
         notes: editForm.notes.trim() || null,
-        installmentCount: editingTransaction.installmentNumber ? undefined : editForm.installmentCount,
+        installmentCount: editingTransaction.installmentNumber
+          ? undefined
+          : editForm.installmentCount,
         preserveBillMonth: Boolean(editingTransaction.installmentNumber)
       });
       setEditingTransaction(null);
       onReload();
     } catch (error) {
-      setEditError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.saveEditedTransaction", error);
+      setEditError(getErrorMessage(error));
     } finally {
       setIsSavingEdit(false);
     }
@@ -879,7 +906,8 @@ Texto da fatura a ser convertido:
       setBulkSubcategoryId(emptySelectValue);
       onReload();
     } catch (error) {
-      setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.applyBulkEdits", error);
+      setPanelError(getErrorMessage(error));
       onReload();
     } finally {
       setIsBulkSaving(false);
@@ -908,14 +936,20 @@ Texto da fatura a ser convertido:
         );
 
         if (!response.ok) {
-          throw new Error(await getResponseError(response, `Não foi possível excluir "${transaction.description}".`));
+          throw new Error(
+            await getResponseError(
+              response,
+              `Não foi possível excluir "${transaction.description}".`
+            )
+          );
         }
       }
 
       setSelectedTransactionIds(new Set());
       onReload();
     } catch (error) {
-      setPanelError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.deleteSelectedTransactions", error);
+      setPanelError(getErrorMessage(error));
       onReload();
     } finally {
       setIsBulkSaving(false);
@@ -1013,7 +1047,8 @@ Texto da fatura a ser convertido:
           csvContent: csvTextContent,
           mappings: {
             ...mappings,
-            subcategoryId: mappings.subcategoryId === emptySelectValue ? "" : mappings.subcategoryId,
+            subcategoryId:
+              mappings.subcategoryId === emptySelectValue ? "" : mappings.subcategoryId,
             installment: mappings.installment === emptySelectValue ? "" : mappings.installment,
             installmentNumber:
               mappings.installmentNumber === emptySelectValue ? "" : mappings.installmentNumber,
@@ -1033,10 +1068,13 @@ Texto da fatura a ser convertido:
 
       const items = (await response.json()) as ImportPreviewItem[];
       setPreviewTransactions(items);
-      setSelectedImportTempIds(new Set(items.filter((item) => !item.isDuplicate).map((item) => item.tempId)));
+      setSelectedImportTempIds(
+        new Set(items.filter((item) => !item.isDuplicate).map((item) => item.tempId))
+      );
       setImportStep(3);
     } catch (error) {
-      setImportModalError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.importPreview", error);
+      setImportModalError(getErrorMessage(error));
     } finally {
       setIsImportPreviewLoading(false);
     }
@@ -1081,15 +1119,19 @@ Texto da fatura a ser convertido:
       resetImportState();
       onReload();
     } catch (error) {
-      setImportModalError(error instanceof Error ? error.message : "Erro inesperado.");
+      reportClientError("bills.importConfirm", error);
+      setImportModalError(getErrorMessage(error));
     } finally {
       setIsImportConfirming(false);
     }
   }
 
   const allVisibleSelected =
-    transactions.length > 0 && transactions.every((transaction) => selectedTransactionIds.has(transaction.id));
-  const hasVisibleSelection = transactions.some((transaction) => selectedTransactionIds.has(transaction.id));
+    transactions.length > 0 &&
+    transactions.every((transaction) => selectedTransactionIds.has(transaction.id));
+  const hasVisibleSelection = transactions.some((transaction) =>
+    selectedTransactionIds.has(transaction.id)
+  );
 
   return (
     <Paper withBorder radius="md">
@@ -1111,7 +1153,9 @@ Texto da fatura a ser convertido:
           <div>
             <Text fw={700}>{card.name}</Text>
             {card.institution && (
-              <Text size="xs" c="dimmed">{card.institution}</Text>
+              <Text size="xs" c="dimmed">
+                {card.institution}
+              </Text>
             )}
           </div>
           {billData ? (
@@ -1126,7 +1170,7 @@ Texto da fatura a ser convertido:
             size="xs"
             leftSection={<IconPlus size={14} />}
             onClick={openCreateDrawer}
-            disabled={!billData}
+            disabled={!billData || isPaid}
           >
             Novo lançamento
           </Button>
@@ -1138,7 +1182,7 @@ Texto da fatura a ser convertido:
               resetImportState();
               setIsImportModalOpen(true);
             }}
-            disabled={!billData}
+            disabled={!billData || isPaid}
           >
             Importar fatura
           </Button>
@@ -1175,7 +1219,9 @@ Texto da fatura a ser convertido:
             <ActionIcon
               variant="subtle"
               size="sm"
-              aria-label={isCollapsed ? `Expandir fatura de ${card.name}` : `Recolher fatura de ${card.name}`}
+              aria-label={
+                isCollapsed ? `Expandir fatura de ${card.name}` : `Recolher fatura de ${card.name}`
+              }
               onClick={onToggleCollapsed}
             >
               {isCollapsed ? <IconChevronDown size={20} /> : <IconChevronUp size={20} />}
@@ -1185,226 +1231,250 @@ Texto da fatura a ser convertido:
       </Group>
 
       <Collapse in={!isCollapsed}>
-      {panelError ? (
-        <Alert color="red" variant="light" m="md">
-          {panelError}
-        </Alert>
-      ) : null}
+        {panelError ? (
+          <Alert color="red" variant="light" m="md">
+            {panelError}
+          </Alert>
+        ) : null}
 
-      {/* Transactions */}
-      {isLoading ? (
-        <Group justify="center" p="xl">
-          <Loader size="sm" />
-        </Group>
-      ) : sourceTransactions.length === 0 ? (
-        <Group p="xl" gap="xs" c="dimmed">
-          <IconAlertCircle size={16} />
-          <Text size="sm">
-            Nenhum lançamento com este cartão em {selectedMonth}.
-            Use Novo lançamento ou importe o CSV da fatura.
-          </Text>
-          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreateDrawer}>
-            Novo lançamento
-          </Button>
-        </Group>
-      ) : (
-        <Stack gap={0}>
-          <Box p="md" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <CategorySelect
-                label="Categoria"
-                categories={categories}
-                filterNatures={["expense"]}
-                value={filterSubcategoryId}
-                onChange={(value) => setFilterSubcategoryId(value)}
-                emptyOptionLabel="Todas"
-                placeholder="Todas"
-              />
-              <Group align="flex-end">
-                <Button
-                  fullWidth
-                  variant="light"
-                  onClick={() => {
-                    setFilterSubcategoryId(emptySelectValue);
-                  }}
-                >
-                  Limpar filtros
-                </Button>
-              </Group>
-            </SimpleGrid>
-          </Box>
-
-          {selectedTransactionIds.size > 0 ? (
+        {/* Transactions */}
+        {isLoading && !billData ? (
+          <Group justify="center" p="xl">
+            <Loader size="sm" />
+          </Group>
+        ) : sourceTransactions.length === 0 ? (
+          <Group p="xl" gap="xs" c="dimmed">
+            <IconAlertCircle size={16} />
+            <Text size="sm">
+              Nenhum lançamento com este cartão em {selectedMonth}. Use Novo lançamento ou importe o
+              CSV da fatura.
+            </Text>
+            <Button size="xs" leftSection={<IconPlus size={14} />} onClick={openCreateDrawer}>
+              Novo lançamento
+            </Button>
+          </Group>
+        ) : (
+          <Stack gap={0}>
             <Box p="md" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
-              <Stack gap="sm">
-                <Group justify="space-between" align="center">
-                  <div>
-                    <Text fw={700}>Ações em massa</Text>
-                    <Text size="xs" c="dimmed">
-                      {selectedTransactionIds.size} compras selecionadas
-                    </Text>
-                  </div>
+              <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+                <CategorySelect
+                  label="Categoria"
+                  categories={categories}
+                  filterNatures={["expense"]}
+                  value={filterSubcategoryId}
+                  onChange={(value) => setFilterSubcategoryId(value)}
+                  emptyOptionLabel="Todas"
+                  placeholder="Todas"
+                />
+                <Select
+                  label="Ordenar por"
+                  data={[
+                    { value: "date-desc", label: "Data (Mais recente)" },
+                    { value: "date-asc", label: "Data (Mais antiga)" },
+                    { value: "name-asc", label: "Nome (A-Z)" },
+                    { value: "name-desc", label: "Nome (Z-A)" }
+                  ]}
+                  value={sortBy}
+                  onChange={(value) => setSortBy(value ?? "date-desc")}
+                />
+                <Group align="flex-end">
                   <Button
-                    color="red"
+                    fullWidth
                     variant="light"
-                    size="xs"
-                    leftSection={<IconTrash size={14} />}
-                    loading={isBulkSaving}
-                    onClick={() => void deleteSelectedTransactions()}
+                    onClick={() => {
+                      setFilterSubcategoryId(emptySelectValue);
+                      setSortBy("date-desc");
+                    }}
                   >
-                    Excluir selecionadas
+                    Limpar filtros
                   </Button>
                 </Group>
-                {selectedTransactionIds.size > 1 ? (
-                  <div>
-                    <Text fw={700}>Edição em massa</Text>
-                    <Text size="xs" c="dimmed">
-                      {selectedTransactionIds.size} compras selecionadas
-                    </Text>
-                  </div>
-                ) : null}
-                {selectedTransactionIds.size > 1 ? (
-                  <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                    <CategorySelect
-                      label="Categoria"
-                      categories={categories}
-                      filterNatures={["expense"]}
-                      value={bulkSubcategoryId}
-                      onChange={(value) => setBulkSubcategoryId(value)}
-                      emptyOptionLabel="Manter categoria atual"
-                      placeholder="Manter"
-                    />
-                    <Group align="flex-end">
-                      <Button
-                        fullWidth
-                        loading={isBulkSaving}
-                        onClick={() => void applyBulkEdits()}
-                      >
-                        Aplicar
-                      </Button>
-                    </Group>
-                  </SimpleGrid>
-                ) : null}
-              </Stack>
+              </SimpleGrid>
             </Box>
-          ) : null}
 
-          {transactions.length === 0 ? (
-            <Group p="xl" gap="xs" c="dimmed">
-              <IconAlertCircle size={16} />
-              <Text size="sm">Nenhuma compra encontrada com os filtros atuais.</Text>
-            </Group>
-          ) : (
-            <Table.ScrollContainer minWidth={960}>
-              <Table verticalSpacing="xs" fz="sm" highlightOnHover>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th style={{ width: 44 }}>
-                      <Checkbox
-                        aria-label="Selecionar compras visíveis"
-                        checked={allVisibleSelected}
-                        indeterminate={hasVisibleSelection && !allVisibleSelected}
-                        onChange={toggleSelectAllTransactions}
+            {selectedTransactionIds.size > 0 ? (
+              <Box p="md" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
+                <Stack gap="sm">
+                  <Group justify="space-between" align="center">
+                    <div>
+                      <Text fw={700}>Ações em massa</Text>
+                      <Text size="xs" c="dimmed">
+                        {selectedTransactionIds.size} compras selecionadas
+                      </Text>
+                    </div>
+                    <Button
+                      color="red"
+                      variant="light"
+                      size="xs"
+                      leftSection={<IconTrash size={14} />}
+                      loading={isBulkSaving}
+                      onClick={() => void deleteSelectedTransactions()}
+                      disabled={isPaid}
+                    >
+                      Excluir selecionadas
+                    </Button>
+                  </Group>
+                  {selectedTransactionIds.size > 1 ? (
+                    <div>
+                      <Text fw={700}>Edição em massa</Text>
+                      <Text size="xs" c="dimmed">
+                        {selectedTransactionIds.size} compras selecionadas
+                      </Text>
+                    </div>
+                  ) : null}
+                  {selectedTransactionIds.size > 1 ? (
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                      <CategorySelect
+                        label="Categoria"
+                        categories={categories}
+                        filterNatures={["expense"]}
+                        value={bulkSubcategoryId}
+                        onChange={(value) => setBulkSubcategoryId(value)}
+                        emptyOptionLabel="Manter categoria atual"
+                        placeholder="Manter"
                       />
-                    </Table.Th>
-                    <Table.Th>Data</Table.Th>
-                    <Table.Th>Descrição</Table.Th>
-                    <Table.Th>Valor</Table.Th>
-                    <Table.Th>Categoria</Table.Th>
-                    <Table.Th>Ações</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {transactions.map((transaction) => (
-                    <Table.Tr key={transaction.id} style={{ verticalAlign: "middle" }}>
-                      <Table.Td>
+                      <Group align="flex-end">
+                        <Button
+                          fullWidth
+                          loading={isBulkSaving}
+                          onClick={() => void applyBulkEdits()}
+                        >
+                          Aplicar
+                        </Button>
+                      </Group>
+                    </SimpleGrid>
+                  ) : null}
+                </Stack>
+              </Box>
+            ) : null}
+
+            {transactions.length === 0 ? (
+              <Group p="xl" gap="xs" c="dimmed">
+                <IconAlertCircle size={16} />
+                <Text size="sm">Nenhuma compra encontrada com os filtros atuais.</Text>
+              </Group>
+            ) : (
+              <Table.ScrollContainer minWidth={960}>
+                <Table verticalSpacing="xs" fz="sm" highlightOnHover>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th style={{ width: 44 }}>
                         <Checkbox
-                          aria-label={`Selecionar compra ${transaction.description}`}
-                          checked={selectedTransactionIds.has(transaction.id)}
-                          onChange={() => toggleTransactionSelection(transaction.id)}
+                          aria-label="Selecionar compras visíveis"
+                          checked={allVisibleSelected}
+                          indeterminate={hasVisibleSelection && !allVisibleSelected}
+                          onChange={toggleSelectAllTransactions}
                         />
-                      </Table.Td>
-                      <Table.Td>
-                        <QuickDateEdit
-                          value={transaction.eventDate}
-                          referenceMonth={transaction.eventDate.slice(0, 7) || selectedMonth}
-                          onSave={(eventDate) => updateCardTransactionInline(transaction, { eventDate })}
-                        />
-                      </Table.Td>
-                      <Table.Td style={{ maxWidth: 350, wordBreak: "break-word" }}>
-                        <Group gap="xs" align="center">
-                          <QuickTextEdit
-                            value={transaction.description}
-                            fw={500}
-                            placeholder="Descrição"
-                            onSave={(description) => updateCardTransactionInline(transaction, { description })}
-                          />
-                          {transaction.type === "refund" && (
-                            <Badge variant="light" color="teal" size="xs">Reembolso</Badge>
-                          )}
-                          {transaction.type === "chargeback" && (
-                            <Badge variant="light" color="teal" size="xs">Estorno</Badge>
-                          )}
-                          {transaction.installmentNumber && transaction.installmentCount ? (
-                            <Badge variant="light" color="grape" size="xs">
-                              {transaction.installmentNumber}/{transaction.installmentCount}
-                            </Badge>
-                          ) : null}
-                        </Group>
-                        {transaction.notes ? (
-                          <Text size="xs" c="dimmed">{transaction.notes}</Text>
-                        ) : null}
-                      </Table.Td>
-                      <Table.Td>
-                        <QuickAmountEdit
-                          valueCents={transaction.amountCents}
-                          color={getAmountColor(transaction.type)}
-                          prefix={transaction.type === "expense" ? "− " : "+ "}
-                          onSave={(amountCents) => updateCardTransactionInline(transaction, { amountCents })}
-                        />
-                      </Table.Td>
-                      <Table.Td>
-                        <QuickCategoryEdit
-                          categories={categories}
-                          filterNatures={["expense"]}
-                          value={transaction.subcategoryId ?? emptySelectValue}
-                          onChange={(value) =>
-                            void updateCategoryInline(transaction, value)
-                          }
-                          emptyOptionLabel="Sem categoria"
-                        />
-                      </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          <Tooltip label="Editar compra">
-                            <ActionIcon
-                              variant="subtle"
-                              aria-label={`Editar compra ${transaction.description}`}
-                              onClick={() => openEditModal(transaction)}
-                            >
-                              <IconEdit size={18} />
-                            </ActionIcon>
-                          </Tooltip>
-                          <Tooltip label="Excluir compra">
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              aria-label={`Excluir compra ${transaction.description}`}
-                              onClick={() => void deleteCardTransaction(transaction)}
-                            >
-                              <IconTrash size={18} />
-                            </ActionIcon>
-                          </Tooltip>
-                        </Group>
-                      </Table.Td>
+                      </Table.Th>
+                      <Table.Th>Data</Table.Th>
+                      <Table.Th>Descrição</Table.Th>
+                      <Table.Th>Valor</Table.Th>
+                      <Table.Th>Categoria</Table.Th>
+                      <Table.Th>Ações</Table.Th>
                     </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </Table.ScrollContainer>
-          )}
-        </Stack>
-      )}
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {transactions.map((transaction) => (
+                      <Table.Tr key={transaction.id} style={{ verticalAlign: "middle" }}>
+                        <Table.Td>
+                          <Checkbox
+                            aria-label={`Selecionar compra ${transaction.description}`}
+                            checked={selectedTransactionIds.has(transaction.id)}
+                            onChange={() => toggleTransactionSelection(transaction.id)}
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <QuickDateEdit
+                            value={transaction.eventDate}
+                            referenceMonth={transaction.eventDate.slice(0, 7) || selectedMonth}
+                            onSave={(eventDate) =>
+                              updateCardTransactionInline(transaction, { eventDate })
+                            }
+                          />
+                        </Table.Td>
+                        <Table.Td style={{ maxWidth: 350, wordBreak: "break-word" }}>
+                          <Group gap="xs" align="center">
+                            <QuickTextEdit
+                              value={transaction.description}
+                              fw={500}
+                              placeholder="Descrição"
+                              onSave={(description) =>
+                                updateCardTransactionInline(transaction, { description })
+                              }
+                            />
+                            {transaction.type === "refund" && (
+                              <Badge variant="light" color="teal" size="xs">
+                                Reembolso
+                              </Badge>
+                            )}
+                            {transaction.type === "chargeback" && (
+                              <Badge variant="light" color="teal" size="xs">
+                                Estorno
+                              </Badge>
+                            )}
+                            {transaction.installmentNumber && transaction.installmentCount ? (
+                              <Badge variant="light" color="grape" size="xs">
+                                {transaction.installmentNumber}/{transaction.installmentCount}
+                              </Badge>
+                            ) : null}
+                          </Group>
+                          {transaction.notes ? (
+                            <Text size="xs" c="dimmed">
+                              {transaction.notes}
+                            </Text>
+                          ) : null}
+                        </Table.Td>
+                        <Table.Td>
+                          <QuickAmountEdit
+                            valueCents={transaction.amountCents}
+                            color={getAmountColor(transaction.type)}
+                            prefix={transaction.type === "expense" ? "− " : "+ "}
+                            onSave={(amountCents) =>
+                              updateCardTransactionInline(transaction, { amountCents })
+                            }
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <QuickCategoryEdit
+                            categories={categories}
+                            filterNatures={["expense"]}
+                            value={transaction.subcategoryId ?? emptySelectValue}
+                            onChange={(value) => void updateCategoryInline(transaction, value)}
+                            emptyOptionLabel="Sem categoria"
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <Group gap="xs">
+                            <Tooltip label="Editar compra">
+                              <ActionIcon
+                                variant="subtle"
+                                aria-label={`Editar compra ${transaction.description}`}
+                                onClick={() => openEditModal(transaction)}
+                              >
+                                <IconEdit size={18} />
+                              </ActionIcon>
+                            </Tooltip>
+                            <Tooltip label={isPaid ? "Fatura paga - não é possível excluir" : "Excluir compra"}>
+                              <ActionIcon
+                                variant="subtle"
+                                color="red"
+                                aria-label={`Excluir compra ${transaction.description}`}
+                                onClick={() => void deleteCardTransaction(transaction)}
+                                disabled={isPaid}
+                              >
+                                <IconTrash size={18} />
+                              </ActionIcon>
+                            </Tooltip>
+                          </Group>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            )}
+          </Stack>
+        )}
       </Collapse>
 
       <Modal
@@ -1415,7 +1485,9 @@ Texto da fatura a ser convertido:
         title={
           <Group gap="xs">
             <IconCheck size={22} color="var(--mantine-color-teal-filled)" />
-            <Text fw={700} size="lg">Pagar fatura</Text>
+            <Text fw={700} size="lg">
+              Pagar fatura
+            </Text>
           </Group>
         }
         radius="md"
@@ -1450,7 +1522,11 @@ Texto da fatura a ser convertido:
           />
 
           <Group justify="flex-end">
-            <Button variant="subtle" onClick={() => setIsPayModalOpen(false)} disabled={isPayingBill}>
+            <Button
+              variant="subtle"
+              onClick={() => setIsPayModalOpen(false)}
+              disabled={isPayingBill}
+            >
               Cancelar
             </Button>
             <Button
@@ -1471,7 +1547,9 @@ Texto da fatura a ser convertido:
         title={
           <Group gap="xs">
             <IconUpload size={22} color="var(--mantine-color-blue-filled)" />
-            <Text fw={700} size="lg">Importar fatura</Text>
+            <Text fw={700} size="lg">
+              Importar fatura
+            </Text>
           </Group>
         }
         size="min(96vw, 1180px)"
@@ -1480,13 +1558,22 @@ Texto da fatura a ser convertido:
       >
         <Stack gap="md">
           <Group justify="space-between" mb="xs">
-            <Badge color={importStep >= 1 ? "blue" : "gray"} variant={importStep === 1 ? "filled" : "light"}>
+            <Badge
+              color={importStep >= 1 ? "blue" : "gray"}
+              variant={importStep === 1 ? "filled" : "light"}
+            >
               1. Arquivo & Fatura
             </Badge>
-            <Badge color={importStep >= 2 ? "blue" : "gray"} variant={importStep === 2 ? "filled" : "light"}>
+            <Badge
+              color={importStep >= 2 ? "blue" : "gray"}
+              variant={importStep === 2 ? "filled" : "light"}
+            >
               2. Mapear Colunas
             </Badge>
-            <Badge color={importStep >= 3 ? "blue" : "gray"} variant={importStep === 3 ? "filled" : "light"}>
+            <Badge
+              color={importStep >= 3 ? "blue" : "gray"}
+              variant={importStep === 3 ? "filled" : "light"}
+            >
               3. Pré-visualização
             </Badge>
           </Group>
@@ -1508,7 +1595,8 @@ Texto da fatura a ser convertido:
                   <div>
                     <Text fw={700}>{card.name}</Text>
                     <Text size="xs" c="dimmed">
-                      Compras desta fatura entram no cartão; parcelas restantes serão projetadas nas próximas faturas.
+                      Compras desta fatura entram no cartão; parcelas restantes serão projetadas nas
+                      próximas faturas.
                     </Text>
                   </div>
                   <Badge variant="light" color="indigo">
@@ -1522,9 +1610,10 @@ Texto da fatura a ser convertido:
                 p="md"
                 radius="md"
                 style={{
-                  background: "linear-gradient(135deg, rgba(224, 242, 254, 0.35) 0%, rgba(238, 242, 255, 0.35) 100%)",
+                  background:
+                    "linear-gradient(135deg, rgba(224, 242, 254, 0.35) 0%, rgba(238, 242, 255, 0.35) 100%)",
                   borderColor: "var(--mantine-color-blue-light-color)",
-                  borderLeft: "4px solid var(--mantine-color-blue-filled)",
+                  borderLeft: "4px solid var(--mantine-color-blue-filled)"
                 }}
               >
                 <Group justify="space-between" align="center" wrap="nowrap">
@@ -1533,14 +1622,17 @@ Texto da fatura a ser convertido:
                       Dica: Converta faturas com IA
                     </Text>
                     <Text size="xs" c="dimmed" mt={2}>
-                      Copie o prompt estruturado e envie para uma IA (como ChatGPT, Gemini ou Claude) para formatar o texto da sua fatura em um CSV pronto para importação.
+                      Copie o prompt estruturado e envie para uma IA (como ChatGPT, Gemini ou
+                      Claude) para formatar o texto da sua fatura em um CSV pronto para importação.
                     </Text>
                   </Box>
                   <Button
                     size="xs"
                     variant={clipboard.copied ? "filled" : "light"}
                     color={clipboard.copied ? "teal" : "blue"}
-                    leftSection={clipboard.copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                    leftSection={
+                      clipboard.copied ? <IconCheck size={14} /> : <IconCopy size={14} />
+                    }
                     onClick={() => clipboard.copy(billPromptText)}
                     style={{ flexShrink: 0 }}
                   >
@@ -1573,72 +1665,113 @@ Texto da fatura a ser convertido:
           {importStep === 2 ? (
             <Stack gap="md">
               <Text size="sm" c="dimmed">
-                Selecione as colunas do CSV. Para parcelamento, use coluna combinada 2/3 ou as colunas separadas Parcela atual e Total de parcelas.
+                Selecione as colunas do CSV. Para parcelamento, use coluna combinada 2/3 ou as
+                colunas separadas Parcela atual e Total de parcelas.
               </Text>
 
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-              <Select
-                label="Coluna de data"
-                data={csvHeaders}
-                value={mappings.eventDate}
-                onChange={(value) => setMappings((current) => ({ ...current, eventDate: value ?? "" }))}
-                required
-              />
-              <Select
-                label="Formato da data"
-                data={[
-                  { value: "DMY", label: "DD/MM/AAAA" },
-                  { value: "MDY", label: "MM/DD/AAAA" },
-                  { value: "YMD", label: "AAAA-MM-DD" }
-                ]}
-                value={importDateFormat}
-                onChange={(value) => setImportDateFormat((value as "DMY" | "MDY" | "YMD") ?? "DMY")}
-                required
-              />
-              <Select
-                label="Coluna de descrição"
-                data={csvHeaders}
-                value={mappings.description}
-                onChange={(value) => setMappings((current) => ({ ...current, description: value ?? "" }))}
-                required
-              />
-              <Select
-                label="Coluna de valor"
-                data={csvHeaders}
-                value={mappings.amount}
-                onChange={(value) => setMappings((current) => ({ ...current, amount: value ?? "" }))}
-                required
-              />
-              <Select
-                label="Coluna de categoria"
-                data={[{ value: emptySelectValue, label: "Definir depois" }, ...csvHeaders.map((header) => ({ value: header, label: header }))]}
-                value={mappings.subcategoryId}
-                onChange={(value) => setMappings((current) => ({ ...current, subcategoryId: value ?? emptySelectValue }))}
-                clearable
-              />
-              <Select
-                label="Coluna de parcela (2/3)"
-                description="Use quando uma coluna já vem como 2/3 ou 2 de 3."
-                data={[{ value: emptySelectValue, label: "Sem coluna combinada" }, ...csvHeaders.map((header) => ({ value: header, label: header }))]}
-                value={mappings.installment}
-                onChange={(value) => setMappings((current) => ({ ...current, installment: value ?? emptySelectValue }))}
-                clearable
-              />
-              <Select
-                label="Parcela atual"
-                description="Use com Total de parcelas quando vierem em colunas separadas."
-                data={[{ value: emptySelectValue, label: "Sem parcela atual" }, ...csvHeaders.map((header) => ({ value: header, label: header }))]}
-                value={mappings.installmentNumber}
-                onChange={(value) => setMappings((current) => ({ ...current, installmentNumber: value ?? emptySelectValue }))}
-                clearable
-              />
-              <Select
-                label="Total de parcelas"
-                data={[{ value: emptySelectValue, label: "Sem total de parcelas" }, ...csvHeaders.map((header) => ({ value: header, label: header }))]}
-                value={mappings.installmentCount}
-                onChange={(value) => setMappings((current) => ({ ...current, installmentCount: value ?? emptySelectValue }))}
-                clearable
-              />
+                <Select
+                  label="Coluna de data"
+                  data={csvHeaders}
+                  value={mappings.eventDate}
+                  onChange={(value) =>
+                    setMappings((current) => ({ ...current, eventDate: value ?? "" }))
+                  }
+                  required
+                />
+                <Select
+                  label="Formato da data"
+                  data={[
+                    { value: "DMY", label: "DD/MM/AAAA" },
+                    { value: "MDY", label: "MM/DD/AAAA" },
+                    { value: "YMD", label: "AAAA-MM-DD" }
+                  ]}
+                  value={importDateFormat}
+                  onChange={(value) =>
+                    setImportDateFormat((value as "DMY" | "MDY" | "YMD") ?? "DMY")
+                  }
+                  required
+                />
+                <Select
+                  label="Coluna de descrição"
+                  data={csvHeaders}
+                  value={mappings.description}
+                  onChange={(value) =>
+                    setMappings((current) => ({ ...current, description: value ?? "" }))
+                  }
+                  required
+                />
+                <Select
+                  label="Coluna de valor"
+                  data={csvHeaders}
+                  value={mappings.amount}
+                  onChange={(value) =>
+                    setMappings((current) => ({ ...current, amount: value ?? "" }))
+                  }
+                  required
+                />
+                <Select
+                  label="Coluna de categoria"
+                  data={[
+                    { value: emptySelectValue, label: "Definir depois" },
+                    ...csvHeaders.map((header) => ({ value: header, label: header }))
+                  ]}
+                  value={mappings.subcategoryId}
+                  onChange={(value) =>
+                    setMappings((current) => ({
+                      ...current,
+                      subcategoryId: value ?? emptySelectValue
+                    }))
+                  }
+                  clearable
+                />
+                <Select
+                  label="Coluna de parcela (2/3)"
+                  description="Use quando uma coluna já vem como 2/3 ou 2 de 3."
+                  data={[
+                    { value: emptySelectValue, label: "Sem coluna combinada" },
+                    ...csvHeaders.map((header) => ({ value: header, label: header }))
+                  ]}
+                  value={mappings.installment}
+                  onChange={(value) =>
+                    setMappings((current) => ({
+                      ...current,
+                      installment: value ?? emptySelectValue
+                    }))
+                  }
+                  clearable
+                />
+                <Select
+                  label="Parcela atual"
+                  description="Use com Total de parcelas quando vierem em colunas separadas."
+                  data={[
+                    { value: emptySelectValue, label: "Sem parcela atual" },
+                    ...csvHeaders.map((header) => ({ value: header, label: header }))
+                  ]}
+                  value={mappings.installmentNumber}
+                  onChange={(value) =>
+                    setMappings((current) => ({
+                      ...current,
+                      installmentNumber: value ?? emptySelectValue
+                    }))
+                  }
+                  clearable
+                />
+                <Select
+                  label="Total de parcelas"
+                  data={[
+                    { value: emptySelectValue, label: "Sem total de parcelas" },
+                    ...csvHeaders.map((header) => ({ value: header, label: header }))
+                  ]}
+                  value={mappings.installmentCount}
+                  onChange={(value) =>
+                    setMappings((current) => ({
+                      ...current,
+                      installmentCount: value ?? emptySelectValue
+                    }))
+                  }
+                  clearable
+                />
               </SimpleGrid>
 
               <Group justify="space-between" mt="md">
@@ -1661,7 +1794,8 @@ Texto da fatura a ser convertido:
               <Group justify="space-between" align="center">
                 <Stack gap={2}>
                   <Text size="sm" fw={600}>
-                    {filteredPreviewTransactions.length} de {previewTransactions.length} compras na prévia.
+                    {filteredPreviewTransactions.length} de {previewTransactions.length} compras na
+                    prévia.
                   </Text>
                   <Text size="xs" c="dimmed">
                     {previewSingleCount} à vista · {previewInstallmentCount} parceladas
@@ -1703,7 +1837,8 @@ Texto da fatura a ser convertido:
               />
 
               <Text size="xs" c="dimmed">
-                Linhas já duplicadas começam desmarcadas. Se uma linha vier como 2/3, a prévia inclui a 2/3 nesta fatura e gera a 3/3 no mês seguinte.
+                Linhas já duplicadas começam desmarcadas. Se uma linha vier como 2/3, a prévia
+                inclui a 2/3 nesta fatura e gera a 3/3 no mês seguinte.
               </Text>
 
               <Box
@@ -1780,7 +1915,9 @@ Texto da fatura a ser convertido:
                                   {item.installmentNumber}/{item.installmentCount}
                                 </Badge>
                               ) : (
-                                <Text size="sm" c="dimmed">À vista</Text>
+                                <Text size="sm" c="dimmed">
+                                  À vista
+                                </Text>
                               )}
                             </Table.Td>
                             <Table.Td>
@@ -1914,11 +2051,11 @@ Texto da fatura a ser convertido:
             fixedDecimalScale
             prefix="R$ "
             decimalSeparator=","
-              thousandSeparator="."
-              value={createForm.amountReais}
-              onChange={(value) =>
-                setCreateForm((current) => ({ ...current, amountReais: normalizeAmountInput(value) }))
-              }
+            thousandSeparator="."
+            value={createForm.amountReais}
+            onChange={(value) =>
+              setCreateForm((current) => ({ ...current, amountReais: normalizeAmountInput(value) }))
+            }
             onFocus={(e) => e.currentTarget.select()}
             required
           />
@@ -1966,7 +2103,9 @@ Texto da fatura a ser convertido:
           {/* Installments */}
           {createForm.type === "expense" && (
             <Stack gap={6}>
-              <Text size="sm" fw={500}>Parcelamento</Text>
+              <Text size="sm" fw={500}>
+                Parcelamento
+              </Text>
               <SegmentedControl
                 fullWidth
                 data={[
@@ -2011,9 +2150,7 @@ Texto da fatura a ser convertido:
             categories={categories}
             filterNatures={["expense"]}
             value={createForm.subcategoryId}
-            onChange={(value) =>
-              setCreateForm((current) => ({ ...current, subcategoryId: value }))
-            }
+            onChange={(value) => setCreateForm((current) => ({ ...current, subcategoryId: value }))}
           />
 
           <Textarea
@@ -2132,11 +2269,14 @@ Texto da fatura a ser convertido:
           {/* Installments */}
           {editForm.type === "expense" && (
             <Stack gap={6}>
-              <Text size="sm" fw={500}>Parcelamento</Text>
+              <Text size="sm" fw={500}>
+                Parcelamento
+              </Text>
               {editingTransaction?.installmentNumber && editingTransaction.installmentCount ? (
                 <Group gap="xs">
                   <Badge variant="light" color="grape">
-                    Parcela {editingTransaction.installmentNumber} de {editingTransaction.installmentCount}
+                    Parcela {editingTransaction.installmentNumber} de{" "}
+                    {editingTransaction.installmentCount}
                   </Badge>
                   <Text size="xs" c="dimmed">
                     Edição altera apenas esta parcela.
@@ -2190,9 +2330,7 @@ Texto da fatura a ser convertido:
             categories={categories}
             filterNatures={["expense"]}
             value={editForm.subcategoryId}
-            onChange={(value) =>
-              setEditForm((current) => ({ ...current, subcategoryId: value }))
-            }
+            onChange={(value) => setEditForm((current) => ({ ...current, subcategoryId: value }))}
           />
 
           <Textarea

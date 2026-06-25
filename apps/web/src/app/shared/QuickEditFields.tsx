@@ -11,6 +11,7 @@ type QuickTextEditProps = {
   onSave: (value: string) => void | Promise<void>;
   fw?: number;
   placeholder?: string;
+  disabled?: boolean;
 };
 
 type QuickAmountEditProps = {
@@ -18,15 +19,17 @@ type QuickAmountEditProps = {
   onSave: (valueCents: number) => void | Promise<void>;
   color?: string;
   prefix?: string;
+  disabled?: boolean;
 };
 
 type QuickDateEditProps = {
   value: string;
   referenceMonth: string;
   onSave: (value: string) => void | Promise<void>;
+  disabled?: boolean;
 };
 
-export function QuickTextEdit({ value, onSave, fw, placeholder }: QuickTextEditProps) {
+export function QuickTextEdit({ value, onSave, fw, placeholder, disabled }: QuickTextEditProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -42,6 +45,14 @@ export function QuickTextEdit({ value, onSave, fw, placeholder }: QuickTextEditP
     if (nextValue && nextValue !== value) {
       await onSave(nextValue);
     }
+  }
+
+  if (disabled) {
+    return (
+      <Text size="inherit" fw={fw}>
+        {value || placeholder || "-"}
+      </Text>
+    );
   }
 
   if (isEditing) {
@@ -90,7 +101,7 @@ export function QuickTextEdit({ value, onSave, fw, placeholder }: QuickTextEditP
   );
 }
 
-export function QuickAmountEdit({ valueCents, onSave, color, prefix = "" }: QuickAmountEditProps) {
+export function QuickAmountEdit({ valueCents, onSave, color, prefix = "", disabled }: QuickAmountEditProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState<number | string>(valueCents / 100);
 
@@ -101,12 +112,24 @@ export function QuickAmountEdit({ valueCents, onSave, color, prefix = "" }: Quic
   }, [isEditing, valueCents]);
 
   async function commit() {
-    const numericValue = typeof draft === "number" ? draft : Number(String(draft).replace(",", "."));
-    const nextValueCents = Number.isFinite(numericValue) ? Math.round(numericValue * 100) : valueCents;
+    const numericValue =
+      typeof draft === "number" ? draft : Number(String(draft).replace(",", "."));
+    const nextValueCents = Number.isFinite(numericValue)
+      ? Math.round(numericValue * 100)
+      : valueCents;
     setIsEditing(false);
     if (nextValueCents > 0 && nextValueCents !== valueCents) {
       await onSave(nextValueCents);
     }
+  }
+
+  if (disabled) {
+    return (
+      <Text size="inherit" fw={700} c={color} style={{ whiteSpace: "nowrap" }}>
+        {prefix}
+        {formatMoney(moneyFromCents(valueCents))}
+      </Text>
+    );
   }
 
   if (isEditing) {
@@ -162,7 +185,7 @@ export function QuickAmountEdit({ valueCents, onSave, color, prefix = "" }: Quic
   );
 }
 
-export function QuickDateEdit({ value, referenceMonth, onSave }: QuickDateEditProps) {
+export function QuickDateEdit({ value, referenceMonth, onSave, disabled }: QuickDateEditProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -177,6 +200,14 @@ export function QuickDateEdit({ value, referenceMonth, onSave }: QuickDateEditPr
     if (nextValue && nextValue !== value) {
       await onSave(nextValue);
     }
+  }
+
+  if (disabled) {
+    return (
+      <Text size="inherit" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+        {formatBusinessDateForDisplay(value)}
+      </Text>
+    );
   }
 
   if (isEditing) {

@@ -1,8 +1,3 @@
-/**
- * Utilitários compartilhados de leitura de CSV.
- * Usados em TransactionsPage e BillsPage — não duplicar.
- */
-
 export function parseCsvHeaderLine(headerLine: string): string[] {
   const delimiter = detectCsvDelimiter(headerLine);
   const fields: string[] = [];

@@ -184,6 +184,11 @@ export function registerReconciliationRoutes(app: FastifyInstance, connection: D
               creditCardBillId = newBill.id;
             } else {
               creditCardBillId = bill.id;
+              if (bill.status === "paid") {
+                throw new Error(
+                  `Não é possível criar lançamentos para a fatura de ${budgetMonth} porque ela já está paga.`
+                );
+              }
             }
           }
 

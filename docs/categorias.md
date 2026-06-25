@@ -15,15 +15,21 @@ Natureza (Receita, Despesa, Transferência)
 ## Naturezas do Fluxo de Caixa
 
 ### 1. Receita (Income)
+
 Dinheiro novo entrando nas suas contas. Impacta positivamente o saldo e aumenta o patrimônio.
+
 - Salário, bônus, resgates de investimentos, dividendos, reembolsos.
 
 ### 2. Despesa (Expense)
+
 Dinheiro saindo das suas contas para o "mundo exterior" ou para poupanças futuras. Impacta negativamente o saldo.
+
 - Moradia, alimentação, compras, boletos e **aportes em investimentos**. (Nota de engenharia financeira: aportes são vistos como "saída" do caixa do dia a dia para construir patrimônio em outra conta não-caixa).
 
 ### 3. Transferência (Transfer)
+
 Dinheiro mudando de bolso. Não deixa mais rico nem mais pobre.
+
 - Pagamento de fatura de cartão (pagar o cartão já gasto não é despesa nova), transferência entre bancos próprios.
 
 ---

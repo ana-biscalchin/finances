@@ -44,6 +44,7 @@ import { formatMoney, moneyFromCents } from "@finances/domain";
 
 import { MonthSelector } from "../shared/MonthSelector";
 import { CashMonthlyView } from "./CashMonthlyView";
+import { getErrorMessage, reportClientError } from "../shared/errors";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -134,7 +135,6 @@ type CreditCard = {
   paymentAccountId?: string | null;
 };
 
-
 /** Same palette used in the reports payment-methods chart */
 export const PAYMENT_METHOD_COLORS = [
   "var(--mantine-color-teal-6)",
@@ -160,14 +160,16 @@ function collectMethodBreakdown(node: TreeNode): MethodBreakdown[] {
     return node.byPaymentMethod;
   }
   if (!node.children || node.children.length === 0) {
-    return [{
-      accountId: null,
-      creditCardId: null,
-      paymentMethodId: null,
-      budgeted: node.budgeted,
-      realized: node.realized,
-      committed: node.committed
-    }];
+    return [
+      {
+        accountId: null,
+        creditCardId: null,
+        paymentMethodId: null,
+        budgeted: node.budgeted,
+        realized: node.realized,
+        committed: node.committed
+      }
+    ];
   }
   const map = new Map<string, MethodBreakdown>();
   for (const child of node.children) {
@@ -189,13 +191,15 @@ function collectMethodBreakdown(node: TreeNode): MethodBreakdown[] {
 /** Mantine color names (short) matching PAYMENT_METHOD_COLORS order */
 const PM_COLOR_NAMES = ["teal", "blue", "indigo", "cyan", "violet", "grape"] as const;
 
-function getCategoryProgressColor(pmId: string | null, paymentMethods: PaymentMethod[], isIncome: boolean): string {
+function getCategoryProgressColor(
+  pmId: string | null,
+  paymentMethods: PaymentMethod[],
+  isIncome: boolean
+): string {
   if (!pmId) return isIncome ? "teal" : "blue";
   const idx = paymentMethods.findIndex((pm) => pm.id === pmId);
   return idx >= 0 ? PM_COLOR_NAMES[idx % PM_COLOR_NAMES.length] : "blue";
 }
-
-
 
 function getBreakdownItemLabel(
   m: MethodBreakdown,
@@ -228,7 +232,6 @@ interface ControleMensalPageProps {
 
 export function ControleMensalPage({ selectedMonth, setSelectedMonth }: ControleMensalPageProps) {
   const [activeView, setActiveView] = useState<"competence" | "cash">("competence");
-  const groupBy = "category";
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
   const [accountSummaries, setAccountSummaries] = useState<AccountMonthlySummary[]>([]);
   const [summary, setSummary] = useState<SummaryData | null>(null);
@@ -244,8 +247,8 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch (e) {
-        console.error(e);
+      } catch {
+        localStorage.removeItem("controle-mensal-expanded-nodes");
       }
     }
     return {};
@@ -278,16 +281,15 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
     if (!silent) setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `${apiBaseUrl}/controle-mensal?month=${selectedMonth}&groupBy=${groupBy}`
-      );
+      const res = await fetch(`${apiBaseUrl}/controle-mensal?month=${selectedMonth}`);
       if (!res.ok) throw new Error("Erro ao carregar dados do orçamento.");
       const data = await res.json();
       setTreeData(data.tree);
       setSummary(data.summary);
       setAccountSummaries(data.accountSummaries ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro inesperado.");
+      reportClientError("monthlyControl.competence.load", e);
+      setError(getErrorMessage(e));
     } finally {
       if (!silent) setIsLoading(false);
     }
@@ -319,7 +321,8 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
       alert("Orçamentos copiados com sucesso!");
       void loadData();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Erro inesperado.");
+      reportClientError("monthlyControl.copyBudget", e);
+      alert(getErrorMessage(e));
     }
   }
 
@@ -349,8 +352,11 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
       setAccounts((await accountsResponse.json()) as Account[]);
       setPaymentMethods((await paymentMethodsResponse.json()) as PaymentMethod[]);
       setCreditCards((await creditCardsResponse.json()) as CreditCard[]);
-    } catch (loadError) {
-      console.error(loadError);
+    } catch (error) {
+      reportClientError("monthlyControl.loadReferences", error);
+      setAccounts([]);
+      setPaymentMethods([]);
+      setCreditCards([]);
     }
   }
 
@@ -361,7 +367,7 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
 
   useEffect(() => {
     void loadData();
-  }, [selectedMonth, groupBy]);
+  }, [selectedMonth]);
 
   const toggleNode = (id: string, currentlyExpanded: boolean) => {
     setExpandedNodes((prev) => {
@@ -374,9 +380,7 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
     });
   };
 
-  const getLeafDetails = (
-    node: TreeNode
-  ): { subcategoryId: string } | null => {
+  const getLeafDetails = (node: TreeNode): { subcategoryId: string } | null => {
     const { id } = node;
     if (id.startsWith("sub-")) {
       return {
@@ -408,9 +412,7 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
           subcategoryId: leafDetails?.subcategoryId
         });
 
-        const isExpanded = expandedNodes[node.id] !== undefined
-          ? expandedNodes[node.id]
-          : false;
+        const isExpanded = expandedNodes[node.id] !== undefined ? expandedNodes[node.id] : false;
         if (node.children && node.children.length > 0 && isExpanded) {
           flatten(node.children, level + 1, node.id);
         }
@@ -418,7 +420,7 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
     };
     flatten(treeData);
     return list;
-  }, [treeData, expandedNodes, groupBy]);
+  }, [treeData, expandedNodes]);
 
   /** Map nodeId → per-payment-method breakdown, computed from full tree (not just visible rows) */
   const breakdownMap = useMemo(() => {
@@ -442,7 +444,6 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
   const totalExpenseRealizedCash = summary?.expense.realizedCash ?? 0;
   const totalExpenseRealizedCredit = summary?.expense.realizedCredit ?? 0;
 
-
   const totalIncomeBudgeted = summary?.income.budgeted ?? 0;
   const totalIncomeRealized = summary?.income.realized ?? 0;
 
@@ -459,7 +460,6 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
     (total, account) => total + account.projectedBalance,
     0
   );
-
 
   return (
     <Stack gap="lg">
@@ -530,37 +530,61 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                   <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 5 }} spacing="md">
                     {/* Card 1: Despesas — gasto vs limite + disponível em destaque */}
                     {(() => {
-                      const expensePct = totalExpenseBudgeted > 0
-                        ? (totalExpenseUsed / totalExpenseBudgeted) * 100
-                        : 0;
+                      const expensePct =
+                        totalExpenseBudgeted > 0
+                          ? (totalExpenseUsed / totalExpenseBudgeted) * 100
+                          : 0;
                       const expenseAvailable = totalExpenseBudgeted - totalExpenseUsed;
-                      const expenseColor = expensePct >= 100 ? "red" : expensePct >= 85 ? "orange" : "blue";
+                      const expenseColor =
+                        expensePct >= 100 ? "red" : expensePct >= 85 ? "orange" : "blue";
                       return (
-                        <Card withBorder padding="md" radius="md" style={{
-                          borderLeft: `3px solid var(--mantine-color-${expenseColor}-5)`
-                        }}>
+                        <Card
+                          withBorder
+                          padding="md"
+                          radius="md"
+                          style={{
+                            borderLeft: `3px solid var(--mantine-color-${expenseColor}-5)`
+                          }}
+                        >
                           <Stack gap="xs">
                             <Group justify="space-between" align="flex-start">
-                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Despesas do mês</Text>
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                                Despesas do mês
+                              </Text>
                               <Badge color={expenseColor} variant="light" size="sm">
-                                {expensePct >= 100 ? "Limite estourado" : expensePct >= 85 ? "Atenção" : `${Math.round(expensePct)}% usado`}
+                                {expensePct >= 100
+                                  ? "Limite estourado"
+                                  : expensePct >= 85
+                                    ? "Atenção"
+                                    : `${Math.round(expensePct)}% usado`}
                               </Badge>
                             </Group>
                             <div>
                               <Text size="xl" fw={700} c={expenseColor}>
                                 {formatMoney(moneyFromCents(totalExpenseUsed))}
                               </Text>
-                              <Text size="xs" c="dimmed">de {formatMoney(moneyFromCents(totalExpenseBudgeted))} planejados</Text>
+                              <Text size="xs" c="dimmed">
+                                de {formatMoney(moneyFromCents(totalExpenseBudgeted))} planejados
+                              </Text>
                             </div>
-                            <Progress value={Math.min(expensePct, 100)} color={expenseColor} size="sm" radius="xl" />
+                            <Progress
+                              value={Math.min(expensePct, 100)}
+                              color={expenseColor}
+                              size="sm"
+                              radius="xl"
+                            />
                             <Group justify="space-between">
-                              <Text size="xs" c="dimmed">Realizado</Text>
+                              <Text size="xs" c="dimmed">
+                                Realizado
+                              </Text>
                               <Text size="xs" fw={600} c={expenseColor}>
                                 {formatMoney(moneyFromCents(totalExpenseRealized))}
                               </Text>
                             </Group>
                             <Group justify="space-between">
-                              <Text size="xs" c="dimmed">Disponível</Text>
+                              <Text size="xs" c="dimmed">
+                                Disponível
+                              </Text>
                               <Text size="xs" fw={700} c={expenseAvailable >= 0 ? "teal" : "red"}>
                                 {formatMoney(moneyFromCents(expenseAvailable))}
                               </Text>
@@ -575,30 +599,54 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                       const delta = totalAccountProjectedBalance - totalOpeningBalance;
                       const deltaColor = delta >= 0 ? "teal" : "red";
                       return (
-                        <Card withBorder padding="md" radius="md" style={{
-                          borderLeft: `3px solid var(--mantine-color-${totalAccountProjectedBalance >= 0 ? "teal" : "red"}-5)`
-                        }}>
+                        <Card
+                          withBorder
+                          padding="md"
+                          radius="md"
+                          style={{
+                            borderLeft: `3px solid var(--mantine-color-${totalAccountProjectedBalance >= 0 ? "teal" : "red"}-5)`
+                          }}
+                        >
                           <Stack gap="xs">
                             <Group justify="space-between" align="flex-start">
-                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Projeção de saldo</Text>
-                              <Badge color={totalAccountProjectedBalance >= 0 ? "teal" : "red"} variant="light" size="sm">
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                                Projeção de saldo
+                              </Text>
+                              <Badge
+                                color={totalAccountProjectedBalance >= 0 ? "teal" : "red"}
+                                variant="light"
+                                size="sm"
+                              >
                                 Final do mês
                               </Badge>
                             </Group>
                             <div>
-                              <Text size="xl" fw={700} c={totalAccountProjectedBalance >= 0 ? "teal" : "red"}>
+                              <Text
+                                size="xl"
+                                fw={700}
+                                c={totalAccountProjectedBalance >= 0 ? "teal" : "red"}
+                              >
                                 {formatMoney(moneyFromCents(totalAccountProjectedBalance))}
                               </Text>
-                              <Text size="xs" c="dimmed">saldo projetado nas contas</Text>
+                              <Text size="xs" c="dimmed">
+                                saldo projetado nas contas
+                              </Text>
                             </div>
                             <Group justify="space-between">
-                              <Text size="xs" c="dimmed">Saldo inicial</Text>
-                              <Text size="xs" fw={600}>{formatMoney(moneyFromCents(totalOpeningBalance))}</Text>
+                              <Text size="xs" c="dimmed">
+                                Saldo inicial
+                              </Text>
+                              <Text size="xs" fw={600}>
+                                {formatMoney(moneyFromCents(totalOpeningBalance))}
+                              </Text>
                             </Group>
                             <Group justify="space-between">
-                              <Text size="xs" c="dimmed">Variação projetada</Text>
+                              <Text size="xs" c="dimmed">
+                                Variação projetada
+                              </Text>
                               <Text size="xs" fw={700} c={deltaColor}>
-                                {delta >= 0 ? "+" : ""}{formatMoney(moneyFromCents(delta))}
+                                {delta >= 0 ? "+" : ""}
+                                {formatMoney(moneyFromCents(delta))}
                               </Text>
                             </Group>
                           </Stack>
@@ -610,12 +658,19 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                     {(() => {
                       const color = netBalanceRealized >= 0 ? "teal" : "red";
                       return (
-                        <Card withBorder padding="md" radius="md" style={{
-                          borderLeft: `3px solid var(--mantine-color-${color}-5)`
-                        }}>
+                        <Card
+                          withBorder
+                          padding="md"
+                          radius="md"
+                          style={{
+                            borderLeft: `3px solid var(--mantine-color-${color}-5)`
+                          }}
+                        >
                           <Stack gap="xs">
                             <Group justify="space-between" align="flex-start">
-                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Resultado realizado</Text>
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                                Resultado realizado
+                              </Text>
                               <Badge color={color} variant="light" size="sm">
                                 {netBalanceRealized >= 0 ? "Positivo" : "Negativo"}
                               </Badge>
@@ -624,15 +679,25 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                               <Text size="xl" fw={700} c={color}>
                                 {formatMoney(moneyFromCents(netBalanceRealized))}
                               </Text>
-                              <Text size="xs" c="dimmed">receita − despesa realizadas</Text>
+                              <Text size="xs" c="dimmed">
+                                receita − despesa realizadas
+                              </Text>
                             </div>
                             <Group justify="space-between">
-                              <Text size="xs" c="dimmed">Receitas recebidas</Text>
-                              <Text size="xs" fw={600} c="teal">{formatMoney(moneyFromCents(totalIncomeRealized))}</Text>
+                              <Text size="xs" c="dimmed">
+                                Receitas recebidas
+                              </Text>
+                              <Text size="xs" fw={600} c="teal">
+                                {formatMoney(moneyFromCents(totalIncomeRealized))}
+                              </Text>
                             </Group>
                             <Group justify="space-between">
-                              <Text size="xs" c="dimmed">Despesas pagas</Text>
-                              <Text size="xs" fw={600} c="red">{formatMoney(moneyFromCents(totalExpenseRealized))}</Text>
+                              <Text size="xs" c="dimmed">
+                                Despesas pagas
+                              </Text>
+                              <Text size="xs" fw={600} c="red">
+                                {formatMoney(moneyFromCents(totalExpenseRealized))}
+                              </Text>
                             </Group>
                           </Stack>
                         </Card>
@@ -641,31 +706,58 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
 
                     {/* Card 4: Receitas planejadas vs recebidas */}
                     {(() => {
-                      const incomePct = totalIncomeBudgeted > 0
-                        ? (totalIncomeRealized / totalIncomeBudgeted) * 100
-                        : 0;
+                      const incomePct =
+                        totalIncomeBudgeted > 0
+                          ? (totalIncomeRealized / totalIncomeBudgeted) * 100
+                          : 0;
                       return (
-                        <Card withBorder padding="md" radius="md" style={{
-                          borderLeft: "3px solid var(--mantine-color-teal-5)"
-                        }}>
+                        <Card
+                          withBorder
+                          padding="md"
+                          radius="md"
+                          style={{
+                            borderLeft: "3px solid var(--mantine-color-teal-5)"
+                          }}
+                        >
                           <Stack gap="xs">
                             <Group justify="space-between" align="flex-start">
-                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Receitas do mês</Text>
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                                Receitas do mês
+                              </Text>
                               <Badge color="teal" variant="light" size="sm">
-                                {incomePct >= 100 ? "Completo" : `${Math.round(incomePct)}% recebido`}
+                                {incomePct >= 100
+                                  ? "Completo"
+                                  : `${Math.round(incomePct)}% recebido`}
                               </Badge>
                             </Group>
                             <div>
                               <Text size="xl" fw={700} c="teal">
                                 {formatMoney(moneyFromCents(totalIncomeRealized))}
                               </Text>
-                              <Text size="xs" c="dimmed">de {formatMoney(moneyFromCents(totalIncomeBudgeted))} esperados</Text>
+                              <Text size="xs" c="dimmed">
+                                de {formatMoney(moneyFromCents(totalIncomeBudgeted))} esperados
+                              </Text>
                             </div>
-                            <Progress value={Math.min(incomePct, 100)} color="teal" size="sm" radius="xl" />
+                            <Progress
+                              value={Math.min(incomePct, 100)}
+                              color="teal"
+                              size="sm"
+                              radius="xl"
+                            />
                             <Group justify="space-between">
-                              <Text size="xs" c="dimmed">A receber ainda</Text>
-                              <Text size="xs" fw={700} c={totalIncomeBudgeted > totalIncomeRealized ? "orange" : "teal"}>
-                                {formatMoney(moneyFromCents(Math.max(0, totalIncomeBudgeted - totalIncomeRealized)))}
+                              <Text size="xs" c="dimmed">
+                                A receber ainda
+                              </Text>
+                              <Text
+                                size="xs"
+                                fw={700}
+                                c={totalIncomeBudgeted > totalIncomeRealized ? "orange" : "teal"}
+                              >
+                                {formatMoney(
+                                  moneyFromCents(
+                                    Math.max(0, totalIncomeBudgeted - totalIncomeRealized)
+                                  )
+                                )}
                               </Text>
                             </Group>
                           </Stack>
@@ -675,18 +767,27 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
 
                     {/* Card 5: Independência de crédito */}
                     {(() => {
-                      const cashPct = totalExpenseRealized > 0
-                        ? (totalExpenseRealizedCash / totalExpenseRealized) * 100
-                        : 0;
+                      const cashPct =
+                        totalExpenseRealized > 0
+                          ? (totalExpenseRealizedCash / totalExpenseRealized) * 100
+                          : 0;
                       const creditPct = 100 - cashPct;
-                      const independenceColor = cashPct >= 70 ? "teal" : cashPct >= 40 ? "orange" : "grape";
+                      const independenceColor =
+                        cashPct >= 70 ? "teal" : cashPct >= 40 ? "orange" : "grape";
                       return (
-                        <Card withBorder padding="md" radius="md" style={{
-                          borderLeft: `3px solid var(--mantine-color-${independenceColor}-5)`
-                        }}>
+                        <Card
+                          withBorder
+                          padding="md"
+                          radius="md"
+                          style={{
+                            borderLeft: `3px solid var(--mantine-color-${independenceColor}-5)`
+                          }}
+                        >
                           <Stack gap="xs">
                             <Group justify="space-between" align="flex-start">
-                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Independência de crédito</Text>
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+                                Independência de crédito
+                              </Text>
                               <Badge color={independenceColor} variant="light" size="sm">
                                 {cashPct >= 70 ? "Alta" : cashPct >= 40 ? "Média" : "Baixa"}
                               </Badge>
@@ -695,19 +796,29 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                               <Text size="xl" fw={700} c={independenceColor}>
                                 {totalExpenseRealized > 0 ? `${Math.round(cashPct)}% à vista` : "—"}
                               </Text>
-                              <Text size="xs" c="dimmed">do total gasto realizado</Text>
+                              <Text size="xs" c="dimmed">
+                                do total gasto realizado
+                              </Text>
                             </div>
                             <Progress.Root size="sm" radius="xl">
                               <Progress.Section value={cashPct} color="teal" />
                               <Progress.Section value={creditPct} color="grape" />
                             </Progress.Root>
                             <Group justify="space-between">
-                              <Text size="xs" c="dimmed">À vista</Text>
-                              <Text size="xs" fw={600} c="teal">{formatMoney(moneyFromCents(totalExpenseRealizedCash))}</Text>
+                              <Text size="xs" c="dimmed">
+                                À vista
+                              </Text>
+                              <Text size="xs" fw={600} c="teal">
+                                {formatMoney(moneyFromCents(totalExpenseRealizedCash))}
+                              </Text>
                             </Group>
                             <Group justify="space-between">
-                              <Text size="xs" c="dimmed">No cartão</Text>
-                              <Text size="xs" fw={600} c="grape">{formatMoney(moneyFromCents(totalExpenseRealizedCredit))}</Text>
+                              <Text size="xs" c="dimmed">
+                                No cartão
+                              </Text>
+                              <Text size="xs" fw={600} c="grape">
+                                {formatMoney(moneyFromCents(totalExpenseRealizedCredit))}
+                              </Text>
                             </Group>
                           </Stack>
                         </Card>
@@ -718,7 +829,6 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
               </Collapse>
             </Paper>
 
-
             {/* Account Balances */}
             <Paper withBorder radius="md">
               <Group
@@ -727,7 +837,9 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                 px="md"
                 py="xs"
                 style={{
-                  borderBottom: balancesCollapsed ? "none" : "1px solid var(--mantine-color-gray-2)",
+                  borderBottom: balancesCollapsed
+                    ? "none"
+                    : "1px solid var(--mantine-color-gray-2)",
                   cursor: "pointer",
                   userSelect: "none"
                 }}
@@ -748,13 +860,15 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
               </Group>
 
               <Collapse in={!balancesCollapsed}>
-                {isLoading ? (
+                {isLoading && accountSummaries.length === 0 ? (
                   <Group justify="center" p="xl">
                     <Loader size="sm" />
                   </Group>
                 ) : accountSummaries.length === 0 ? (
                   <Box p="xl" style={{ textAlign: "center" }}>
-                    <Text c="dimmed">Nenhuma conta ativa ou movimentação encontrada para este mês.</Text>
+                    <Text c="dimmed">
+                      Nenhuma conta ativa ou movimentação encontrada para este mês.
+                    </Text>
                   </Box>
                 ) : (
                   <Stack gap={0}>
@@ -802,7 +916,11 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                               <Table.Tr key={account.id}>
                                 <Table.Td>
                                   <Group gap="xs" wrap="nowrap" align="flex-start">
-                                    <ThemeIcon variant="light" color={account.projectedBalance >= 0 ? "teal" : "red"} mt={3}>
+                                    <ThemeIcon
+                                      variant="light"
+                                      color={account.projectedBalance >= 0 ? "teal" : "red"}
+                                      mt={3}
+                                    >
                                       <IconWallet size={16} />
                                     </ThemeIcon>
                                     <div>
@@ -831,7 +949,11 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                   </Group>
                                 </Table.Td>
                                 <Table.Td style={{ textAlign: "right" }}>
-                                  <Text size="sm" fw={600} c={account.openingBalance >= 0 ? "teal" : "red"}>
+                                  <Text
+                                    size="sm"
+                                    fw={600}
+                                    c={account.openingBalance >= 0 ? "teal" : "red"}
+                                  >
                                     {formatMoney(moneyFromCents(account.openingBalance))}
                                   </Text>
                                 </Table.Td>
@@ -841,20 +963,41 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                   </Text>
                                 </Table.Td>
                                 <Table.Td style={{ textAlign: "right" }}>
-                                  <Text size="sm" c={account.realizedOutflow > 0 ? "red" : "dimmed"}>
+                                  <Text
+                                    size="sm"
+                                    c={account.realizedOutflow > 0 ? "red" : "dimmed"}
+                                  >
                                     {formatMoney(moneyFromCents(account.realizedOutflow))}
                                   </Text>
                                 </Table.Td>
                                 <Table.Td style={{ textAlign: "right" }}>
-                                  <HoverCard width={320} shadow="md" withArrow openDelay={100} position="left">
+                                  <HoverCard
+                                    width={320}
+                                    shadow="md"
+                                    withArrow
+                                    openDelay={100}
+                                    position="left"
+                                  >
                                     <HoverCard.Target>
-                                      <Group gap={4} justify="flex-end" style={{ cursor: "help", display: "inline-flex" }} wrap="nowrap">
-                                        <Text size="sm" fw={700} c={account.projectedBalance >= 0 ? "teal" : "red"}>
+                                      <Group
+                                        gap={4}
+                                        justify="flex-end"
+                                        style={{ cursor: "help", display: "inline-flex" }}
+                                        wrap="nowrap"
+                                      >
+                                        <Text
+                                          size="sm"
+                                          fw={700}
+                                          c={account.projectedBalance >= 0 ? "teal" : "red"}
+                                        >
                                           {formatMoney(moneyFromCents(account.projectedBalance))}
                                         </Text>
                                         <IconInfoCircle size={14} style={{ opacity: 0.6 }} />
                                         {account.projectedBalance < 0 && (
-                                          <IconAlertTriangle size={14} color="var(--mantine-color-red-6)" />
+                                          <IconAlertTriangle
+                                            size={14}
+                                            color="var(--mantine-color-red-6)"
+                                          />
                                         )}
                                       </Group>
                                     </HoverCard.Target>
@@ -863,65 +1006,125 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                         <Text size="xs" fw={700} tt="uppercase" c="dimmed">
                                           Detalhamento da Projeção
                                         </Text>
-                                        
+
                                         <Group justify="space-between" wrap="nowrap">
                                           <Text size="xs">Saldo realizado (atual):</Text>
-                                          <Text size="xs" fw={600} c={account.realizedBalance >= 0 ? "teal" : "red"}>
+                                          <Text
+                                            size="xs"
+                                            fw={600}
+                                            c={account.realizedBalance >= 0 ? "teal" : "red"}
+                                          >
                                             {formatMoney(moneyFromCents(account.realizedBalance))}
                                           </Text>
                                         </Group>
 
-                                        {account.plannedInflow ? account.plannedInflow > 0 && (
-                                          <Group justify="space-between" wrap="nowrap">
-                                            <Text size="xs">(+) Entradas planejadas:</Text>
-                                            <Text size="xs" fw={600} c="teal">
-                                              +{formatMoney(moneyFromCents(account.plannedInflow))}
-                                            </Text>
-                                          </Group>
-                                        ) : null}
+                                        {account.plannedInflow
+                                          ? account.plannedInflow > 0 && (
+                                              <Group justify="space-between" wrap="nowrap">
+                                                <Text size="xs">(+) Entradas planejadas:</Text>
+                                                <Text size="xs" fw={600} c="teal">
+                                                  +
+                                                  {formatMoney(
+                                                    moneyFromCents(account.plannedInflow)
+                                                  )}
+                                                </Text>
+                                              </Group>
+                                            )
+                                          : null}
 
-                                        {account.plannedOutflow ? account.plannedOutflow > 0 && (
-                                          <Group justify="space-between" wrap="nowrap">
-                                            <Text size="xs">(-) Saídas planejadas:</Text>
-                                            <Text size="xs" fw={600} c="red">
-                                              -{formatMoney(moneyFromCents(account.plannedOutflow))}
-                                            </Text>
-                                          </Group>
-                                        ) : null}
+                                        {account.plannedOutflow
+                                          ? account.plannedOutflow > 0 && (
+                                              <Group justify="space-between" wrap="nowrap">
+                                                <Text size="xs">(-) Saídas planejadas:</Text>
+                                                <Text size="xs" fw={600} c="red">
+                                                  -
+                                                  {formatMoney(
+                                                    moneyFromCents(account.plannedOutflow)
+                                                  )}
+                                                </Text>
+                                              </Group>
+                                            )
+                                          : null}
 
-                                        {account.openCardBills ? account.openCardBills > 0 && (
-                                          <>
-                                            <Group justify="space-between" wrap="nowrap">
-                                              <Text size="xs" fw={600}>(-) Faturas em aberto:</Text>
-                                              <Text size="xs" fw={700} c="orange">
-                                                -{formatMoney(moneyFromCents(account.openCardBills))}
-                                              </Text>
-                                            </Group>
-                                            <Stack gap={2} pl="xs" style={{ borderLeft: "2px solid var(--mantine-color-orange-2)" }}>
-                                              {account.linkedBillsDetail?.map((bill, index) => (
-                                                <Group key={index} justify="space-between" wrap="nowrap">
-                                                  <Text size="10px" c="dimmed">
-                                                    {bill.cardName} ({bill.billMonth})
+                                        {account.openCardBills
+                                          ? account.openCardBills > 0 && (
+                                              <>
+                                                <Group justify="space-between" wrap="nowrap">
+                                                  <Text size="xs" fw={600}>
+                                                    (-) Faturas em aberto:
                                                   </Text>
-                                                  <Text size="10px" fw={600} c="dimmed">
-                                                    -{formatMoney(moneyFromCents(bill.amountCents))}
+                                                  <Text size="xs" fw={700} c="orange">
+                                                    -
+                                                    {formatMoney(
+                                                      moneyFromCents(account.openCardBills)
+                                                    )}
                                                   </Text>
                                                 </Group>
-                                              ))}
-                                            </Stack>
-                                          </>
-                                        ) : null}
+                                                <Stack
+                                                  gap={2}
+                                                  pl="xs"
+                                                  style={{
+                                                    borderLeft:
+                                                      "2px solid var(--mantine-color-orange-2)"
+                                                  }}
+                                                >
+                                                  {account.linkedBillsDetail?.map((bill, index) => (
+                                                    <Group
+                                                      key={index}
+                                                      justify="space-between"
+                                                      wrap="nowrap"
+                                                    >
+                                                      <Text size="10px" c="dimmed">
+                                                        {bill.cardName} ({bill.billMonth})
+                                                      </Text>
+                                                      <Text size="10px" fw={600} c="dimmed">
+                                                        -
+                                                        {formatMoney(
+                                                          moneyFromCents(bill.amountCents)
+                                                        )}
+                                                      </Text>
+                                                    </Group>
+                                                  ))}
+                                                </Stack>
+                                              </>
+                                            )
+                                          : null}
 
-                                        <Group justify="space-between" wrap="nowrap" pt="xs" style={{ borderTop: "1px solid var(--mantine-color-gray-2)" }}>
-                                          <Text size="xs" fw={700}>Saldo projetado final:</Text>
-                                          <Text size="xs" fw={700} c={account.projectedBalance >= 0 ? "teal" : "red"}>
+                                        <Group
+                                          justify="space-between"
+                                          wrap="nowrap"
+                                          pt="xs"
+                                          style={{
+                                            borderTop: "1px solid var(--mantine-color-gray-2)"
+                                          }}
+                                        >
+                                          <Text size="xs" fw={700}>
+                                            Saldo projetado final:
+                                          </Text>
+                                          <Text
+                                            size="xs"
+                                            fw={700}
+                                            c={account.projectedBalance >= 0 ? "teal" : "red"}
+                                          >
                                             {formatMoney(moneyFromCents(account.projectedBalance))}
                                           </Text>
                                         </Group>
 
                                         {account.projectedBalance < 0 && (
-                                          <Group gap={4} wrap="nowrap" mt="xs" p={6} style={{ borderRadius: 4, backgroundColor: "var(--mantine-color-red-0)" }}>
-                                            <IconAlertTriangle size={14} color="var(--mantine-color-red-6)" />
+                                          <Group
+                                            gap={4}
+                                            wrap="nowrap"
+                                            mt="xs"
+                                            p={6}
+                                            style={{
+                                              borderRadius: 4,
+                                              backgroundColor: "var(--mantine-color-red-0)"
+                                            }}
+                                          >
+                                            <IconAlertTriangle
+                                              size={14}
+                                              color="var(--mantine-color-red-6)"
+                                            />
                                             <Text size="10px" c="red.9" fw={500}>
                                               Atenção: Saldo projetado negativo!
                                             </Text>
@@ -944,23 +1147,36 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
 
             {/* Main Aggregated Table */}
             <Paper withBorder radius="md">
-              <Group justify="space-between" align="center" px="md" py="xs" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
+              <Group
+                justify="space-between"
+                align="center"
+                px="md"
+                py="xs"
+                style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}
+              >
                 <Text fw={700}>Detalhamento do orçamento</Text>
               </Group>
 
-              {isLoading ? (
+              {isLoading && treeData.length === 0 ? (
                 <Group justify="center" p="xl">
                   <Loader />
                 </Group>
               ) : error ? (
                 <Box p="md">
-                  <Alert color="red" variant="light" title="Erro" icon={<IconAlertCircle size={16} />}>
+                  <Alert
+                    color="red"
+                    variant="light"
+                    title="Erro"
+                    icon={<IconAlertCircle size={16} />}
+                  >
                     {error}
                   </Alert>
                 </Box>
               ) : flatRows.length === 0 ? (
                 <Box p="xl" style={{ textAlign: "center" }}>
-                  <Text c="dimmed">Nenhum orçamento configurado ou lançamento registrado para este mês.</Text>
+                  <Text c="dimmed">
+                    Nenhum orçamento configurado ou lançamento registrado para este mês.
+                  </Text>
                 </Box>
               ) : (
                 <Table.ScrollContainer minWidth={800}>
@@ -975,14 +1191,11 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                     </Table.Thead>
                     <Table.Tbody>
                       {flatRows.map((row) => {
-                        const isExpanded = expandedNodes[row.id] !== undefined
-                          ? expandedNodes[row.id]
-                          : false;
+                        const isExpanded =
+                          expandedNodes[row.id] !== undefined ? expandedNodes[row.id] : false;
 
                         const styleBg =
-                          row.level === 0
-                            ? { backgroundColor: "var(--mantine-color-gray-0)" }
-                            : {};
+                          row.level === 0 ? { backgroundColor: "var(--mantine-color-gray-0)" } : {};
 
                         return (
                           <Table.Tr key={row.id} style={styleBg}>
@@ -1023,15 +1236,19 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                       size="xs"
                                       variant="light"
                                       color={
-                                        row.behavior === "fixed" ? "blue"
-                                          : row.behavior === "variable" ? "teal"
-                                          : "orange"
+                                        row.behavior === "fixed"
+                                          ? "blue"
+                                          : row.behavior === "variable"
+                                            ? "teal"
+                                            : "orange"
                                       }
                                       style={{ flexShrink: 0 }}
                                     >
-                                      {row.behavior === "fixed" ? "Fixo"
-                                        : row.behavior === "variable" ? "Variável"
-                                        : "Extra"}
+                                      {row.behavior === "fixed"
+                                        ? "Fixo"
+                                        : row.behavior === "variable"
+                                          ? "Variável"
+                                          : "Extra"}
                                     </Badge>
                                   ) : null}
                                 </Text>
@@ -1070,9 +1287,15 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                             <Table.Td>
                               {(() => {
                                 const breakdown = breakdownMap.get(row.id) ?? [];
-                                const active = breakdown.filter((m) => m.budgeted > 0 || m.realized > 0);
+                                const active = breakdown.filter(
+                                  (m) => m.budgeted > 0 || m.realized > 0
+                                );
                                 if (active.length === 0) {
-                                  return <Text size="xs" c="dimmed">—</Text>;
+                                  return (
+                                    <Text size="xs" c="dimmed">
+                                      —
+                                    </Text>
+                                  );
                                 }
 
                                 if (row.hasChildren) {
@@ -1082,7 +1305,8 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                       active
                                         .map((m) => {
                                           if (m.creditCardId) {
-                                            return creditCards.find((c) => c.id === m.creditCardId)?.name;
+                                            return creditCards.find((c) => c.id === m.creditCardId)
+                                              ?.name;
                                           }
                                           if (m.accountId) {
                                             return accounts.find((a) => a.id === m.accountId)?.name;
@@ -1094,13 +1318,22 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                   );
 
                                   if (activeSources.length === 0) {
-                                    return <Text size="xs" c="dimmed">—</Text>;
+                                    return (
+                                      <Text size="xs" c="dimmed">
+                                        —
+                                      </Text>
+                                    );
                                   }
 
                                   return (
                                     <Group gap={4} wrap="wrap">
                                       {activeSources.map((sourceName) => (
-                                        <Badge key={sourceName} size="xs" variant="light" color="gray">
+                                        <Badge
+                                          key={sourceName}
+                                          size="xs"
+                                          variant="light"
+                                          color="gray"
+                                        >
                                           {sourceName}
                                         </Badge>
                                       ))}
@@ -1111,12 +1344,22 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                 return (
                                   <Group gap="xs" wrap="wrap">
                                     {active.map((m) => {
-                                      const name = getBreakdownItemLabel(m, accounts, creditCards, paymentMethods);
-                                      const dotColor = getCategoryProgressColor(m.paymentMethodId, paymentMethods, row.nature === "income");
+                                      const name = getBreakdownItemLabel(
+                                        m,
+                                        accounts,
+                                        creditCards,
+                                        paymentMethods
+                                      );
+                                      const dotColor = getCategoryProgressColor(
+                                        m.paymentMethodId,
+                                        paymentMethods,
+                                        row.nature === "income"
+                                      );
                                       const isIncome = row.nature === "income";
                                       const used = m.realized + m.committed;
                                       const diff = isIncome ? used - m.budgeted : m.budgeted - used;
-                                      const diffColor = diff < 0 ? "red" : (diff > 0 ? "teal" : "gray");
+                                      const diffColor =
+                                        diff < 0 ? "red" : diff > 0 ? "teal" : "gray";
 
                                       return (
                                         <Paper
@@ -1133,22 +1376,56 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                                             maxWidth: "240px"
                                           }}
                                         >
-                                          <Group justify="space-between" wrap="nowrap" gap={4} mb={2}>
-                                            <Group gap={5} wrap="nowrap" style={{ overflow: "hidden" }}>
-                                              <div style={{
-                                                width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                                                backgroundColor: `var(--mantine-color-${dotColor}-5)`
-                                              }} />
-                                              <Text size="11px" fw={600} style={{ whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                                          <Group
+                                            justify="space-between"
+                                            wrap="nowrap"
+                                            gap={4}
+                                            mb={2}
+                                          >
+                                            <Group
+                                              gap={5}
+                                              wrap="nowrap"
+                                              style={{ overflow: "hidden" }}
+                                            >
+                                              <div
+                                                style={{
+                                                  width: 6,
+                                                  height: 6,
+                                                  borderRadius: "50%",
+                                                  flexShrink: 0,
+                                                  backgroundColor: `var(--mantine-color-${dotColor}-5)`
+                                                }}
+                                              />
+                                              <Text
+                                                size="11px"
+                                                fw={600}
+                                                style={{
+                                                  whiteSpace: "nowrap",
+                                                  textOverflow: "ellipsis",
+                                                  overflow: "hidden"
+                                                }}
+                                              >
                                                 {name}
                                               </Text>
                                             </Group>
-                                            <Badge size="xs" color={diffColor} variant="light" style={{ flexShrink: 0 }}>
-                                              {diff === 0 ? "Ok" : formatMoney(moneyFromCents(diff))}
+                                            <Badge
+                                              size="xs"
+                                              color={diffColor}
+                                              variant="light"
+                                              style={{ flexShrink: 0 }}
+                                            >
+                                              {diff === 0
+                                                ? "Ok"
+                                                : formatMoney(moneyFromCents(diff))}
                                             </Badge>
                                           </Group>
-                                          <Text size="10px" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-                                            Plan: {formatMoney(moneyFromCents(m.budgeted))} / Real: {formatMoney(moneyFromCents(m.realized))}
+                                          <Text
+                                            size="10px"
+                                            c="dimmed"
+                                            style={{ whiteSpace: "nowrap" }}
+                                          >
+                                            Plan: {formatMoney(moneyFromCents(m.budgeted))} / Real:{" "}
+                                            {formatMoney(moneyFromCents(m.realized))}
                                           </Text>
                                         </Paper>
                                       );
@@ -1221,10 +1498,8 @@ function BudgetCell({
   const [budgetsList, setBudgetsList] = useState<Budget[]>([]);
   const [transactionsList, setTransactionsList] = useState<Transaction[]>([]);
 
-  // Budget editing states
   const [budgetAmounts, setBudgetAmounts] = useState<Record<string, number | string>>({});
 
-  // New budget form states
   const [newBudgetAccountId, setNewBudgetAccountId] = useState<string | null>(null);
   const [newBudgetPmId, setNewBudgetPmId] = useState<string | null>(null);
   const [newBudgetAmount, setNewBudgetAmount] = useState<number | string>("");
@@ -1236,7 +1511,9 @@ function BudgetCell({
     try {
       const [budgetsRes, transactionsRes] = await Promise.all([
         fetch(`${apiBaseUrl}/budgets?month=${selectedMonth}`),
-        fetch(`${apiBaseUrl}/transactions?budgetMonth=${selectedMonth}&subcategoryId=${subcategoryId}`)
+        fetch(
+          `${apiBaseUrl}/transactions?budgetMonth=${selectedMonth}&subcategoryId=${subcategoryId}`
+        )
       ]);
 
       if (!budgetsRes.ok || !transactionsRes.ok) {
@@ -1256,8 +1533,8 @@ function BudgetCell({
       const allTransactions = (await transactionsRes.json()) as Transaction[];
       setTransactionsList(allTransactions);
     } catch (e) {
-      console.error(e);
-      setError(e instanceof Error ? e.message : "Erro inesperado");
+      reportClientError("monthlyControl.budgetDetails.load", e);
+      setError(getErrorMessage(e));
     } finally {
       setIsLoading(false);
     }
@@ -1278,7 +1555,8 @@ function BudgetCell({
   }
 
   const handleSaveBudget = async (budget: Budget, val: number | string) => {
-    const parsedValue = typeof val === "number" ? val : parseFloat(String(val).replace(",", ".")) || 0;
+    const parsedValue =
+      typeof val === "number" ? val : parseFloat(String(val).replace(",", ".")) || 0;
     const amountCents = Math.round(parsedValue * 100);
     try {
       const res = await fetch(`${apiBaseUrl}/budgets`, {
@@ -1296,7 +1574,8 @@ function BudgetCell({
         await loadModalData();
       }
     } catch (e) {
-      console.error(e);
+      reportClientError("monthlyControl.budgetDetails.save", e);
+      setError(getErrorMessage(e, "Erro ao salvar limite."));
     }
   };
 
@@ -1306,7 +1585,10 @@ function BudgetCell({
   };
 
   const handleAddBudget = async () => {
-    const amt = typeof newBudgetAmount === "number" ? newBudgetAmount : parseFloat(String(newBudgetAmount).replace(",", ".")) || 0;
+    const amt =
+      typeof newBudgetAmount === "number"
+        ? newBudgetAmount
+        : parseFloat(String(newBudgetAmount).replace(",", ".")) || 0;
     if (amt <= 0) return;
     try {
       const res = await fetch(`${apiBaseUrl}/budgets`, {
@@ -1327,15 +1609,14 @@ function BudgetCell({
         await loadModalData();
       }
     } catch (e) {
-      console.error(e);
+      reportClientError("monthlyControl.budgetDetails.add", e);
+      setError(getErrorMessage(e, "Erro ao adicionar limite."));
     }
   };
 
   const accountOptions = [
     { value: "", label: "Qualquer conta / geral" },
-    ...accounts
-      .filter((a) => a.isActive)
-      .map((a) => ({ value: a.id, label: a.name }))
+    ...accounts.filter((a) => a.isActive).map((a) => ({ value: a.id, label: a.name }))
   ];
 
   const pmOptions = [
@@ -1345,7 +1626,13 @@ function BudgetCell({
 
   return (
     <>
-      <Tooltip label={initialCents > 0 ? "Editar planejamento e lançamentos" : "Definir limites e lançamentos"} withArrow position="top">
+      <Tooltip
+        label={
+          initialCents > 0 ? "Editar planejamento e lançamentos" : "Definir limites e lançamentos"
+        }
+        withArrow
+        position="top"
+      >
         <ActionIcon
           size="xs"
           variant="subtle"
@@ -1383,7 +1670,12 @@ function BudgetCell({
           <Grid gutter="xl">
             {/* Coluna 1: Limites Planejados */}
             <Grid.Col span={6} style={{ borderRight: "1px solid var(--mantine-color-gray-2)" }}>
-              <Title order={5} mb="md" c="teal" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Title
+                order={5}
+                mb="md"
+                c="teal"
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+              >
                 <IconPencil size={16} /> Limites Planejados
               </Title>
 
@@ -1394,28 +1686,42 @@ function BudgetCell({
                   </Text>
                 ) : (
                   budgetsList.map((b) => (
-                    <Paper key={b.id} p="xs" withBorder radius="xs" style={{ backgroundColor: "var(--mantine-color-gray-0)" }}>
+                    <Paper
+                      key={b.id}
+                      p="xs"
+                      withBorder
+                      radius="xs"
+                      style={{ backgroundColor: "var(--mantine-color-gray-0)" }}
+                    >
                       <Group justify="space-between" wrap="nowrap">
                         <Stack gap={1}>
                           <Text size="xs" fw={700}>
                             {(() => {
                               if (b.accountId && b.paymentMethodId === "pm-credit-card") {
-                                const card = creditCards.find((c) => c.paymentAccountId === b.accountId);
+                                const card = creditCards.find(
+                                  (c) => c.paymentAccountId === b.accountId
+                                );
                                 if (card) return card.name;
                               }
                               return b.accountId
-                                ? (accounts.find((a) => a.id === b.accountId)?.name || "Conta específica")
+                                ? accounts.find((a) => a.id === b.accountId)?.name ||
+                                    "Conta específica"
                                 : "Geral / qualquer conta";
                             })()}
                           </Text>
                           <Text size="xs" c="dimmed">
-                            {b.paymentMethodId ? (paymentMethods.find(pm => pm.id === b.paymentMethodId)?.name || "Meio específico") : "Geral / qualquer meio"}
+                            {b.paymentMethodId
+                              ? paymentMethods.find((pm) => pm.id === b.paymentMethodId)?.name ||
+                                "Meio específico"
+                              : "Geral / qualquer meio"}
                           </Text>
                         </Stack>
                         <Group gap={6} wrap="nowrap" align="center">
                           <NumberInput
                             value={budgetAmounts[b.id] ?? ""}
-                            onChange={(val) => setBudgetAmounts(prev => ({ ...prev, [b.id]: val }))}
+                            onChange={(val) =>
+                              setBudgetAmounts((prev) => ({ ...prev, [b.id]: val }))
+                            }
                             decimalScale={2}
                             thousandSeparator="."
                             decimalSeparator=","
@@ -1428,12 +1734,22 @@ function BudgetCell({
                             }}
                           />
                           <Tooltip label="Salvar este limite">
-                            <ActionIcon color="teal" variant="subtle" size="xs" onClick={() => void handleSaveBudget(b, budgetAmounts[b.id])}>
+                            <ActionIcon
+                              color="teal"
+                              variant="subtle"
+                              size="xs"
+                              onClick={() => void handleSaveBudget(b, budgetAmounts[b.id])}
+                            >
                               <IconCheck size={14} />
                             </ActionIcon>
                           </Tooltip>
                           <Tooltip label="Remover limite">
-                            <ActionIcon color="red" variant="subtle" size="xs" onClick={() => void handleDeleteBudget(b)}>
+                            <ActionIcon
+                              color="red"
+                              variant="subtle"
+                              size="xs"
+                              onClick={() => void handleDeleteBudget(b)}
+                            >
                               <IconTrash size={14} />
                             </ActionIcon>
                           </Tooltip>
@@ -1444,7 +1760,13 @@ function BudgetCell({
                 )}
               </Stack>
 
-              <Paper p="xs" withBorder radius="xs" mt="md" style={{ backgroundColor: "var(--mantine-color-teal-0)" }}>
+              <Paper
+                p="xs"
+                withBorder
+                radius="xs"
+                mt="md"
+                style={{ backgroundColor: "var(--mantine-color-teal-0)" }}
+              >
                 <Text size="xs" fw={700} c="teal" mb="xs">
                   Adicionar Planejamento
                 </Text>
@@ -1489,7 +1811,12 @@ function BudgetCell({
 
             {/* Coluna 2: Lançamentos Realizados */}
             <Grid.Col span={6}>
-              <Title order={5} mb="md" c="blue" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Title
+                order={5}
+                mb="md"
+                c="blue"
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+              >
                 <IconWallet size={16} /> Lançamentos Realizados
               </Title>
 
@@ -1503,14 +1830,15 @@ function BudgetCell({
                     const groups: Record<string, typeof transactionsList> = {};
                     for (const tx of transactionsList) {
                       const sourceName = tx.creditCardId
-                        ? `${creditCards.find(c => c.id === tx.creditCardId)?.name || "Cartão"}`
+                        ? `${creditCards.find((c) => c.id === tx.creditCardId)?.name || "Cartão"}`
                         : tx.accountId
-                        ? `${accounts.find(a => a.id === tx.accountId)?.name || "Conta"}`
-                        : "Geral";
+                          ? `${accounts.find((a) => a.id === tx.accountId)?.name || "Conta"}`
+                          : "Geral";
 
                       const pmName = tx.creditCardId
                         ? "Cartão de Crédito"
-                        : (paymentMethods.find(pm => pm.id === tx.paymentMethodId)?.name || "Geral");
+                        : paymentMethods.find((pm) => pm.id === tx.paymentMethodId)?.name ||
+                          "Geral";
 
                       const key = `${sourceName} · ${pmName}`;
                       if (!groups[key]) {
@@ -1520,22 +1848,47 @@ function BudgetCell({
                     }
 
                     return Object.entries(groups).map(([groupTitle, txs]) => (
-                      <Card key={groupTitle} p="xs" withBorder radius="xs" style={{ backgroundColor: "var(--mantine-color-blue-0)" }}>
-                        <Text size="xs" fw={700} c="blue" mb="xs" style={{ borderBottom: "1px solid var(--mantine-color-blue-1)", paddingBottom: 4 }}>
+                      <Card
+                        key={groupTitle}
+                        p="xs"
+                        withBorder
+                        radius="xs"
+                        style={{ backgroundColor: "var(--mantine-color-blue-0)" }}
+                      >
+                        <Text
+                          size="xs"
+                          fw={700}
+                          c="blue"
+                          mb="xs"
+                          style={{
+                            borderBottom: "1px solid var(--mantine-color-blue-1)",
+                            paddingBottom: 4
+                          }}
+                        >
                           {groupTitle}
                         </Text>
                         <Stack gap="xs">
                           {txs.map((tx) => {
                             const dateParts = tx.eventDate.split("-");
-                            const formattedDate = dateParts.length === 3
-                              ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
-                              : tx.eventDate;
+                            const formattedDate =
+                              dateParts.length === 3
+                                ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
+                                : tx.eventDate;
 
                             return (
-                              <Group key={tx.id} justify="space-between" wrap="nowrap" align="center">
+                              <Group
+                                key={tx.id}
+                                justify="space-between"
+                                wrap="nowrap"
+                                align="center"
+                              >
                                 <Stack gap={1} style={{ flex: 1 }}>
-                                  <Text size="xs" fw={500}>{tx.description}</Text>
-                                  <Text size="10px" c="dimmed">{formattedDate}</Text>
+                                  <Text size="xs" fw={500}>
+                                    {tx.description}
+                                  </Text>
+                                  <Text size="10px" c="dimmed">
+                                    {formattedDate}
+                                  </Text>
                                 </Stack>
                                 <Text size="xs" fw={700}>
                                   {formatMoney(moneyFromCents(tx.amountCents))}

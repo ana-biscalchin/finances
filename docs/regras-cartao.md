@@ -24,11 +24,11 @@ O mes de impacto da compra e calculado pelo fechamento do cartao:
 
 Exemplo com fechamento no dia 15:
 
-| Data da compra | Fatura |
-| --- | --- |
-| 10/06/2026 | 2026-06 |
-| 15/06/2026 | 2026-07 |
-| 20/06/2026 | 2026-07 |
+| Data da compra | Fatura  |
+| -------------- | ------- |
+| 10/06/2026     | 2026-06 |
+| 15/06/2026     | 2026-07 |
+| 20/06/2026     | 2026-07 |
 
 ## Faturas
 
@@ -100,7 +100,7 @@ Na importacao de fatura:
 
 - todas as linhas viram despesas de cartao;
 - a fatura aberta na tela define o cartao e o mes inicial;
-- compras fora do mes da fatura aberta sao ignoradas na previa;
+- a fatura importada e a fonte de verdade para o mes da fatura, mesmo quando a data da compra cair fora do periodo teorico calculado pelo fechamento;
 - colunas `Parcela` e `TotalParcelas` podem gerar parcelas futuras;
 - coluna combinada `2/3` ou `2 de 3` tambem e aceita;
 - duplicatas sao desmarcadas na previa e ignoradas na confirmacao.

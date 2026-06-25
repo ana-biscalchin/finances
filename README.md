@@ -44,7 +44,8 @@ Ainda nao estao implementados:
 - [Decisoes tecnicas](docs/decisoes-tecnicas.md)
 - [Visual e usabilidade](docs/visual-usabilidade.md)
 - [Criterios de qualidade](docs/criterios-qualidade.md)
-- [TODO](TODO.md)
+- [Roadmap de features](TODO.md)
+- [Guia de features e fluxos](docs/guia-features-fluxos.md)
 
 ## Desenvolvimento
 

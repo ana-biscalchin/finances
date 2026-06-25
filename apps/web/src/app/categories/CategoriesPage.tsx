@@ -18,9 +18,16 @@ import {
   Title
 } from "@mantine/core";
 import { categoryNatures, getCategoryColor } from "@finances/domain";
-import { IconArchive, IconArchiveOff, IconEdit, IconPlus, IconArrowsJoin } from "@tabler/icons-react";
+import {
+  IconArchive,
+  IconArchiveOff,
+  IconEdit,
+  IconPlus,
+  IconArrowsJoin
+} from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
 
 type Subcategory = {
   id: string;
@@ -79,7 +86,8 @@ export function CategoriesPage() {
 
   const [activeTab, setActiveTab] = useState<string>("all");
 
-  const filteredCategories = activeTab === "all" ? categories : categories.filter((c) => c.nature === activeTab);
+  const filteredCategories =
+    activeTab === "all" ? categories : categories.filter((c) => c.nature === activeTab);
   const selectedCategory = filteredCategories.find((c) => c.id === selectedCategoryId) ?? null;
   const visibleSubcategories = selectedCategory?.subcategories ?? [];
 
@@ -104,7 +112,8 @@ export function CategoriesPage() {
         null;
       setSelectedCategoryId(nextSelectedCategory?.id ?? null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Erro inesperado.");
+      reportClientError("categories.load", loadError);
+      setError(getErrorMessage(loadError));
     } finally {
       setIsLoading(false);
     }
@@ -130,7 +139,12 @@ export function CategoriesPage() {
     setModal({
       type: "subcategory",
       mode: "create",
-      value: { categoryId: selectedCategory.id, name: "", behavior: "variable", sortOrder: visibleSubcategories.length }
+      value: {
+        categoryId: selectedCategory.id,
+        name: "",
+        behavior: "variable",
+        sortOrder: visibleSubcategories.length
+      }
     });
   }
 
@@ -171,11 +185,15 @@ export function CategoriesPage() {
         throw new Error(await getResponseError(response, "Não foi possível salvar a categoria."));
       }
 
-      const saved = modal.mode === "merge" ? {} : (await response.json()) as Partial<Category & Subcategory>;
+      const saved =
+        modal.mode === "merge" ? {} : ((await response.json()) as Partial<Category & Subcategory>);
       setModal(null);
-      await loadCategories(modal.mode === "merge" ? undefined : getPreferredSelection(modal, saved));
+      await loadCategories(
+        modal.mode === "merge" ? undefined : getPreferredSelection(modal, saved)
+      );
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Erro inesperado.");
+      reportClientError("categories.save", saveError);
+      setError(getErrorMessage(saveError));
     } finally {
       setIsSaving(false);
     }
@@ -203,9 +221,12 @@ export function CategoriesPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/${resource === "category" ? "categories" : "subcategories"}/${id}/${action}`, {
-        method: "PATCH"
-      });
+      const response = await fetch(
+        `${apiBaseUrl}/${resource === "category" ? "categories" : "subcategories"}/${id}/${action}`,
+        {
+          method: "PATCH"
+        }
+      );
 
       if (!response.ok) {
         throw new Error(
@@ -215,7 +236,8 @@ export function CategoriesPage() {
 
       await loadCategories();
     } catch (statusError) {
-      setError(statusError instanceof Error ? statusError.message : "Erro inesperado.");
+      reportClientError("categories.updateStatus", statusError);
+      setError(getErrorMessage(statusError));
     }
   }
 
@@ -235,7 +257,7 @@ export function CategoriesPage() {
             onChange={(event) => setIncludeInactive(event.currentTarget.checked)}
           />
         </Group>
-        
+
         <Group gap="sm" mt="xl">
           <Button
             variant={activeTab === "all" ? "filled" : "light"}
@@ -342,7 +364,13 @@ export function CategoriesPage() {
                     <Table.Tr key={sub.id}>
                       <Table.Td>
                         <Group gap="xs" wrap="nowrap">
-                          <Badge color={getCategoryColor(selectedCategory.id)} variant="light" size="md" fw={600} style={{ textTransform: 'none' }}>
+                          <Badge
+                            color={getCategoryColor(selectedCategory.id)}
+                            variant="light"
+                            size="md"
+                            fw={600}
+                            style={{ textTransform: "none" }}
+                          >
                             {sub.name}
                           </Badge>
                           <Badge size="xs" color={getBehaviorColor(sub.behavior)} variant="outline">
@@ -564,22 +592,23 @@ function CategoryModal({
           {modal.type === "subcategory" && modal.mode === "merge" ? (
             <Stack gap="md">
               <Alert color="orange" title="Atenção">
-                Todos os lançamentos desta subcategoria serão transferidos para o destino escolhido. A atual será arquivada.
+                Todos os lançamentos desta subcategoria serão transferidos para o destino escolhido.
+                A atual será arquivada.
               </Alert>
               <Select
                 label="Subcategoria Destino"
                 placeholder="Selecione o destino"
                 searchable
-                data={categories.flatMap(c => ({
-                  group: c.name,
-                  items: c.subcategories
-                    .filter(sub => sub.id !== modal.id)
-                    .map(sub => ({ value: sub.id, label: sub.name }))
-                })).filter(group => group.items.length > 0)}
+                data={categories
+                  .flatMap((c) => ({
+                    group: c.name,
+                    items: c.subcategories
+                      .filter((sub) => sub.id !== modal.id)
+                      .map((sub) => ({ value: sub.id, label: sub.name }))
+                  }))
+                  .filter((group) => group.items.length > 0)}
                 value={modal.targetSubcategoryId}
-                onChange={(value) =>
-                  onChange({ ...modal, targetSubcategoryId: value ?? "" })
-                }
+                onChange={(value) => onChange({ ...modal, targetSubcategoryId: value ?? "" })}
                 required
               />
             </Stack>
@@ -668,10 +697,7 @@ function buildPayload(modal: ModalState) {
   return { ...modal.value, sortOrder: parseSortOrder(modal.value.sortOrder) };
 }
 
-function getPreferredSelection(
-  modal: ModalState,
-  saved: Partial<Category & Subcategory>
-) {
+function getPreferredSelection(modal: ModalState, saved: Partial<Category & Subcategory>) {
   if (modal.type === "category") return { categoryId: saved.id ?? null };
   return { categoryId: saved.categoryId ?? null };
 }
@@ -706,7 +732,11 @@ function getModalId(modal: ModalState) {
 }
 
 function normalizeCategoryName(name: string) {
-  return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
 function parseSortOrder(value: number | string) {
@@ -719,14 +749,4 @@ function parseSortOrder(value: number | string) {
 
 function getNatureLabel(nature: string) {
   return categoryNatures.find((n) => n.value === nature)?.label ?? nature;
-}
-
-async function getResponseError(response: Response, fallback: string) {
-  try {
-    const body = (await response.json()) as { message?: unknown };
-    if (typeof body.message === "string") return body.message;
-  } catch {
-    return fallback;
-  }
-  return fallback;
 }

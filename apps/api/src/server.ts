@@ -11,7 +11,8 @@ import { registerTransactionRoutes } from "./modules/transactions.js";
 import { registerBudgetRoutes } from "./modules/budgets.js";
 import { registerReportRoutes } from "./modules/reports.js";
 import { registerReconciliationRoutes } from "./modules/reconciliation.js";
-
+import { registerBackupRoutes } from "./modules/backups.js";
+import { registerSettingsRoutes } from "./modules/settings.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -21,6 +22,12 @@ type BuildServerOptions = {
   logger?: boolean;
   connection?: ReturnType<typeof createDatabaseConnection>;
 };
+
+type ApiError = Error & { statusCode?: number };
+
+function normalizeApiError(error: unknown): ApiError {
+  return error instanceof Error ? error : new Error("Erro desconhecido.");
+}
 
 export function buildServer(options: BuildServerOptions = {}) {
   const app = Fastify({
@@ -35,6 +42,26 @@ export function buildServer(options: BuildServerOptions = {}) {
   app.register(cors, {
     origin: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    const apiError = normalizeApiError(error);
+    const statusCode =
+      typeof apiError.statusCode === "number" && apiError.statusCode >= 400
+        ? apiError.statusCode
+        : 500;
+    const message =
+      statusCode >= 500
+        ? "Erro interno na API. Verifique os logs do servidor."
+        : apiError.message || "Requisição inválida.";
+
+    if (statusCode >= 500) {
+      request.log.error({ err: apiError }, "Erro inesperado na API");
+    } else {
+      request.log.warn({ err: apiError }, "Requisição rejeitada pela API");
+    }
+
+    reply.code(statusCode).send({ message });
   });
 
   app.get("/health", async () => ({
@@ -56,7 +83,8 @@ export function buildServer(options: BuildServerOptions = {}) {
   registerBudgetRoutes(app, connection);
   registerReportRoutes(app, connection);
   registerReconciliationRoutes(app, connection);
-
+  registerBackupRoutes(app, connection);
+  registerSettingsRoutes(app, connection);
 
   return app;
 }

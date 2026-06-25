@@ -49,7 +49,7 @@ Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 - `docs/orientacao-importacao-csv.md`: guia de importacao CSV.
 - `docs/visual-usabilidade.md`: direcao visual e UX.
 - `docs/criterios-qualidade.md`: regras para avaliar codigo, especialmente codigo gerado por IA.
-- `TODO.md`: backlog e status.
+- `TODO.md`: roadmap de features pendentes.
 
 ## Estrutura Do Projeto
 
@@ -73,7 +73,6 @@ Manter separacao entre UI, API, banco e dominio.
 
 - Paleta de cores.
 - Modo claro/escuro.
-- Estrategia exata de backups.
 - Estrategia de leitura OFX.
 - API/UI de reservas.
 
@@ -82,7 +81,7 @@ Manter separacao entre UI, API, banco e dominio.
 - Antes de implementar regra financeira, consultar `docs/regras-negocio.md`.
 - Antes de aceitar codigo gerado por IA, consultar `docs/criterios-qualidade.md`.
 - Registrar decisoes novas em `docs/`.
-- Manter `TODO.md` atualizado conforme as tarefas forem concluidas.
+- Manter `TODO.md` apenas com tarefas pendentes conforme as etapas forem concluidas.
 - Preferir commits pequenos por etapa funcional.
 - Nao apagar historico ou conteudo sem confirmacao explicita.
 - Nao commitar banco SQLite local, backups, `.env` ou artefatos de build.

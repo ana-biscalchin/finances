@@ -8,6 +8,7 @@ export function sendPayloadError(error: unknown, reply: FastifyReply, fallback: 
   const message = error instanceof Error ? error.message : fallback;
   const statusCode = error instanceof ConflictError ? 409 : 400;
 
+  reply.log.warn({ err: error, statusCode }, message);
   reply.code(statusCode).send({ message });
   return null;
 }

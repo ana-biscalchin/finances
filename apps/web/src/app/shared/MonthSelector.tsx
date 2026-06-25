@@ -26,18 +26,15 @@ function formatMonthLabel(yearMonth: string) {
     .replace(".", "");
 }
 
-export function MonthSelector({
-  selectedMonth,
-  onChange,
-  title,
-  minMonth
-}: MonthSelectorProps) {
+export function MonthSelector({ selectedMonth, onChange, title, minMonth }: MonthSelectorProps) {
   const [yearSelectorOpened, setYearSelectorOpened] = useState(false);
 
   const selectedYear = selectedMonth.slice(0, 4);
   const currentYear = Number(getCurrentMonth().slice(0, 4));
   const selectedYearNumber = Number(selectedYear);
-  const oldestYear = minMonth ? Number(minMonth.slice(0, 4)) : Math.min(currentYear, selectedYearNumber);
+  const oldestYear = minMonth
+    ? Number(minMonth.slice(0, 4))
+    : Math.min(currentYear, selectedYearNumber);
   const endYear = Math.max(currentYear + 1, selectedYearNumber);
 
   const yearOptions = Array.from({ length: endYear - oldestYear + 1 }, (_, index) => {

@@ -20,7 +20,7 @@ import {
   getCreditCardBillMonth,
   yearMonthFromDate
 } from "@finances/domain";
-import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, type SQL } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -54,31 +54,14 @@ type TransactionPayload = {
   installmentCount?: unknown;
 };
 
+const missingFilterValue = "__missing__";
+
 export function registerTransactionRoutes(app: FastifyInstance, connection: DatabaseConnection) {
   const { db } = connection;
 
   app.get("/transactions", async (request) => {
     const query = request.query as Record<string, unknown>;
-    const filters = [
-      typeof query.budgetMonth === "string"
-        ? eq(transactions.budgetMonth, assertYearMonth(query.budgetMonth))
-        : undefined,
-      typeof query.type === "string" && query.type
-        ? eq(transactions.type, assertTransactionType(query.type))
-        : undefined,
-      typeof query.status === "string" && query.status
-        ? eq(transactions.status, assertTransactionStatus(query.status))
-        : undefined,
-      typeof query.accountId === "string" && query.accountId
-        ? eq(transactions.accountId, query.accountId)
-        : undefined,
-      typeof query.paymentMethodId === "string" && query.paymentMethodId
-        ? eq(transactions.paymentMethodId, query.paymentMethodId)
-        : undefined,
-      typeof query.subcategoryId === "string" && query.subcategoryId
-        ? eq(transactions.subcategoryId, query.subcategoryId)
-        : undefined
-    ].filter(Boolean);
+    const filters = buildTransactionFilters(query);
 
     const baseQuery = db.select().from(transactions);
     const queryWithFilters = filters.length > 0 ? baseQuery.where(and(...filters)) : baseQuery;
@@ -137,6 +120,12 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       );
 
       for (const t of created) {
+        if (t.creditCardBillId && isBillPaid(db, t.creditCardBillId)) {
+          return reply.code(400).send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
+        }
+      }
+
+      for (const t of created) {
         db.insert(transactions).values(t).run();
       }
 
@@ -183,6 +172,10 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
     // ── Single transaction ─────────────────────────────────────────────
     const transactionData = normalizeTransactionForStorage(connection, rawTransactionData);
+    if (transactionData.creditCardId && transactionData.creditCardBillId && isBillPaid(db, transactionData.creditCardBillId)) {
+      return reply.code(400).send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
+    }
+
     const transaction = {
       id: transactionId,
       ...transactionData,
@@ -324,6 +317,10 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply.code(404).send({ message: "Lançamento não encontrado." });
     }
 
+    if (current.creditCardId && current.creditCardBillId && isBillPaid(db, current.creditCardBillId)) {
+      return reply.code(400).send({ message: "Não é possível excluir lançamentos de uma fatura paga." });
+    }
+
     db.transaction((tx) => {
       // If it is linked, delete the other one as well (and its potential installments)
       if (current.linkedTransactionId) {
@@ -348,24 +345,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
   app.get("/transactions/export", async (request, reply) => {
     const query = request.query as Record<string, unknown>;
-    const filters = [
-      typeof query.budgetMonth === "string" && query.budgetMonth
-        ? eq(transactions.budgetMonth, assertYearMonth(query.budgetMonth))
-        : undefined,
-      typeof query.type === "string" && query.type
-        ? eq(transactions.type, assertTransactionType(query.type))
-        : undefined,
-      typeof query.status === "string" && query.status
-        ? eq(transactions.status, assertTransactionStatus(query.status))
-        : undefined,
-      typeof query.accountId === "string" && query.accountId ? eq(transactions.accountId, query.accountId) : undefined,
-      typeof query.paymentMethodId === "string" && query.paymentMethodId
-        ? eq(transactions.paymentMethodId, query.paymentMethodId)
-        : undefined,
-      typeof query.subcategoryId === "string" && query.subcategoryId
-        ? eq(transactions.subcategoryId, query.subcategoryId)
-        : undefined
-    ].filter((f): f is Exclude<typeof f, undefined> => f !== undefined);
+    const filters = buildTransactionFilters(query);
 
     const baseQuery = db
       .select({
@@ -555,13 +535,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         if (card) {
           creditCardId = card.id;
           accountId = null;
-          calculatedBudgetMonth = getCreditCardBillMonth(eventDate, card.closingDay);
-          if (targetBillMonth && installmentCount > 1) {
-            calculatedBudgetMonth = targetBillMonth;
-          }
-          if (targetBillMonth && calculatedBudgetMonth !== targetBillMonth) {
-            return [];
-          }
+          calculatedBudgetMonth = targetBillMonth ?? getCreditCardBillMonth(eventDate, card.closingDay);
         } else {
           accountId = rawAccount || defaultAccountId || null;
           paymentMethodId = null;
@@ -758,6 +732,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
             creditCardBillId = newBill.id;
           } else {
             creditCardBillId = bill.id;
+            if (bill.status === "paid") {
+              throw new ValidationError(
+                `Não é possível importar lançamentos para a fatura de ${budgetMonth} porque ela já está paga.`
+              );
+            }
           }
         }
 
@@ -800,6 +779,37 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
     return reply.code(201).send(created);
   });
+}
+
+function buildTransactionFilters(query: Record<string, unknown>): SQL[] {
+  return [
+    typeof query.budgetMonth === "string" && query.budgetMonth
+      ? eq(transactions.budgetMonth, assertYearMonth(query.budgetMonth))
+      : undefined,
+    typeof query.type === "string" && query.type
+      ? eq(transactions.type, assertTransactionType(query.type))
+      : undefined,
+    typeof query.status === "string" && query.status
+      ? eq(transactions.status, assertTransactionStatus(query.status))
+      : undefined,
+    buildNullableIdFilter(query.accountId, transactions.accountId),
+    buildNullableIdFilter(query.paymentMethodId, transactions.paymentMethodId),
+    buildNullableIdFilter(query.subcategoryId, transactions.subcategoryId)
+  ].filter((filter): filter is SQL => filter !== undefined);
+}
+
+function buildNullableIdFilter(
+  value: unknown,
+  column:
+    | typeof transactions.accountId
+    | typeof transactions.paymentMethodId
+    | typeof transactions.subcategoryId
+): SQL | undefined {
+  if (typeof value !== "string" || !value) {
+    return undefined;
+  }
+
+  return value === missingFilterValue ? isNull(column) : eq(column, value);
 }
 
 function parseTransactionPayload(body: unknown) {
@@ -1021,6 +1031,16 @@ function getOrCreateCreditCardBill(
   connection.db.insert(creditCardBills).values(bill).run();
 
   return bill;
+}
+
+export function isBillPaid(db: DatabaseConnection["db"], billId: string | null): boolean {
+  if (!billId) return false;
+  const bill = db
+    .select({ status: creditCardBills.status })
+    .from(creditCardBills)
+    .where(eq(creditCardBills.id, billId))
+    .get();
+  return bill?.status === "paid";
 }
 
 function parseTransactionPayloadOrReply(body: unknown, reply: FastifyReply) {

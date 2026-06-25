@@ -8,11 +8,11 @@ Criar um app local para gerenciamento de financas pessoais, com banco de dados s
 
 ## Decisoes Ja Tomadas
 
-### Modelo Inicial Do App
+### Modelo Do App
 
-O projeto comeca como um web app local, rodando em `localhost`.
+O projeto e um web app local, rodando em `localhost`.
 
-Essa escolha reduz complexidade inicial, facilita validacao do produto e permite evoluir a arquitetura antes de empacotar tudo como desktop.
+Essa escolha reduz complexidade, facilita validacao do produto e permite evoluir a arquitetura antes de empacotar tudo como desktop.
 
 ### Frontend
 
@@ -105,7 +105,9 @@ Decisoes sobre o workspace:
 
 ### Modelo Atual de Entidades
 
-O modelo de entidades financeiras foi definido em SQLite usando Drizzle, com entidades para contas, meios de pagamento, categorias, subcategorias, transacoes, transferencias, cartoes, faturas, parcelas, orcamentos e reservas.
+O modelo de entidades financeiras foi definido em SQLite usando Drizzle, com entidades para contas, meios de pagamento, categorias, subcategorias, transacoes, cartoes, faturas, parcelamentos, orcamentos e reservas.
+
+Transferencias nao usam uma tabela propria: a implementacao atual usa pares de `transactions` vinculados por `linkedTransactionId`.
 
 ## Arquitetura Alvo Inicial
 
@@ -148,40 +150,60 @@ Opcoes futuras avaliadas:
 
 Observacao: servicos gratuitos podem ter limites, pausas, ausencia de backups automaticos ou mudancas de politica. Para dados financeiros pessoais, o banco local com backups simples e uma escolha mais previsivel no inicio.
 
-## Plano De Progresso
+## Estratégia de Backups
 
-### Fase 1: Web App Local
+Decisão atual:
 
-- Criar app React/Vite.
-- Criar backend local em Node/Fastify.
-- Usar SQLite em arquivo local.
-- Definir migrations com Drizzle.
-- Rodar tudo via scripts locais.
+- Utilizar a API de Backup Online nativa do SQLite via `better-sqlite3` para realizar backups e restaurações de forma consistente, sem risco de corrupção ou perda de dados.
+- Armazenar backups no diretório `data/backups/` com data/hora no nome.
+- Criar backup automático `pre-restore-` imediatamente antes de cada restauração para garantir recuperação segura.
+- Detalhes completos em [Estratégia de Backup Local do SQLite](estrategia-backups.md).
 
-### Fase 2: Nucleo Financeiro
+## Estado Atual E Pendencias
+
+### Base Local
+
+Status: implementada.
+
+- App React/Vite.
+- Backend local em Node/Fastify.
+- SQLite em arquivo local.
+- Migrations com Drizzle.
+- Scripts locais com `pnpm`.
+
+### Nucleo Financeiro
+
+Status: implementada em sua base principal.
 
 - Contas/carteiras.
 - Categorias.
 - Lancamentos: receitas, despesas e transferencias.
 - Cartoes, faturas e controle mensal.
 - Parcelas.
-- Relatorios: faturas, fluxo mensal, categorias e meios de pagamento.
+- Relatorios iniciais: faturas, evolucao diaria, resumo anual, categorias e meios de pagamento.
 
-### Fase 3: Seguranca E Dados
+### Seguranca E Dados
 
-- Backups automaticos do SQLite.
-- Exportacao CSV.
-- Importacao CSV e OFX.
+Status: parcial.
+
+- Exportacao CSV implementada.
+- Importacao CSV implementada.
+- Backups do SQLite definidos e em desenvolvimento (ver [Estratégia de Backup Local do SQLite](estrategia-backups.md)).
+- Importacao OFX pendente.
 - Avaliar senha local ou criptografia do banco, se fizer sentido.
 
-### Fase 4: Polimento Local
+### Polimento Local
+
+Status: em andamento.
 
 - Melhorar UX.
 - Filtros, busca e edicao em massa.
 - Relatorios mensais.
-- Conciliacao simples.
+- Conciliacao simples implementada para CSV.
 
-### Fase 5: Empacotamento Com Electron
+### Empacotamento Com Electron
+
+Status: pendente.
 
 - Reaproveitar build Vite.
 - Embutir backend/API ou migrar para comunicacao IPC.
@@ -190,23 +212,25 @@ Observacao: servicos gratuitos podem ter limites, pausas, ausencia de backups au
 
 ## Decisoes Em Aberto
 
-- Estrategia exata de backups.
 - Padrao de autenticacao local, caso exista.
 - Estrategia de leitura OFX.
 - Implementacao de reservas/caixinhas sobre as tabelas existentes.
 
-## Tabela `transfers` — Schema Legado (Removido)
+## Transferencias
 
-A tabela `transfers` existia no schema Drizzle original mas **nunca foi integrada à API ou ao frontend**. A implementação real de transferências usa pares de lançamentos (`transactions`) vinculados por `linkedTransactionId`.
-
-Decisão: A tabela foi completamente removida da base de dados e do schema na migration `0005` (junho de 2026), simplificando a modelagem e eliminando códigos órfãos.
+Transferencias entre contas sao modeladas como pares de lancamentos (`transactions`) vinculados por `linkedTransactionId`. Nao existe tabela propria de transferencias no schema atual.
 
 ## Módulo Compartilhado de Frontend (`apps/web/src/app/shared/`)
 
-Criado em junho de 2026 para eliminar duplicação severa entre `TransactionsPage.tsx` e `BillsPage.tsx`.
+O frontend mantem helpers e componentes reutilizaveis em `apps/web/src/app/shared/`.
 
-Arquivos criados:
+Arquivos atuais:
+
 - `shared/csv-utils.ts` — `parseCsvHeaderLine`, `detectCsvDelimiter`, `countDelimiterOutsideQuotes`
 - `shared/transaction-ui.tsx` — `buildCategoryGroups`, `renderCategoryOption`, `renderStatusBadge`, `getAmountColor`, `getResponseError`, `getMonthOptions`
+- `shared/CategorySelect.tsx` — seletor unificado de categorias/subcategorias.
+- `shared/MonthSelector.tsx` — navegacao e selecao de mes.
+- `shared/BusinessDateInput.tsx` — input de data de negocio.
+- `shared/QuickEditFields.tsx` — campos compactos de edicao rapida.
 
 Regra: qualquer nova funcionalidade de UI que se repita entre páginas de lançamentos deve ir para este módulo.

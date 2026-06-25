@@ -62,11 +62,13 @@ Deve combinar:
 - Tabela agrupada.
 - Barras de progresso por categoria.
 - Destaques para estouro ou proximidade do limite.
-- Filtros por mes, meio de pagamento e categoria.
+- Seletor de mes.
+- Abas de competencia e caixa.
+- Detalhamento por fonte e meio quando a categoria/subcategoria for aberta para edicao.
 
 Indicadores:
 
-- Orcado.
+- Planejado/alocado.
 - Comprometido.
 - Realizado.
 - Disponivel.
@@ -122,7 +124,7 @@ Para isso, devem ser compartilhados:
 - Usar cores semanticas com moderacao: positivo, alerta, perigo, neutro.
 - Dar contexto nos relatorios antes do grafico quando isso ajudar a leitura.
 - Manter filtros sempre visiveis ou facilmente acessiveis nas telas analiticas.
-- Permitir alternar visoes quando o mesmo dado precisar ser entendido por categoria, meio de pagamento ou fatura.
+- Permitir alternar visoes quando o mesmo dado precisar ser entendido por competencia, caixa, categoria, meio de pagamento ou fatura.
 
 ## Decisoes Em Aberto
 

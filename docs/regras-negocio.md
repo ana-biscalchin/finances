@@ -114,11 +114,12 @@ Este documento descreve as regras que o app aplica hoje. Ele deve ser a referenc
 
 ## Controle mensal
 
-- A tela central e `/controle-mensal`.
-- A consulta exige `month=YYYY-MM`.
-- Agrupamento padrao: natureza, categoria, subcategoria (o comportamento da subcategoria e exibido como etiqueta na frente do nome).
-- Agrupamento alternativo: meio de pagamento, natureza, categoria, subcategoria.
-- Agrupamento por fonte: conta/carteira, meio de pagamento, natureza, categoria, subcategoria.
+- A tela central do frontend e **Controle mensal**. Como o app ainda nao usa roteador, ela e selecionada por estado em `App.tsx`, nao por URL propria.
+- A API do controle mensal usa `GET /controle-mensal?month=YYYY-MM`.
+- A API tambem aceita `view=competence` ou `view=cash`.
+- A visao de competencia agrupa por natureza, categoria e subcategoria. O comportamento da subcategoria e exibido como etiqueta junto ao nome.
+- A tela apresenta uma visualizacao unificada por categoria. A quebra por conta/meio existe dentro do detalhamento de planejamento e na barra segmentada por categoria.
+- A visao de caixa mostra fluxo, saldos por conta, faturas do mes e simulacao baseada no planejamento.
 - Indicadores principais: planejado/alocado, realizado, comprometido e disponivel.
 - O disponivel de despesa e `planejado - realizado - comprometido`.
 - Para receita, o disponivel representa diferenca entre recebido/comprometido e planejado.

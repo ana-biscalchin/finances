@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   AppShell,
   Box,
   Group,
@@ -7,12 +8,15 @@ import {
   Stack,
   Text,
   ThemeIcon,
-  Title
+  Title,
+  Tooltip
 } from "@mantine/core";
 import {
   IconBuildingBank,
   IconCalendarStats,
   IconChartBar,
+  IconChevronLeft,
+  IconChevronRight,
   IconCreditCard,
   IconListDetails,
   IconPigMoney,
@@ -27,6 +31,7 @@ import { CategoriesPage } from "./categories/CategoriesPage";
 import { TransactionsPage } from "./transactions/TransactionsPage";
 import { ControleMensalPage } from "./monthly-control/ControleMensalPage";
 import { ReportsPage } from "./reports/ReportsPage";
+import { SettingsPage } from "./settings/SettingsPage";
 
 
 type PageKey =
@@ -95,8 +100,13 @@ const pages: Array<{
   }
 ];
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "layout-sidebar-collapsed";
+
 export function App() {
   const [activePage, setActivePage] = useState<PageKey>("monthly-control");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+  });
   const currentPage = pages.find((page) => page.key === activePage) ?? pages[0];
   const CurrentIcon = currentPage.icon;
   const isAccountsPage = activePage === "accounts";
@@ -116,31 +126,72 @@ export function App() {
   const [filterPaymentMethodId, setFilterPaymentMethodId] = useState<string>("");
   const [filterCategoryId, setFilterCategoryId] = useState<string>("");
 
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next));
+      return next;
+    });
+  };
 
   return (
-    <AppShell header={{ height: 44 }} navbar={{ width: 280, breakpoint: "sm" }} padding="lg">
+    <AppShell
+      header={{ height: 44 }}
+      navbar={{ width: isSidebarCollapsed ? 72 : 280, breakpoint: "sm" }}
+      padding="lg"
+    >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
           <Title order={4}>Finanças Pessoais</Title>
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar p="md">
-        <Stack gap={4}>
-          {pages.map((page) => {
-            const Icon = page.icon;
+      <AppShell.Navbar p={0}>
+        <Box h="100%" p={isSidebarCollapsed ? "xs" : "md"} style={{ position: "relative" }}>
+          <Tooltip label={isSidebarCollapsed ? "Expandir menu" : "Recolher menu"} position="right">
+            <ActionIcon
+              aria-label={isSidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+              variant="subtle"
+              onClick={toggleSidebar}
+              style={{
+                backgroundColor: "var(--mantine-color-body)",
+                position: "absolute",
+                right: -14,
+                top: 22,
+                zIndex: 2
+              }}
+            >
+              {isSidebarCollapsed ? <IconChevronRight size={20} /> : <IconChevronLeft size={20} />}
+            </ActionIcon>
+          </Tooltip>
+          <Stack gap={4} align={isSidebarCollapsed ? "center" : "stretch"}>
+            {pages.map((page) => {
+              const Icon = page.icon;
 
-            return (
-              <NavLink
-                key={page.key}
-                active={page.key === activePage}
-                label={page.label}
-                leftSection={<Icon size={18} />}
-                onClick={() => setActivePage(page.key)}
-              />
-            );
-          })}
-        </Stack>
+              return isSidebarCollapsed ? (
+                <Tooltip key={page.key} label={page.label} position="right">
+                  <ActionIcon
+                    aria-label={page.label}
+                    color={page.key === activePage ? "teal" : "gray"}
+                    size={44}
+                    variant={page.key === activePage ? "light" : "subtle"}
+                    onClick={() => setActivePage(page.key)}
+                  >
+                    <Icon size={20} />
+                  </ActionIcon>
+                </Tooltip>
+              ) : (
+                <NavLink
+                  key={page.key}
+                  active={page.key === activePage}
+                  label={page.label}
+                  leftSection={<Icon size={18} />}
+                  onClick={() => setActivePage(page.key)}
+                />
+              );
+            })}
+          </Stack>
+        </Box>
       </AppShell.Navbar>
 
       <AppShell.Main>
@@ -167,6 +218,8 @@ export function App() {
             filterCategoryId={filterCategoryId}
             setFilterCategoryId={setFilterCategoryId}
           />
+        ) : activePage === "settings" ? (
+          <SettingsPage />
         ) : (
           <Paper withBorder p="xl" radius="md">
             <Group align="flex-start" gap="md">

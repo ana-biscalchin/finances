@@ -259,3 +259,14 @@ export const subcategoriesRelations = relations(subcategories, ({ one }) => ({
     references: [categories.id]
   })
 }));
+
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`)
+});
