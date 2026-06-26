@@ -43,6 +43,16 @@ type AccountSummary = {
   projectedBalanceCents?: number;
 };
 
+type InternalMovementSummary = {
+  kind: "account_transfer" | "credit_card_payment";
+  status: "realized" | "committed";
+  fromName: string;
+  toName: string;
+  subcategoryId: string | null;
+  amountCents: number;
+  count: number;
+};
+
 type SimulatedCardBill = {
   cardId: string;
   amountCents: number;
@@ -55,6 +65,7 @@ type SimulatedCardBill = {
 type MonthlyControlResponse = {
   tree: MonthlyControlNode[];
   accountSummaries: AccountSummary[];
+  internalMovementSummaries: InternalMovementSummary[];
   budgetSimulation?: {
     simulatedCardBills: SimulatedCardBill[];
   };
@@ -227,47 +238,59 @@ describe("budgets and monthly control", () => {
     const dbConn = createDatabaseConnection(databasePath);
     const now = new Date().toISOString();
 
-    dbConn.db.insert(budgets).values({
-      id: "budget-oldest",
-      budgetMonth: "2023-11",
-      subcategoryId,
-      amountCents: 10000,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(budgets)
+      .values({
+        id: "budget-oldest",
+        budgetMonth: "2023-11",
+        subcategoryId,
+        amountCents: 10000,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(transactions).values({
-      id: "tx-older-than-current",
-      type: "expense",
-      description: "Registro antigo",
-      amountCents: 2500,
-      eventDate: "2024-02-10",
-      budgetMonth: "2024-02",
-      subcategoryId,
-      status: "confirmed",
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(transactions)
+      .values({
+        id: "tx-older-than-current",
+        type: "expense",
+        description: "Registro antigo",
+        amountCents: 2500,
+        eventDate: "2024-02-10",
+        budgetMonth: "2024-02",
+        subcategoryId,
+        status: "confirmed",
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(creditCards).values({
-      id: "card-old-bill",
-      name: "Cartão antigo",
-      closingDay: 5,
-      dueDay: 12,
-      isActive: true,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(creditCards)
+      .values({
+        id: "card-old-bill",
+        name: "Cartão antigo",
+        closingDay: 5,
+        dueDay: 12,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(creditCardBills).values({
-      id: "bill-old",
-      creditCardId: "card-old-bill",
-      billMonth: "2023-12",
-      dueDate: "2024-01-12",
-      status: "open",
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(creditCardBills)
+      .values({
+        id: "bill-old",
+        creditCardId: "card-old-bill",
+        billMonth: "2023-12",
+        dueDate: "2024-01-12",
+        status: "open",
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
     dbConn.sqlite.close();
 
@@ -381,10 +404,16 @@ describe("budgets and monthly control", () => {
     expect(body.summary.expense.committedCash).toBe(10000);
     expect(body.summary.expense.committedCredit).toBe(0);
 
-    const expenseNode = mustExist(body.tree.find((n: MonthlyControlNode) => n.id === "nature-expense"));
+    const expenseNode = mustExist(
+      body.tree.find((n: MonthlyControlNode) => n.id === "nature-expense")
+    );
     // Nova estrutura: nature → category → subcategory (sem nível intermediário de behavior)
-    const catNode = mustExist(expenseNode.children.find((c: MonthlyControlNode) => c.name === "Alimentação"));
-    const subNode = mustExist(catNode.children.find((c: MonthlyControlNode) => c.id === `sub-${subcategoryId}`));
+    const catNode = mustExist(
+      expenseNode.children.find((c: MonthlyControlNode) => c.name === "Alimentação")
+    );
+    const subNode = mustExist(
+      catNode.children.find((c: MonthlyControlNode) => c.id === `sub-${subcategoryId}`)
+    );
     expect(subNode.budgeted).toBe(100000);
     expect(subNode.realized).toBe(50000);
     expect(subNode.committed).toBe(10000);
@@ -395,6 +424,98 @@ describe("budgets and monthly control", () => {
     expect(subNode.available).toBe(40000); // 1000 - 500 - 100 = 400 (40000)
   });
 
+  it("should summarize account transfers as from/to internal movements without budget impact", async () => {
+    const transferCategoryRes = await app.inject({
+      method: "POST",
+      url: "/categories",
+      payload: {
+        name: "Movimentações Internas",
+        nature: "transfer",
+        sortOrder: 2
+      }
+    });
+    const transferCategoryId = transferCategoryRes.json().id;
+
+    const transferSubcategoryRes = await app.inject({
+      method: "POST",
+      url: "/subcategories",
+      payload: {
+        categoryId: transferCategoryId,
+        name: "Entre minhas contas",
+        behavior: "variable",
+        sortOrder: 1
+      }
+    });
+    const transferSubcategoryId = transferSubcategoryRes.json().id;
+
+    const sourceAccountRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Corrente",
+        type: "checking",
+        initialBalanceCents: 500000,
+        sortOrder: 1,
+        isPrimary: true
+      }
+    });
+    const sourceAccountId = sourceAccountRes.json().id;
+
+    const destinationAccountRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: {
+        name: "Reserva",
+        type: "savings",
+        initialBalanceCents: 0,
+        sortOrder: 2
+      }
+    });
+    const destinationAccountId = destinationAccountRes.json().id;
+
+    const transferRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Aplicação reserva",
+        amountCents: 120000,
+        eventDate: "2026-06-14",
+        accountId: sourceAccountId,
+        destinationAccountId,
+        subcategoryId: transferSubcategoryId,
+        status: "confirmed"
+      }
+    });
+    expect(transferRes.statusCode).toBe(201);
+
+    const controlRes = await app.inject({
+      method: "GET",
+      url: "/controle-mensal?month=2026-06"
+    });
+    expect(controlRes.statusCode).toBe(200);
+
+    const body = controlRes.json() as MonthlyControlResponse;
+    expect(body.summary.expense.realized).toBe(0);
+
+    const transferNode = mustExist(
+      body.tree.find((node: MonthlyControlNode) => node.id === "nature-transfer")
+    );
+    expect(transferNode.realized).toBe(0);
+
+    const movement = mustExist(
+      body.internalMovementSummaries.find(
+        (item) =>
+          item.kind === "account_transfer" &&
+          item.fromName === "Corrente" &&
+          item.toName === "Reserva"
+      )
+    );
+    expect(movement.status).toBe("realized");
+    expect(movement.subcategoryId).toBe(transferSubcategoryId);
+    expect(movement.amountCents).toBe(120000);
+    expect(movement.count).toBe(1);
+  });
 
   it("should compute account projectedBalance correctly with planned transactions and open credit card bills", async () => {
     // 1. Create checking account
@@ -492,7 +613,6 @@ describe("budgets and monthly control", () => {
     expect(summary.linkedBillsDetail[0].amountCents).toBe(15000);
   });
 
-
   it("should plan monthly allocations by subcategory and account source", async () => {
     const flashRes = await app.inject({
       method: "POST",
@@ -521,16 +641,19 @@ describe("budgets and monthly control", () => {
     const nubankAccountId = nubankRes.json().id;
 
     const dbConn = createDatabaseConnection(databasePath);
-    dbConn.db.insert(paymentMethods).values({
-      id: "pm-pix-source-test",
-      name: "PIX",
-      kind: "instant_transfer",
-      sortOrder: 10,
-      isDefault: false,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(paymentMethods)
+      .values({
+        id: "pm-pix-source-test",
+        name: "PIX",
+        kind: "instant_transfer",
+        sortOrder: 10,
+        isDefault: false,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
     dbConn.sqlite.close();
 
     const flashBudget = await app.inject({
@@ -607,26 +730,32 @@ describe("budgets and monthly control", () => {
     const nubankAccountId = nubankRes.json().id;
 
     const dbConn = createDatabaseConnection(databasePath);
-    dbConn.db.insert(paymentMethods).values({
-      id: "pm-voucher-source-test",
-      name: "Voucher",
-      kind: "prepaid_card",
-      sortOrder: 9,
-      isDefault: false,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
-    dbConn.db.insert(paymentMethods).values({
-      id: "pm-pix-source-test",
-      name: "PIX",
-      kind: "instant_transfer",
-      sortOrder: 10,
-      isDefault: false,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(paymentMethods)
+      .values({
+        id: "pm-voucher-source-test",
+        name: "Voucher",
+        kind: "prepaid_card",
+        sortOrder: 9,
+        isDefault: false,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
+    dbConn.db
+      .insert(paymentMethods)
+      .values({
+        id: "pm-pix-source-test",
+        name: "PIX",
+        kind: "instant_transfer",
+        sortOrder: 10,
+        isDefault: false,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
     dbConn.sqlite.close();
 
     await app.inject({
@@ -689,9 +818,15 @@ describe("budgets and monthly control", () => {
     expect(controlRes.statusCode).toBe(200);
     const body = controlRes.json() as MonthlyControlResponse;
 
-    const expenseNode = mustExist(body.tree.find((node: MonthlyControlNode) => node.id === "nature-expense"));
-    const categoryNode = mustExist(expenseNode.children.find((node: MonthlyControlNode) => node.name === "Alimentação"));
-    const subNode = mustExist(categoryNode.children.find((node: MonthlyControlNode) => node.id === `sub-${subcategoryId}`));
+    const expenseNode = mustExist(
+      body.tree.find((node: MonthlyControlNode) => node.id === "nature-expense")
+    );
+    const categoryNode = mustExist(
+      expenseNode.children.find((node: MonthlyControlNode) => node.name === "Alimentação")
+    );
+    const subNode = mustExist(
+      categoryNode.children.find((node: MonthlyControlNode) => node.id === `sub-${subcategoryId}`)
+    );
 
     expect(subNode.budgeted).toBe(60000);
     expect(subNode.realized).toBe(30000);
@@ -724,16 +859,19 @@ describe("budgets and monthly control", () => {
     const accountId = accRes.json().id;
 
     const dbConn = createDatabaseConnection(databasePath);
-    dbConn.db.insert(paymentMethods).values({
-      id: "pm-credit-card",
-      name: "Cartão de crédito",
-      kind: "credit_card",
-      sortOrder: 1,
-      isDefault: false,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(paymentMethods)
+      .values({
+        id: "pm-credit-card",
+        name: "Cartão de crédito",
+        kind: "credit_card",
+        sortOrder: 1,
+        isDefault: false,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
     dbConn.sqlite.close();
 
     const cardRes = await app.inject({
@@ -803,8 +941,11 @@ describe("budgets and monthly control", () => {
     });
 
     expect(controlRes.statusCode).toBe(200);
-    const cardProjection = mustExist((controlRes.json() as MonthlyControlResponse)
-      .budgetSimulation?.simulatedCardBills.find((bill: SimulatedCardBill) => bill.cardId === creditCardId));
+    const cardProjection = mustExist(
+      (controlRes.json() as MonthlyControlResponse).budgetSimulation?.simulatedCardBills.find(
+        (bill: SimulatedCardBill) => bill.cardId === creditCardId
+      )
+    );
 
     expect(cardProjection.billMonth).toBe("2026-08");
     expect(cardProjection.currentOpenBillCents).toBe(12000);
@@ -817,166 +958,205 @@ describe("budgets and monthly control", () => {
     const dbConn = createDatabaseConnection(databasePath);
 
     // Seed the transfer category and subcategory
-    dbConn.db.insert(categories).values({
-      id: "cat-transferencias",
-      nature: "transfer",
-      name: "Movimentações Internas",
-      sortOrder: 2,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(categories)
+      .values({
+        id: "cat-transferencias",
+        nature: "transfer",
+        name: "Movimentações Internas",
+        sortOrder: 2,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
-    dbConn.db.insert(subcategories).values({
-      id: "cat-transferencias-sub-pagamento-de-fatura",
-      categoryId: "cat-transferencias",
-      name: "Pagamento de fatura",
-      behavior: "fixed",
-      sortOrder: 1,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(subcategories)
+      .values({
+        id: "cat-transferencias-sub-pagamento-de-fatura",
+        categoryId: "cat-transferencias",
+        name: "Pagamento de fatura",
+        behavior: "fixed",
+        sortOrder: 1,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
     // Create a payment account for the credit cards
     const accId = "acc-check-1";
-    dbConn.db.insert(accounts).values({
-      id: accId,
-      name: "Conta Principal",
-      type: "checking",
-      sortOrder: 1,
-      isPrimary: true,
-      isActive: true,
-      defaultPaymentMethodId: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(accounts)
+      .values({
+        id: accId,
+        name: "Conta Principal",
+        type: "checking",
+        sortOrder: 1,
+        isPrimary: true,
+        isActive: true,
+        defaultPaymentMethodId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
     // Create two credit cards
     const card1Id = "card-nu";
     const card2Id = "card-inter";
-    dbConn.db.insert(creditCards).values({
-      id: card1Id,
-      name: "Nubank",
-      closingDay: 5,
-      dueDay: 12,
-      paymentAccountId: accId,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(creditCards)
+      .values({
+        id: card1Id,
+        name: "Nubank",
+        closingDay: 5,
+        dueDay: 12,
+        paymentAccountId: accId,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
-    dbConn.db.insert(creditCards).values({
-      id: card2Id,
-      name: "Inter",
-      closingDay: 10,
-      dueDay: 17,
-      paymentAccountId: accId,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(creditCards)
+      .values({
+        id: card2Id,
+        name: "Inter",
+        closingDay: 10,
+        dueDay: 17,
+        paymentAccountId: accId,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
     // Create two bills due in July 2026
     const bill1Id = "bill-nu-july";
-    dbConn.db.insert(creditCardBills).values({
-      id: bill1Id,
-      creditCardId: card1Id,
-      billMonth: "2026-06",
-      closingDate: "2026-06-05",
-      dueDate: "2026-07-12",
-      status: "paid", // This one is paid (Realized)
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(creditCardBills)
+      .values({
+        id: bill1Id,
+        creditCardId: card1Id,
+        billMonth: "2026-06",
+        closingDate: "2026-06-05",
+        dueDate: "2026-07-12",
+        status: "paid", // This one is paid (Realized)
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
     const bill2Id = "bill-inter-july";
-    dbConn.db.insert(creditCardBills).values({
-      id: bill2Id,
-      creditCardId: card2Id,
-      billMonth: "2026-06",
-      closingDate: "2026-06-10",
-      dueDate: "2026-07-17",
-      status: "open", // This one is open (Committed)
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(creditCardBills)
+      .values({
+        id: bill2Id,
+        creditCardId: card2Id,
+        billMonth: "2026-06",
+        closingDate: "2026-06-10",
+        dueDate: "2026-07-17",
+        status: "open", // This one is open (Committed)
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
     // Insert purchase transactions comprising these bills
     // Bill 1 (Nubank): R$ 150,00 expense
-    dbConn.db.insert(transactions).values({
-      id: "tx-purchase-nu-1",
-      type: "expense",
-      description: "Supermercado",
-      amountCents: 15000,
-      eventDate: "2026-06-02",
-      budgetMonth: "2026-06",
-      creditCardId: card1Id,
-      creditCardBillId: bill1Id,
-      status: "confirmed",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(transactions)
+      .values({
+        id: "tx-purchase-nu-1",
+        type: "expense",
+        description: "Supermercado",
+        amountCents: 15000,
+        eventDate: "2026-06-02",
+        budgetMonth: "2026-06",
+        creditCardId: card1Id,
+        creditCardBillId: bill1Id,
+        status: "confirmed",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
     // Bill 2 (Inter): R$ 50,00 expense
-    dbConn.db.insert(transactions).values({
-      id: "tx-purchase-inter-1",
-      type: "expense",
-      description: "Restaurante",
-      amountCents: 5000,
-      eventDate: "2026-06-08",
-      budgetMonth: "2026-06",
-      creditCardId: card2Id,
-      creditCardBillId: bill2Id,
-      status: "confirmed",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(transactions)
+      .values({
+        id: "tx-purchase-inter-1",
+        type: "expense",
+        description: "Restaurante",
+        amountCents: 5000,
+        eventDate: "2026-06-08",
+        budgetMonth: "2026-06",
+        creditCardId: card2Id,
+        creditCardBillId: bill2Id,
+        status: "confirmed",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
     // Let's also create an income subcategory and budget/transaction to test the behavior labels under Receitas
-    dbConn.db.insert(categories).values({
-      id: "cat-salario",
-      nature: "income",
-      name: "Salários",
-      sortOrder: 1,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(categories)
+      .values({
+        id: "cat-salario",
+        nature: "income",
+        name: "Salários",
+        sortOrder: 1,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
-    dbConn.db.insert(subcategories).values({
-      id: "sub-salario-regular",
-      categoryId: "cat-salario",
-      name: "Salário Regular",
-      behavior: "fixed",
-      sortOrder: 1,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(subcategories)
+      .values({
+        id: "sub-salario-regular",
+        categoryId: "cat-salario",
+        name: "Salário Regular",
+        behavior: "fixed",
+        sortOrder: 1,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
     // Let's budget R$ 3.000,00 for Salário Regular for July 2026
-    dbConn.db.insert(budgets).values({
-      id: "budget-salario",
-      budgetMonth: "2026-07",
-      subcategoryId: "sub-salario-regular",
-      amountCents: 300000,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(budgets)
+      .values({
+        id: "budget-salario",
+        budgetMonth: "2026-07",
+        subcategoryId: "sub-salario-regular",
+        amountCents: 300000,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
-    dbConn.db.insert(transactions).values({
-      id: "tx-salario-realizado",
-      type: "income",
-      description: "Salário realizado",
-      amountCents: 350000,
-      eventDate: "2026-07-05",
-      budgetMonth: "2026-07",
-      subcategoryId: "sub-salario-regular",
-      status: "confirmed",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    dbConn.db
+      .insert(transactions)
+      .values({
+        id: "tx-salario-realizado",
+        type: "income",
+        description: "Salário realizado",
+        amountCents: 350000,
+        eventDate: "2026-07-05",
+        budgetMonth: "2026-07",
+        subcategoryId: "sub-salario-regular",
+        status: "confirmed",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
 
     dbConn.sqlite.close();
 
@@ -989,15 +1169,49 @@ describe("budgets and monthly control", () => {
 
     const body = controlRes.json() as MonthlyControlResponse;
 
-    const transferNode = mustExist(body.tree.find((n: MonthlyControlNode) => n.id === "nature-transfer"));
+    const transferNode = mustExist(
+      body.tree.find((n: MonthlyControlNode) => n.id === "nature-transfer")
+    );
     // Nova estrutura: nature → category → subcategory (behavior exposto no nó da subcategoria, sem nível intermediário)
-    const catNode = mustExist(transferNode.children.find((c: MonthlyControlNode) => c.name === "Movimentações Internas"));
-    const subNode = mustExist(catNode.children.find((c: MonthlyControlNode) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"));
-    expect(subNode.realized).toBe(15000);
-    expect(subNode.committed).toBe(5000);
+    const catNode = mustExist(
+      transferNode.children.find((c: MonthlyControlNode) => c.name === "Movimentações Internas")
+    );
+    const subNode = mustExist(
+      catNode.children.find(
+        (c: MonthlyControlNode) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
+      )
+    );
+    expect(subNode.realized).toBe(0);
+    expect(subNode.committed).toBe(0);
 
-    const incomeNode = mustExist(body.tree.find((n: MonthlyControlNode) => n.id === "nature-income"));
-    const incomeCatNode = mustExist(incomeNode.children.find((c: MonthlyControlNode) => c.name === "Salários"));
+    const paidBillMovement = mustExist(
+      body.internalMovementSummaries.find(
+        (movement) =>
+          movement.kind === "credit_card_payment" &&
+          movement.status === "realized" &&
+          movement.toName === "Nubank · fatura"
+      )
+    );
+    expect(paidBillMovement.fromName).toBe("Conta Principal");
+    expect(paidBillMovement.amountCents).toBe(15000);
+
+    const openBillMovement = mustExist(
+      body.internalMovementSummaries.find(
+        (movement) =>
+          movement.kind === "credit_card_payment" &&
+          movement.status === "committed" &&
+          movement.toName === "Inter · fatura"
+      )
+    );
+    expect(openBillMovement.fromName).toBe("Conta Principal");
+    expect(openBillMovement.amountCents).toBe(5000);
+
+    const incomeNode = mustExist(
+      body.tree.find((n: MonthlyControlNode) => n.id === "nature-income")
+    );
+    const incomeCatNode = mustExist(
+      incomeNode.children.find((c: MonthlyControlNode) => c.name === "Salários")
+    );
     // Verifica os totais no nível da categoria (substitui o antigo nó behavior-income-fixed)
     expect(incomeCatNode.budgeted).toBe(300000);
     expect(incomeCatNode.realized).toBe(350000);
@@ -1008,86 +1222,107 @@ describe("budgets and monthly control", () => {
     const dbConn = createDatabaseConnection(databasePath);
     const now = new Date().toISOString();
 
-    dbConn.db.insert(categories).values({
-      id: "cat-transferencias",
-      nature: "transfer",
-      name: "Movimentações Internas",
-      sortOrder: 2,
-      isActive: true,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(categories)
+      .values({
+        id: "cat-transferencias",
+        nature: "transfer",
+        name: "Movimentações Internas",
+        sortOrder: 2,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(subcategories).values({
-      id: "cat-transferencias-sub-pagamento-de-fatura",
-      categoryId: "cat-transferencias",
-      name: "Pagamento de fatura",
-      behavior: "fixed",
-      sortOrder: 1,
-      isActive: true,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(subcategories)
+      .values({
+        id: "cat-transferencias-sub-pagamento-de-fatura",
+        categoryId: "cat-transferencias",
+        name: "Pagamento de fatura",
+        behavior: "fixed",
+        sortOrder: 1,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(accounts).values({
-      id: "acc-default-card",
-      name: "Conta padrão do cartão",
-      type: "checking",
-      sortOrder: 1,
-      isPrimary: false,
-      isActive: true,
-      defaultPaymentMethodId: null,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(accounts)
+      .values({
+        id: "acc-default-card",
+        name: "Conta padrão do cartão",
+        type: "checking",
+        sortOrder: 1,
+        isPrimary: false,
+        isActive: true,
+        defaultPaymentMethodId: null,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(accounts).values({
-      id: "acc-paid-from",
-      name: "Conta usada no pagamento",
-      type: "checking",
-      sortOrder: 2,
-      isPrimary: true,
-      isActive: true,
-      defaultPaymentMethodId: null,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(accounts)
+      .values({
+        id: "acc-paid-from",
+        name: "Conta usada no pagamento",
+        type: "checking",
+        sortOrder: 2,
+        isPrimary: true,
+        isActive: true,
+        defaultPaymentMethodId: null,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(creditCards).values({
-      id: "card-pay-test",
-      name: "Nubank",
-      closingDay: 5,
-      dueDay: 12,
-      paymentAccountId: "acc-default-card",
-      isActive: true,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(creditCards)
+      .values({
+        id: "card-pay-test",
+        name: "Nubank",
+        closingDay: 5,
+        dueDay: 12,
+        paymentAccountId: "acc-default-card",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(creditCardBills).values({
-      id: "bill-pay-test",
-      creditCardId: "card-pay-test",
-      billMonth: "2026-06",
-      closingDate: "2026-06-05",
-      dueDate: "2026-07-12",
-      status: "open",
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(creditCardBills)
+      .values({
+        id: "bill-pay-test",
+        creditCardId: "card-pay-test",
+        billMonth: "2026-06",
+        closingDate: "2026-06-05",
+        dueDate: "2026-07-12",
+        status: "open",
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(transactions).values({
-      id: "tx-card-purchase-pay-test",
-      type: "expense",
-      description: "Compra no cartão",
-      amountCents: 23000,
-      eventDate: "2026-06-08",
-      budgetMonth: "2026-06",
-      creditCardId: "card-pay-test",
-      creditCardBillId: "bill-pay-test",
-      status: "confirmed",
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(transactions)
+      .values({
+        id: "tx-card-purchase-pay-test",
+        type: "expense",
+        description: "Compra no cartão",
+        amountCents: 23000,
+        eventDate: "2026-06-08",
+        budgetMonth: "2026-06",
+        creditCardId: "card-pay-test",
+        creditCardBillId: "bill-pay-test",
+        status: "confirmed",
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
     dbConn.sqlite.close();
 
@@ -1098,13 +1333,31 @@ describe("budgets and monthly control", () => {
 
     expect(beforePayRes.statusCode).toBe(200);
     const beforePayBody = beforePayRes.json() as MonthlyControlResponse;
-    const beforeTransferNode = mustExist(beforePayBody.tree.find((n: MonthlyControlNode) => n.id === "nature-transfer"));
-    const beforeCatNode = mustExist(beforeTransferNode.children.find((c: MonthlyControlNode) => c.name === "Movimentações Internas"));
-    const beforeSubNode = mustExist(beforeCatNode.children.find(
-      (c: MonthlyControlNode) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
-    ));
+    const beforeTransferNode = mustExist(
+      beforePayBody.tree.find((n: MonthlyControlNode) => n.id === "nature-transfer")
+    );
+    const beforeCatNode = mustExist(
+      beforeTransferNode.children.find(
+        (c: MonthlyControlNode) => c.name === "Movimentações Internas"
+      )
+    );
+    const beforeSubNode = mustExist(
+      beforeCatNode.children.find(
+        (c: MonthlyControlNode) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
+      )
+    );
     expect(beforeSubNode.realized).toBe(0);
-    expect(beforeSubNode.committed).toBe(23000);
+    expect(beforeSubNode.committed).toBe(0);
+    const beforeBillMovement = mustExist(
+      beforePayBody.internalMovementSummaries.find(
+        (movement) =>
+          movement.kind === "credit_card_payment" &&
+          movement.status === "committed" &&
+          movement.toName === "Nubank · fatura"
+      )
+    );
+    expect(beforeBillMovement.fromName).toBe("Conta padrão do cartão");
+    expect(beforeBillMovement.amountCents).toBe(23000);
 
     const payRes = await app.inject({
       method: "POST",
@@ -1129,15 +1382,37 @@ describe("budgets and monthly control", () => {
 
     expect(afterPayRes.statusCode).toBe(200);
     const afterPayBody = afterPayRes.json() as MonthlyControlResponse;
-    const afterTransferNode = mustExist(afterPayBody.tree.find((n: MonthlyControlNode) => n.id === "nature-transfer"));
-    const afterCatNode = mustExist(afterTransferNode.children.find((c: MonthlyControlNode) => c.name === "Movimentações Internas"));
-    const afterSubNode = mustExist(afterCatNode.children.find(
-      (c: MonthlyControlNode) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
-    ));
-    expect(afterSubNode.realized).toBe(23000);
+    const afterTransferNode = mustExist(
+      afterPayBody.tree.find((n: MonthlyControlNode) => n.id === "nature-transfer")
+    );
+    const afterCatNode = mustExist(
+      afterTransferNode.children.find(
+        (c: MonthlyControlNode) => c.name === "Movimentações Internas"
+      )
+    );
+    const afterSubNode = mustExist(
+      afterCatNode.children.find(
+        (c: MonthlyControlNode) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
+      )
+    );
+    expect(afterSubNode.realized).toBe(0);
     expect(afterSubNode.committed).toBe(0);
+    const afterBillMovement = mustExist(
+      afterPayBody.internalMovementSummaries.find(
+        (movement) =>
+          movement.kind === "credit_card_payment" &&
+          movement.status === "realized" &&
+          movement.toName === "Nubank · fatura"
+      )
+    );
+    expect(afterBillMovement.fromName).toBe("Conta usada no pagamento");
+    expect(afterBillMovement.amountCents).toBe(23000);
 
-    const paidAccountSummary = mustExist(afterPayBody.accountSummaries.find((account: AccountSummary) => account.id === "acc-paid-from"));
+    const paidAccountSummary = mustExist(
+      afterPayBody.accountSummaries.find(
+        (account: AccountSummary) => account.id === "acc-paid-from"
+      )
+    );
     expect(paidAccountSummary.realizedOutflow).toBe(23000);
 
     const checkConn = createDatabaseConnection(databasePath);
@@ -1145,7 +1420,10 @@ describe("budgets and monthly control", () => {
       .select()
       .from(transactions)
       .all()
-      .find((transaction) => transaction.creditCardBillId === "bill-pay-test" && !transaction.creditCardId);
+      .find(
+        (transaction) =>
+          transaction.creditCardBillId === "bill-pay-test" && !transaction.creditCardId
+      );
     checkConn.sqlite.close();
 
     expect(paymentTx).toBeDefined();
@@ -1159,74 +1437,92 @@ describe("budgets and monthly control", () => {
     const dbConn = createDatabaseConnection(databasePath);
     const now = new Date().toISOString();
 
-    dbConn.db.insert(categories).values({
-      id: "cat-transferencias",
-      nature: "transfer",
-      name: "Movimentações Internas",
-      sortOrder: 2,
-      isActive: true,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(categories)
+      .values({
+        id: "cat-transferencias",
+        nature: "transfer",
+        name: "Movimentações Internas",
+        sortOrder: 2,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(subcategories).values({
-      id: "cat-transferencias-sub-pagamento-de-fatura",
-      categoryId: "cat-transferencias",
-      name: "Pagamento de fatura",
-      behavior: "fixed",
-      sortOrder: 1,
-      isActive: true,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(subcategories)
+      .values({
+        id: "cat-transferencias-sub-pagamento-de-fatura",
+        categoryId: "cat-transferencias",
+        name: "Pagamento de fatura",
+        behavior: "fixed",
+        sortOrder: 1,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(accounts).values({
-      id: "acc-revert-test",
-      name: "Conta teste reversão",
-      type: "checking",
-      sortOrder: 1,
-      isPrimary: true,
-      isActive: true,
-      defaultPaymentMethodId: null,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(accounts)
+      .values({
+        id: "acc-revert-test",
+        name: "Conta teste reversão",
+        type: "checking",
+        sortOrder: 1,
+        isPrimary: true,
+        isActive: true,
+        defaultPaymentMethodId: null,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(creditCards).values({
-      id: "card-revert-test",
-      name: "Nubank",
-      closingDay: 5,
-      dueDay: 12,
-      paymentAccountId: "acc-revert-test",
-      isActive: true,
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(creditCards)
+      .values({
+        id: "card-revert-test",
+        name: "Nubank",
+        closingDay: 5,
+        dueDay: 12,
+        paymentAccountId: "acc-revert-test",
+        isActive: true,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(creditCardBills).values({
-      id: "bill-revert-test",
-      creditCardId: "card-revert-test",
-      billMonth: "2026-06",
-      closingDate: "2026-06-05",
-      dueDate: "2026-07-12",
-      status: "open",
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(creditCardBills)
+      .values({
+        id: "bill-revert-test",
+        creditCardId: "card-revert-test",
+        billMonth: "2026-06",
+        closingDate: "2026-06-05",
+        dueDate: "2026-07-12",
+        status: "open",
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
-    dbConn.db.insert(transactions).values({
-      id: "tx-purchase-revert-test",
-      type: "expense",
-      description: "Compra revert",
-      amountCents: 15000,
-      eventDate: "2026-06-02",
-      budgetMonth: "2026-06",
-      creditCardId: "card-revert-test",
-      creditCardBillId: "bill-revert-test",
-      status: "confirmed",
-      createdAt: now,
-      updatedAt: now
-    }).run();
+    dbConn.db
+      .insert(transactions)
+      .values({
+        id: "tx-purchase-revert-test",
+        type: "expense",
+        description: "Compra revert",
+        amountCents: 15000,
+        eventDate: "2026-06-02",
+        budgetMonth: "2026-06",
+        creditCardId: "card-revert-test",
+        creditCardBillId: "bill-revert-test",
+        status: "confirmed",
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
 
     dbConn.sqlite.close();
 
@@ -1244,16 +1540,38 @@ describe("budgets and monthly control", () => {
       url: "/controle-mensal?month=2026-07"
     });
     const afterPayBody = afterPayRes.json() as MonthlyControlResponse;
-    const afterTransferNode = mustExist(afterPayBody.tree.find((n: MonthlyControlNode) => n.id === "nature-transfer"));
-    const afterCatNode = mustExist(afterTransferNode.children.find((c: MonthlyControlNode) => c.name === "Movimentações Internas"));
-    const afterSubNode = mustExist(afterCatNode.children.find(
-      (c: MonthlyControlNode) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
-    ));
-    expect(afterSubNode.realized).toBe(15000);
+    const afterTransferNode = mustExist(
+      afterPayBody.tree.find((n: MonthlyControlNode) => n.id === "nature-transfer")
+    );
+    const afterCatNode = mustExist(
+      afterTransferNode.children.find(
+        (c: MonthlyControlNode) => c.name === "Movimentações Internas"
+      )
+    );
+    const afterSubNode = mustExist(
+      afterCatNode.children.find(
+        (c: MonthlyControlNode) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
+      )
+    );
+    expect(afterSubNode.realized).toBe(0);
     expect(afterSubNode.committed).toBe(0);
+    const afterPayMovement = mustExist(
+      afterPayBody.internalMovementSummaries.find(
+        (movement) =>
+          movement.kind === "credit_card_payment" &&
+          movement.status === "realized" &&
+          movement.toName === "Nubank · fatura"
+      )
+    );
+    expect(afterPayMovement.fromName).toBe("Conta teste reversão");
+    expect(afterPayMovement.amountCents).toBe(15000);
 
     // Verify outflow is present in account summary
-    const paidAccountSummary = mustExist(afterPayBody.accountSummaries.find((account: AccountSummary) => account.id === "acc-revert-test"));
+    const paidAccountSummary = mustExist(
+      afterPayBody.accountSummaries.find(
+        (account: AccountSummary) => account.id === "acc-revert-test"
+      )
+    );
     expect(paidAccountSummary.realizedOutflow).toBe(15000);
 
     // 2. Revert the payment
@@ -1269,16 +1587,38 @@ describe("budgets and monthly control", () => {
       url: "/controle-mensal?month=2026-07"
     });
     const afterRevertBody = afterRevertRes.json() as MonthlyControlResponse;
-    const afterRevertTransferNode = mustExist(afterRevertBody.tree.find((n: MonthlyControlNode) => n.id === "nature-transfer"));
-    const afterRevertCatNode = mustExist(afterRevertTransferNode.children.find((c: MonthlyControlNode) => c.name === "Movimentações Internas"));
-    const afterRevertSubNode = mustExist(afterRevertCatNode.children.find(
-      (c: MonthlyControlNode) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
-    ));
+    const afterRevertTransferNode = mustExist(
+      afterRevertBody.tree.find((n: MonthlyControlNode) => n.id === "nature-transfer")
+    );
+    const afterRevertCatNode = mustExist(
+      afterRevertTransferNode.children.find(
+        (c: MonthlyControlNode) => c.name === "Movimentações Internas"
+      )
+    );
+    const afterRevertSubNode = mustExist(
+      afterRevertCatNode.children.find(
+        (c: MonthlyControlNode) => c.id === "sub-cat-transferencias-sub-pagamento-de-fatura"
+      )
+    );
     expect(afterRevertSubNode.realized).toBe(0);
-    expect(afterRevertSubNode.committed).toBe(15000);
+    expect(afterRevertSubNode.committed).toBe(0);
+    const afterRevertMovement = mustExist(
+      afterRevertBody.internalMovementSummaries.find(
+        (movement) =>
+          movement.kind === "credit_card_payment" &&
+          movement.status === "committed" &&
+          movement.toName === "Nubank · fatura"
+      )
+    );
+    expect(afterRevertMovement.fromName).toBe("Conta teste reversão");
+    expect(afterRevertMovement.amountCents).toBe(15000);
 
     // Verify outflow is removed from account summary
-    const revertedAccountSummary = mustExist(afterRevertBody.accountSummaries.find((account: AccountSummary) => account.id === "acc-revert-test"));
+    const revertedAccountSummary = mustExist(
+      afterRevertBody.accountSummaries.find(
+        (account: AccountSummary) => account.id === "acc-revert-test"
+      )
+    );
     expect(revertedAccountSummary.realizedOutflow).toBe(0);
 
     // Verify transaction was deleted
@@ -1287,7 +1627,10 @@ describe("budgets and monthly control", () => {
       .select()
       .from(transactions)
       .all()
-      .find((transaction) => transaction.creditCardBillId === "bill-revert-test" && !transaction.creditCardId);
+      .find(
+        (transaction) =>
+          transaction.creditCardBillId === "bill-revert-test" && !transaction.creditCardId
+      );
     checkConn.sqlite.close();
     expect(paymentTx).toBeUndefined();
   }, 10000);
@@ -1388,7 +1731,9 @@ describe("budgets and monthly control", () => {
     expect(body.cashSummary.realizedBalance).toBe(200000 + 300000 - 80000); // 420000
 
     // Assert: per-account detail
-    const accountDetail = mustExist(body.accountSummaries.find((a: AccountSummary) => a.id === accountId));
+    const accountDetail = mustExist(
+      body.accountSummaries.find((a: AccountSummary) => a.id === accountId)
+    );
     expect(accountDetail.realizedInflow).toBe(300000);
     expect(accountDetail.realizedOutflow).toBe(80000);
 

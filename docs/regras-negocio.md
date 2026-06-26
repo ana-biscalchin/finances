@@ -129,6 +129,7 @@ Este documento descreve as regras que o app aplica hoje. Ele deve ser a referenc
 - O controle mensal tambem retorna resumo por conta com saldo inicial do mes, entradas, saidas e saldo projetado.
 - Compras de cartao entram no planejamento pelo mes da fatura, nao pelo mes da compra.
 - Pagamento de fatura aparece como movimento de conta quando pago, mas nao duplica o total da fatura nem as compras.
+- Transferencias internas e pagamentos de fatura aparecem na visao de competencia como movimentos neutros, com leitura de origem e destino (`de -> para`) e volume movimentado; o impacto no orcamento permanece zero.
 - Despesas sao separadas entre caixa e credito nos totais para apoiar o indicador de independencia de credito.
 
 ## Orcamentos

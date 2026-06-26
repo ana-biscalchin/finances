@@ -27,6 +27,7 @@ import {
 import {
   IconAlertCircle,
   IconAlertTriangle,
+  IconArrowRight,
   IconCheck,
   IconChevronDown,
   IconChevronUp,
@@ -100,6 +101,19 @@ interface AccountMonthlySummary {
     amountCents: number;
     dueDate: string;
   }[];
+}
+
+interface InternalMovementSummary {
+  id: string;
+  kind: "account_transfer" | "credit_card_payment";
+  status: "realized" | "committed";
+  fromId: string | null;
+  fromName: string;
+  toId: string | null;
+  toName: string;
+  subcategoryId: string | null;
+  amountCents: number;
+  count: number;
 }
 
 interface RowData {
@@ -234,6 +248,9 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
   const [activeView, setActiveView] = useState<"competence" | "cash">("competence");
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
   const [accountSummaries, setAccountSummaries] = useState<AccountMonthlySummary[]>([]);
+  const [internalMovementSummaries, setInternalMovementSummaries] = useState<
+    InternalMovementSummary[]
+  >([]);
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -287,6 +304,7 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
       setTreeData(data.tree);
       setSummary(data.summary);
       setAccountSummaries(data.accountSummaries ?? []);
+      setInternalMovementSummaries(data.internalMovementSummaries ?? []);
     } catch (e) {
       reportClientError("monthlyControl.competence.load", e);
       setError(getErrorMessage(e));
@@ -434,6 +452,24 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
     traverse(treeData);
     return map;
   }, [treeData]);
+
+  const internalMovementMap = useMemo(() => {
+    const bySubcategoryId = new Map<string, InternalMovementSummary[]>();
+    for (const movement of internalMovementSummaries) {
+      if (!movement.subcategoryId) continue;
+      const existing = bySubcategoryId.get(movement.subcategoryId) ?? [];
+      existing.push(movement);
+      bySubcategoryId.set(movement.subcategoryId, existing);
+    }
+
+    return { all: internalMovementSummaries, bySubcategoryId };
+  }, [internalMovementSummaries]);
+
+  const getInternalMovementsForRow = (row: RowData) => {
+    if (row.nature !== "transfer") return [];
+    if (row.subcategoryId) return internalMovementMap.bySubcategoryId.get(row.subcategoryId) ?? [];
+    return internalMovementMap.all;
+  };
 
   // Totals calculations
   const totalExpenseBudgeted = summary?.expense.budgeted ?? 0;
@@ -1193,6 +1229,12 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                       {flatRows.map((row) => {
                         const isExpanded =
                           expandedNodes[row.id] !== undefined ? expandedNodes[row.id] : false;
+                        const isInternalMovementRow = row.nature === "transfer";
+                        const rowInternalMovements = getInternalMovementsForRow(row);
+                        const rowInternalVolume = rowInternalMovements.reduce(
+                          (sum, movement) => sum + movement.amountCents,
+                          0
+                        );
 
                         const styleBg =
                           row.level === 0 ? { backgroundColor: "var(--mantine-color-gray-0)" } : {};
@@ -1259,9 +1301,11 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
                             <Table.Td style={{ textAlign: "right" }}>
                               <Group gap={6} justify="flex-end" wrap="nowrap" align="center">
                                 <Text size="sm" fw={row.level <= 1 ? 700 : 500}>
-                                  {formatMoney(moneyFromCents(row.budgeted))}
+                                  {isInternalMovementRow
+                                    ? "—"
+                                    : formatMoney(moneyFromCents(row.budgeted))}
                                 </Text>
-                                {row.subcategoryId && (
+                                {row.subcategoryId && !isInternalMovementRow && (
                                   <BudgetCell
                                     initialCents={row.budgeted}
                                     subcategoryId={row.subcategoryId}
@@ -1278,14 +1322,33 @@ export function ControleMensalPage({ selectedMonth, setSelectedMonth }: Controle
 
                             {/* Realizado */}
                             <Table.Td style={{ textAlign: "right" }}>
-                              <Text size="sm" fw={row.level <= 1 ? 700 : 500}>
-                                {formatMoney(moneyFromCents(row.realized))}
-                              </Text>
+                              {isInternalMovementRow ? (
+                                <Stack gap={0} align="flex-end">
+                                  <Text size="sm" fw={row.level <= 1 ? 700 : 500} c="dimmed">
+                                    {formatMoney(moneyFromCents(0))}
+                                  </Text>
+                                  {rowInternalVolume > 0 ? (
+                                    <Text size="10px" c="dimmed">
+                                      {formatMoney(moneyFromCents(rowInternalVolume))} movimentados
+                                    </Text>
+                                  ) : null}
+                                </Stack>
+                              ) : (
+                                <Text size="sm" fw={row.level <= 1 ? 700 : 500}>
+                                  {formatMoney(moneyFromCents(row.realized))}
+                                </Text>
+                              )}
                             </Table.Td>
 
                             {/* Meio / Fonte */}
                             <Table.Td>
                               {(() => {
+                                if (isInternalMovementRow) {
+                                  return (
+                                    <InternalMovementFlowList movements={rowInternalMovements} />
+                                  );
+                                }
+
                                 const breakdown = breakdownMap.get(row.id) ?? [];
                                 const active = breakdown.filter(
                                   (m) => m.budgeted > 0 || m.realized > 0
@@ -1470,6 +1533,72 @@ interface Transaction {
   accountId?: string | null;
   creditCardId?: string | null;
   paymentMethodId?: string | null;
+}
+
+function InternalMovementFlowList({ movements }: { movements: InternalMovementSummary[] }) {
+  if (movements.length === 0) {
+    return (
+      <Text size="xs" c="dimmed">
+        Sem movimentos internos no mês.
+      </Text>
+    );
+  }
+
+  return (
+    <Group gap="xs" wrap="wrap">
+      {movements.map((movement) => {
+        const color = movement.status === "realized" ? "gray" : "orange";
+        return (
+          <Paper
+            key={movement.id}
+            withBorder
+            px="xs"
+            py="4px"
+            radius="sm"
+            style={{
+              backgroundColor: "var(--mantine-color-gray-0)",
+              borderColor: "var(--mantine-color-gray-2)",
+              minWidth: "210px",
+              flex: "1 1 auto",
+              maxWidth: "320px"
+            }}
+          >
+            <Group justify="space-between" wrap="nowrap" gap={6} mb={2}>
+              <Group gap={5} wrap="nowrap" style={{ overflow: "hidden", minWidth: 0 }}>
+                <Text
+                  size="11px"
+                  fw={600}
+                  style={{ whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}
+                >
+                  {movement.fromName}
+                </Text>
+                <IconArrowRight size={12} style={{ flexShrink: 0, opacity: 0.55 }} />
+                <Text
+                  size="11px"
+                  fw={600}
+                  style={{ whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}
+                >
+                  {movement.toName}
+                </Text>
+              </Group>
+              <Badge size="xs" color={color} variant="light" style={{ flexShrink: 0 }}>
+                {movement.status === "realized" ? "Realizado" : "A pagar"}
+              </Badge>
+            </Group>
+            <Group justify="space-between" wrap="nowrap">
+              <Text size="10px" c="dimmed">
+                {movement.kind === "credit_card_payment" ? "Pagamento de fatura" : "Transferência"}
+                {movement.count > 1 ? ` · ${movement.count} movimentos` : ""}
+              </Text>
+              <Text size="10px" fw={700} c={movement.status === "realized" ? "gray.8" : "orange"}>
+                {formatMoney(moneyFromCents(movement.amountCents))}
+              </Text>
+            </Group>
+          </Paper>
+        );
+      })}
+    </Group>
+  );
 }
 
 function BudgetCell({

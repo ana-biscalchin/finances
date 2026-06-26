@@ -9,7 +9,12 @@ import {
   accounts as dbAccounts,
   type createDatabaseConnection
 } from "@finances/database";
-import { advanceMonth, assertYearMonth } from "@finances/domain";
+import {
+  advanceMonth,
+  assertYearMonth,
+  isCreditCardPayment,
+  isInternalTransfer
+} from "@finances/domain";
 import { and, asc, eq, gte, isNull, inArray, lt, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
@@ -81,6 +86,19 @@ interface AccountMonthlySummary {
     amountCents: number;
     dueDate: string;
   }[];
+}
+
+interface InternalMovementSummary {
+  id: string;
+  kind: "account_transfer" | "credit_card_payment";
+  status: "realized" | "committed";
+  fromId: string | null;
+  fromName: string;
+  toId: string | null;
+  toName: string;
+  subcategoryId: string | null;
+  amountCents: number;
+  count: number;
 }
 
 export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseConnection) {
@@ -185,7 +203,7 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
         ? db
             .select({
               creditCardBillId: dbTransactions.creditCardBillId,
-              paymentMethodId: dbTransactions.paymentMethodId
+              accountId: dbTransactions.accountId
             })
             .from(dbTransactions)
             .where(
@@ -199,23 +217,7 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
             .all()
         : [];
 
-    const billPmSums = new Map<string, { realized: number; committed: number }>();
     const billTotalCentsMap = new Map<string, number>();
-    let billRealizedSum = 0;
-    let billCommittedSum = 0;
-
-    function getBillPaymentMethodId(bill: typeof dbCreditCardBills.$inferSelect): string | null {
-      if (bill.status === "paid") {
-        const paymentTransaction = billPayments.find((t) => t.creditCardBillId === bill.id);
-        if (paymentTransaction?.paymentMethodId) return paymentTransaction.paymentMethodId;
-      }
-
-      const cardId = bill.creditCardId;
-      const card = cardMap.get(cardId);
-      if (!card || !card.paymentAccountId) return null;
-      const account = accountMap.get(card.paymentAccountId);
-      return account?.defaultPaymentMethodId ?? null;
-    }
 
     for (const bill of billsDueInMonth) {
       // Find all transactions for this credit card and billMonth (month of the bill)
@@ -239,21 +241,119 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
         }, 0);
 
       billTotalCentsMap.set(bill.id, totalBillCents);
-
-      const pmId = getBillPaymentMethodId(bill) || "null";
-      if (!billPmSums.has(pmId)) {
-        billPmSums.set(pmId, { realized: 0, committed: 0 });
-      }
-      const sumObj = billPmSums.get(pmId)!;
-
-      if (bill.status === "paid") {
-        sumObj.realized += totalBillCents;
-        billRealizedSum += totalBillCents;
-      } else {
-        sumObj.committed += totalBillCents;
-        billCommittedSum += totalBillCents;
-      }
     }
+
+    const internalMovementMap = new Map<string, InternalMovementSummary>();
+
+    function getAccountName(accountId: string | null | undefined) {
+      if (!accountId) return "Conta não definida";
+      return accountMap.get(accountId)?.name ?? "Conta não encontrada";
+    }
+
+    function addInternalMovement(
+      movement: Omit<InternalMovementSummary, "id" | "amountCents" | "count"> & {
+        amountCents: number;
+      }
+    ) {
+      if (movement.amountCents <= 0) return;
+
+      const key = [
+        movement.kind,
+        movement.status,
+        movement.fromId ?? "null",
+        movement.toId ?? "null",
+        movement.subcategoryId ?? "null"
+      ].join("|");
+      const existing = internalMovementMap.get(key);
+
+      if (existing) {
+        existing.amountCents += movement.amountCents;
+        existing.count += 1;
+        return;
+      }
+
+      internalMovementMap.set(key, {
+        id: key,
+        ...movement,
+        count: 1
+      });
+    }
+
+    const processedTransferPairs = new Set<string>();
+    for (const transaction of monthTransactions) {
+      if (
+        transaction.status === "canceled" ||
+        !isInternalTransfer(transaction) ||
+        processedTransferPairs.has(transaction.id)
+      ) {
+        continue;
+      }
+
+      const linkedTransaction = monthTransactions.find(
+        (t) => t.id === transaction.linkedTransactionId
+      );
+      if (!linkedTransaction || linkedTransaction.status === "canceled") {
+        continue;
+      }
+
+      processedTransferPairs.add(transaction.id);
+      processedTransferPairs.add(linkedTransaction.id);
+
+      const expenseSide =
+        transaction.type === "expense"
+          ? transaction
+          : linkedTransaction.type === "expense"
+            ? linkedTransaction
+            : transaction;
+      const incomeSide =
+        transaction.type === "income"
+          ? transaction
+          : linkedTransaction.type === "income"
+            ? linkedTransaction
+            : linkedTransaction;
+
+      addInternalMovement({
+        kind: "account_transfer",
+        status:
+          transaction.status === "planned" || linkedTransaction.status === "planned"
+            ? "committed"
+            : "realized",
+        fromId: expenseSide.accountId,
+        fromName: getAccountName(expenseSide.accountId),
+        toId: incomeSide.accountId,
+        toName: getAccountName(incomeSide.accountId),
+        subcategoryId: transaction.subcategoryId ?? linkedTransaction.subcategoryId,
+        amountCents: expenseSide.amountCents
+      });
+    }
+
+    for (const bill of billsDueInMonth) {
+      const totalBillCents = billTotalCentsMap.get(bill.id) ?? 0;
+      const card = cardMap.get(bill.creditCardId);
+      const paymentTransaction = billPayments.find((t) => t.creditCardBillId === bill.id);
+      const fromId =
+        bill.status === "paid"
+          ? (paymentTransaction?.accountId ?? card?.paymentAccountId ?? null)
+          : (card?.paymentAccountId ?? null);
+
+      addInternalMovement({
+        kind: "credit_card_payment",
+        status: bill.status === "paid" ? "realized" : "committed",
+        fromId,
+        fromName: getAccountName(fromId),
+        toId: card ? `card:${card.id}` : bill.creditCardId,
+        toName: card ? `${card.name} · fatura` : "Fatura de cartão",
+        subcategoryId: pagFaturaSub?.id ?? null,
+        amountCents: totalBillCents
+      });
+    }
+
+    const internalMovementSummaries = Array.from(internalMovementMap.values()).sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind.localeCompare(b.kind);
+      if (a.status !== b.status) return a.status.localeCompare(b.status);
+      const fromCompare = a.fromName.localeCompare(b.fromName);
+      return fromCompare !== 0 ? fromCompare : a.toName.localeCompare(b.toName);
+    });
 
     const UNCATEGORIZED_SUB_INCOME_ID = "virtual-sub-uncategorized-income";
     const UNCATEGORIZED_SUB_EXPENSE_ID = "virtual-sub-uncategorized-expense";
@@ -726,6 +826,7 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
 
     for (const t of monthTransactions) {
       if (t.status === "canceled") continue;
+      if (isInternalTransfer(t) || isCreditCardPayment(t)) continue;
       const subId =
         t.subcategoryId ??
         (t.type === "income" ? UNCATEGORIZED_SUB_INCOME_ID : UNCATEGORIZED_SUB_EXPENSE_ID);
@@ -782,20 +883,20 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       const key = getAccumulatorKey(pagFaturaSub.id, "transfer");
       const acc = categoryAccumulator.get(key);
       if (acc) {
-        acc.realized = billRealizedSum;
-        acc.committed = billCommittedSum;
-        acc.realizedCash = billRealizedSum;
-        acc.committedCash = billCommittedSum;
+        acc.realized = 0;
+        acc.committed = 0;
+        acc.realizedCash = 0;
+        acc.committedCash = 0;
         acc.realizedCredit = 0;
         acc.committedCredit = 0;
       } else {
         categoryAccumulator.set(key, {
           budgeted: 0,
-          realized: billRealizedSum,
-          committed: billCommittedSum,
-          realizedCash: billRealizedSum,
+          realized: 0,
+          committed: 0,
+          realizedCash: 0,
           realizedCredit: 0,
-          committedCash: billCommittedSum,
+          committedCash: 0,
           committedCredit: 0
         });
       }
@@ -993,6 +1094,7 @@ export function registerBudgetRoutes(app: FastifyInstance, connection: DatabaseC
       view: "competence",
       summary,
       tree,
+      internalMovementSummaries,
       accountSummaries
     });
   });
