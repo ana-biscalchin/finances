@@ -5,9 +5,11 @@ import {
   Badge,
   Box,
   Button,
+  Collapse,
   Drawer,
   Group,
   Loader,
+  MultiSelect,
   NumberInput,
   Paper,
   SegmentedControl,
@@ -36,21 +38,28 @@ import {
   IconAlertTriangle,
   IconCheck,
   IconSearch,
-  IconCopy
+  IconCopy,
+  IconChevronDown,
+  IconChevronUp
 } from "@tabler/icons-react";
 import { useClipboard } from "@mantine/hooks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { formatBusinessDateForDisplay, getTodayBusinessDate } from "../date-format";
+import {
+  formatBusinessDateForDisplay,
+  getLastDayOfMonth,
+  getTodayBusinessDate
+} from "../date-format";
 import { ReconciliationWizard } from "./ReconciliationWizard";
 import { BusinessDateInput } from "../shared/BusinessDateInput";
 import { parseCsvHeaderLine } from "../shared/csv-utils";
 import { formatCategoryPromptGroups, getAmountColor } from "../shared/transaction-ui";
 import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
-import { CategorySelect, QuickCategoryEdit } from "../shared/CategorySelect";
+import { CategoryMultiSelect, CategorySelect, QuickCategoryEdit } from "../shared/CategorySelect";
 import { MonthSelector } from "../shared/MonthSelector";
 import { QuickAmountEdit, QuickDateEdit, QuickTextEdit } from "../shared/QuickEditFields";
 import { applyImportPreviewBulkEdits } from "./import-preview";
+import { SortableTableHeader } from "../shared/SortableTableHeader";
 
 type Transaction = {
   id: string;
@@ -79,6 +88,7 @@ type Account = {
 type PaymentMethod = {
   id: string;
   name: string;
+  kind?: string;
 };
 
 type CreditCard = {
@@ -122,6 +132,17 @@ type ImportPreviewItem = {
     accountName: string | null;
   } | null;
 };
+
+type SortDirection = "asc" | "desc";
+type TransactionSortColumn =
+  | "date"
+  | "description"
+  | "type"
+  | "amount"
+  | "account"
+  | "paymentMethod"
+  | "category";
+type DateFilterMode = "all" | "until" | "period";
 
 type TransactionFormState = {
   type: string;
@@ -169,6 +190,8 @@ const emptyForm: TransactionFormState = {
   installmentCount: 1
 };
 
+const creditCardPaymentMethodId = "pm-credit-card";
+
 export function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -178,10 +201,15 @@ export function TransactionsPage() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [filterType, setFilterType] = useState<string>(emptySelectValue);
   const [filterAccountId, setFilterAccountId] = useState<string>(emptySelectValue);
-  const [filterPaymentMethodId, setFilterPaymentMethodId] = useState<string>(emptySelectValue);
-  const [filterSubcategoryId, setFilterSubcategoryId] = useState<string>(emptySelectValue);
+  const [filterPaymentMethodIds, setFilterPaymentMethodIds] = useState<string[]>([]);
+  const [filterSubcategoryIds, setFilterSubcategoryIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<string>("date-desc");
+  const [sortColumn, setSortColumn] = useState<TransactionSortColumn>("date");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
+  const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>("all");
+  const [filterDateFrom, setFilterDateFrom] = useState(`${selectedMonth}-01`);
+  const [filterDateTo, setFilterDateTo] = useState(getLastDayOfMonth(selectedMonth));
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -264,11 +292,13 @@ Extrato a ser convertido:
   );
   const filterPaymentMethodOptions = useMemo(
     () => [
-      { value: emptySelectValue, label: "Todas" },
       { value: missingFilterValue, label: "Sem forma de pagamento" },
-      ...paymentMethodOptions.filter((option) => option.value !== emptySelectValue)
+      ...paymentMethods.map((paymentMethod) => ({
+        value: paymentMethod.id,
+        label: paymentMethod.name
+      }))
     ],
-    [paymentMethodOptions]
+    [paymentMethods]
   );
   const creditCardOptions = useMemo(
     () => [
@@ -351,9 +381,8 @@ Extrato a ser convertido:
       const params = buildTransactionSearchParams({
         selectedMonth,
         filterType,
-        filterAccountId,
-        filterPaymentMethodId,
-        filterSubcategoryId
+        filterPaymentMethodIds,
+        filterSubcategoryIds
       });
 
       const response = await fetch(`${apiBaseUrl}/transactions?${params.toString()}`);
@@ -370,15 +399,14 @@ Extrato a ser convertido:
     } finally {
       setIsLoading(false);
     }
-  }, [selectedMonth, filterType, filterAccountId, filterPaymentMethodId, filterSubcategoryId]);
+  }, [selectedMonth, filterType, filterPaymentMethodIds, filterSubcategoryIds]);
 
   function handleExportCsv() {
     const params = buildTransactionSearchParams({
       selectedMonth,
       filterType,
-      filterAccountId,
-      filterPaymentMethodId,
-      filterSubcategoryId
+      filterPaymentMethodIds,
+      filterSubcategoryIds
     });
     window.open(`${apiBaseUrl}/transactions/export?${params.toString()}`, "_blank");
   }
@@ -606,7 +634,12 @@ Extrato a ser convertido:
 
   useEffect(() => {
     void loadTransactions();
-  }, [selectedMonth, filterType, filterAccountId, filterPaymentMethodId, filterSubcategoryId]);
+  }, [selectedMonth, filterType, filterPaymentMethodIds, filterSubcategoryIds]);
+
+  useEffect(() => {
+    setFilterDateFrom(`${selectedMonth}-01`);
+    setFilterDateTo(getLastDayOfMonth(selectedMonth));
+  }, [selectedMonth]);
 
   useEffect(() => {
     if (editingTransaction) {
@@ -915,9 +948,58 @@ Extrato a ser convertido:
   }, []);
 
   const filteredTransactions = useMemo(() => {
-    if (!searchQuery.trim()) return visibleTransactions;
     const query = searchQuery.toLowerCase().trim();
     return visibleTransactions.filter((transaction) => {
+      if (dateFilterMode === "until" && transaction.eventDate > filterDateTo) {
+        return false;
+      }
+
+      if (
+        dateFilterMode === "period" &&
+        (transaction.eventDate < filterDateFrom || transaction.eventDate > filterDateTo)
+      ) {
+        return false;
+      }
+
+      if (filterAccountId !== emptySelectValue) {
+        const effectiveAccountId = getTransactionEffectiveAccountId(transaction, creditCards);
+        if (
+          filterAccountId === missingFilterValue
+            ? effectiveAccountId !== null
+            : effectiveAccountId !== filterAccountId
+        ) {
+          return false;
+        }
+      }
+
+      if (
+        filterSubcategoryIds.length > 0 &&
+        !filterSubcategoryIds.some((subcategoryId) =>
+          subcategoryId === missingFilterValue
+            ? transaction.subcategoryId === null
+            : transaction.subcategoryId === subcategoryId
+        )
+      ) {
+        return false;
+      }
+
+      if (
+        filterPaymentMethodIds.length > 0 &&
+        !filterPaymentMethodIds.some((paymentMethodId) =>
+          paymentMethodId === missingFilterValue
+            ? transaction.paymentMethodId === null && !transaction.creditCardId
+            : paymentMethodId === creditCardPaymentMethodId
+              ? Boolean(transaction.creditCardId) || transaction.paymentMethodId === paymentMethodId
+              : transaction.paymentMethodId === paymentMethodId
+        )
+      ) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
       // 1. Descrição
       const matchesDescription = transaction.description.toLowerCase().includes(query);
       // 2. Observação/notas
@@ -925,42 +1007,100 @@ Extrato a ser convertido:
       // 3. Data
       const formattedDate = formatBusinessDateForDisplay(transaction.eventDate);
       const matchesDate = transaction.eventDate.includes(query) || formattedDate.includes(query);
-      // 4. Categoria
-      let matchesCategory = false;
-      if (transaction.subcategoryId) {
-        for (const cat of categories) {
-          const sub = cat.subcategories.find((s) => s.id === transaction.subcategoryId);
-          if (sub) {
-            const fullCategoryString = `${cat.name} ${sub.name}`.toLowerCase();
-            if (fullCategoryString.includes(query)) {
-              matchesCategory = true;
-              break;
-            }
-          }
-        }
-      }
+      const matchesCategory = getCategoryLabel(transaction.subcategoryId, categories)
+        .toLowerCase()
+        .includes(query);
+      const matchesAccount = getTransactionAccountLabel(transaction, accounts, creditCards)
+        .toLowerCase()
+        .includes(query);
+      const matchesPaymentMethod = getTransactionPaymentMethodLabel(transaction, paymentMethods)
+        .toLowerCase()
+        .includes(query);
+      const matchesType = getTransactionTypeLabel(transaction.type).toLowerCase().includes(query);
 
-      return matchesDescription || matchesNotes || matchesDate || matchesCategory;
+      return (
+        matchesDescription ||
+        matchesNotes ||
+        matchesDate ||
+        matchesCategory ||
+        matchesAccount ||
+        matchesPaymentMethod ||
+        matchesType
+      );
     });
-  }, [visibleTransactions, searchQuery, categories]);
+  }, [
+    visibleTransactions,
+    searchQuery,
+    categories,
+    accounts,
+    creditCards,
+    paymentMethods,
+    dateFilterMode,
+    filterAccountId,
+    filterDateFrom,
+    filterDateTo,
+    filterPaymentMethodIds,
+    filterSubcategoryIds
+  ]);
 
   const sortedTransactions = useMemo(() => {
     return [...filteredTransactions].sort((a, b) => {
-      if (sortBy === "date-asc") {
-        return a.eventDate.localeCompare(b.eventDate);
+      const direction = sortDirection === "asc" ? 1 : -1;
+      let result = 0;
+
+      if (sortColumn === "date") {
+        result = a.eventDate.localeCompare(b.eventDate);
+      } else if (sortColumn === "description") {
+        result = a.description.localeCompare(b.description, "pt-BR");
+      } else if (sortColumn === "type") {
+        result = getTransactionTypeLabel(a.type).localeCompare(
+          getTransactionTypeLabel(b.type),
+          "pt-BR"
+        );
+      } else if (sortColumn === "amount") {
+        result = a.amountCents - b.amountCents;
+      } else if (sortColumn === "account") {
+        result = getTransactionAccountLabel(a, accounts, creditCards).localeCompare(
+          getTransactionAccountLabel(b, accounts, creditCards),
+          "pt-BR"
+        );
+      } else if (sortColumn === "paymentMethod") {
+        result = getTransactionPaymentMethodLabel(a, paymentMethods).localeCompare(
+          getTransactionPaymentMethodLabel(b, paymentMethods),
+          "pt-BR"
+        );
+      } else if (sortColumn === "category") {
+        result = getCategoryLabel(a.subcategoryId, categories).localeCompare(
+          getCategoryLabel(b.subcategoryId, categories),
+          "pt-BR"
+        );
       }
-      if (sortBy === "date-desc") {
-        return b.eventDate.localeCompare(a.eventDate);
-      }
-      if (sortBy === "name-asc") {
-        return a.description.localeCompare(b.description, "pt-BR");
-      }
-      if (sortBy === "name-desc") {
-        return b.description.localeCompare(a.description, "pt-BR");
-      }
-      return 0;
+
+      return result === 0
+        ? b.eventDate.localeCompare(a.eventDate) ||
+            a.description.localeCompare(b.description, "pt-BR")
+        : result * direction;
     });
-  }, [filteredTransactions, sortBy]);
+  }, [
+    accounts,
+    categories,
+    creditCards,
+    filteredTransactions,
+    paymentMethods,
+    sortColumn,
+    sortDirection
+  ]);
+
+  function handleSort(column: string) {
+    const nextColumn = column as TransactionSortColumn;
+    if (sortColumn === nextColumn) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortColumn(nextColumn);
+    setSortDirection(nextColumn === "date" || nextColumn === "amount" ? "desc" : "asc");
+  }
 
   const toggleSelectAllTransactions = useCallback(() => {
     setSelectedTransactionIds((current) => {
@@ -1033,7 +1173,7 @@ Extrato a ser convertido:
         <Table.Td style={{ minWidth: 170, maxWidth: 220 }}>
           {transaction.creditCardId ? (
             <Text size="sm" fw={500} truncate="end">
-              {creditCards.find((c) => c.id === transaction.creditCardId)?.name || "Cartão"}
+              {getTransactionAccountLabel(transaction, accounts, creditCards)}
             </Text>
           ) : (
             <Select
@@ -1318,19 +1458,23 @@ Extrato a ser convertido:
               onClick={() => {
                 setFilterType(emptySelectValue);
                 setFilterAccountId(emptySelectValue);
-                setFilterPaymentMethodId(emptySelectValue);
-                setFilterSubcategoryId(emptySelectValue);
+                setFilterPaymentMethodIds([]);
+                setFilterSubcategoryIds([]);
                 setSearchQuery("");
-                setSortBy("date-desc");
+                setDateFilterMode("all");
+                setFilterDateFrom(`${selectedMonth}-01`);
+                setFilterDateTo(getLastDayOfMonth(selectedMonth));
+                setSortColumn("date");
+                setSortDirection("desc");
               }}
             >
               Limpar filtros
             </Button>
           </Group>
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 6 }} spacing="sm">
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 5 }} spacing="sm">
             <TextInput
               label="Buscar"
-              placeholder="Descrição, obs, data, cat..."
+              placeholder="Descrição, obs, data, categoria..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.currentTarget.value)}
               leftSection={<IconSearch size={16} />}
@@ -1358,34 +1502,73 @@ Extrato a ser convertido:
               onChange={(value) => setFilterAccountId(value ?? emptySelectValue)}
               searchable
             />
-            <Select
-              label="Forma"
+            <MultiSelect
+              label="Formas"
               data={filterPaymentMethodOptions}
-              value={filterPaymentMethodId}
-              onChange={(value) => setFilterPaymentMethodId(value ?? emptySelectValue)}
+              value={filterPaymentMethodIds}
+              onChange={setFilterPaymentMethodIds}
+              placeholder={filterPaymentMethodIds.length === 0 ? "Todas" : undefined}
               searchable
+              clearable
+              hidePickedOptions
             />
-            <CategorySelect
-              label="Categoria"
+            <CategoryMultiSelect
+              label="Categorias"
               categories={categories}
-              value={filterSubcategoryId}
-              onChange={(value) => setFilterSubcategoryId(value)}
-              emptyOptionLabel="Todas"
+              value={filterSubcategoryIds}
+              onChange={setFilterSubcategoryIds}
               placeholder="Todas"
               extraOptions={[{ value: missingFilterValue, label: "Sem categoria" }]}
             />
-            <Select
-              label="Ordenar por"
-              data={[
-                { value: "date-desc", label: "Data (Mais recente)" },
-                { value: "date-asc", label: "Data (Mais antiga)" },
-                { value: "name-asc", label: "Nome (A-Z)" },
-                { value: "name-desc", label: "Nome (Z-A)" }
-              ]}
-              value={sortBy}
-              onChange={(value) => setSortBy(value ?? "date-desc")}
-            />
           </SimpleGrid>
+          <Group justify="space-between" align="center">
+            <Button
+              variant="subtle"
+              size="xs"
+              leftSection={
+                isAdvancedFiltersOpen ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />
+              }
+              onClick={() => setIsAdvancedFiltersOpen((opened) => !opened)}
+            >
+              Busca avançada
+            </Button>
+            <Text size="xs" c="dimmed">
+              {filteredTransactions.length} de {visibleTransactions.length} lançamentos
+            </Text>
+          </Group>
+          <Collapse in={isAdvancedFiltersOpen}>
+            <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+              <SegmentedControl
+                data={[
+                  { value: "all", label: "Mês inteiro" },
+                  { value: "until", label: "Até data" },
+                  { value: "period", label: "Período" }
+                ]}
+                value={dateFilterMode}
+                onChange={(value) => setDateFilterMode(value as DateFilterMode)}
+              />
+              {dateFilterMode === "period" ? (
+                <BusinessDateInput
+                  label="De"
+                  value={filterDateFrom}
+                  onChange={setFilterDateFrom}
+                  referenceMonth={selectedMonth}
+                />
+              ) : (
+                <Box />
+              )}
+              {dateFilterMode === "until" || dateFilterMode === "period" ? (
+                <BusinessDateInput
+                  label={dateFilterMode === "until" ? "Data de corte" : "Até"}
+                  value={filterDateTo}
+                  onChange={setFilterDateTo}
+                  referenceMonth={selectedMonth}
+                />
+              ) : (
+                <Box />
+              )}
+            </SimpleGrid>
+          </Collapse>
         </Stack>
       </Paper>
 
@@ -1488,13 +1671,62 @@ Extrato a ser convertido:
                         onChange={toggleSelectAllTransactions}
                       />
                     </Table.Th>
-                    <Table.Th style={{ width: 95 }}>Data</Table.Th>
-                    <Table.Th style={{ minWidth: 220 }}>Descrição</Table.Th>
-                    <Table.Th style={{ width: 115 }}>Tipo</Table.Th>
-                    <Table.Th style={{ width: 110 }}>Valor</Table.Th>
-                    <Table.Th style={{ minWidth: 170 }}>Conta</Table.Th>
-                    <Table.Th style={{ minWidth: 190 }}>Meio</Table.Th>
-                    <Table.Th style={{ minWidth: 220 }}>Categoria</Table.Th>
+                    <SortableTableHeader
+                      label="Data"
+                      column="date"
+                      sortColumn={sortColumn}
+                      sortDirection={sortDirection}
+                      onSort={handleSort}
+                      style={{ width: 95 }}
+                    />
+                    <SortableTableHeader
+                      label="Descrição"
+                      column="description"
+                      sortColumn={sortColumn}
+                      sortDirection={sortDirection}
+                      onSort={handleSort}
+                      style={{ minWidth: 220 }}
+                    />
+                    <SortableTableHeader
+                      label="Tipo"
+                      column="type"
+                      sortColumn={sortColumn}
+                      sortDirection={sortDirection}
+                      onSort={handleSort}
+                      style={{ width: 115 }}
+                    />
+                    <SortableTableHeader
+                      label="Valor"
+                      column="amount"
+                      sortColumn={sortColumn}
+                      sortDirection={sortDirection}
+                      onSort={handleSort}
+                      style={{ width: 110 }}
+                    />
+                    <SortableTableHeader
+                      label="Conta"
+                      column="account"
+                      sortColumn={sortColumn}
+                      sortDirection={sortDirection}
+                      onSort={handleSort}
+                      style={{ minWidth: 170 }}
+                    />
+                    <SortableTableHeader
+                      label="Meio"
+                      column="paymentMethod"
+                      sortColumn={sortColumn}
+                      sortDirection={sortDirection}
+                      onSort={handleSort}
+                      style={{ minWidth: 190 }}
+                    />
+                    <SortableTableHeader
+                      label="Categoria"
+                      column="category"
+                      sortColumn={sortColumn}
+                      sortDirection={sortDirection}
+                      onSort={handleSort}
+                      style={{ minWidth: 220 }}
+                    />
                     <Table.Th style={{ width: 80 }}>Ações</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
@@ -1540,6 +1772,13 @@ Extrato a ser convertido:
           {drawerError ? (
             <Alert color="red" variant="light">
               {drawerError}
+            </Alert>
+          ) : null}
+
+          {editingTransaction && isTransferCategory && !editingTransaction.linkedTransactionId ? (
+            <Alert color="teal" variant="light">
+              Ao salvar, este lançamento será convertido em transferência e o lançamento vinculado
+              será criado automaticamente na conta de destino.
             </Alert>
           ) : null}
 
@@ -2293,24 +2532,24 @@ function isPristineTransactionDraft(form: TransactionFormState) {
 function buildTransactionSearchParams({
   selectedMonth,
   filterType,
-  filterAccountId,
-  filterPaymentMethodId,
-  filterSubcategoryId
+  filterPaymentMethodIds,
+  filterSubcategoryIds
 }: {
   selectedMonth: string;
   filterType: string;
-  filterAccountId: string;
-  filterPaymentMethodId: string;
-  filterSubcategoryId: string;
+  filterPaymentMethodIds: string[];
+  filterSubcategoryIds: string[];
 }) {
   const params = new URLSearchParams({ budgetMonth: selectedMonth });
   if (filterType !== emptySelectValue) params.set("type", filterType);
-  if (filterAccountId !== emptySelectValue) params.set("accountId", filterAccountId);
-  if (filterPaymentMethodId !== emptySelectValue) {
-    params.set("paymentMethodId", filterPaymentMethodId);
+  if (
+    filterPaymentMethodIds.length === 1 &&
+    filterPaymentMethodIds[0] !== creditCardPaymentMethodId
+  ) {
+    params.set("paymentMethodId", filterPaymentMethodIds[0]);
   }
-  if (filterSubcategoryId !== emptySelectValue) {
-    params.set("subcategoryId", filterSubcategoryId);
+  if (filterSubcategoryIds.length === 1) {
+    params.set("subcategoryId", filterSubcategoryIds[0]);
   }
   return params;
 }
@@ -2417,4 +2656,47 @@ function getAccountLabel(accountId: string | null, accounts: Account[]) {
 
 function getPaymentMethodLabel(paymentMethodId: string | null, paymentMethods: PaymentMethod[]) {
   return paymentMethods.find((paymentMethod) => paymentMethod.id === paymentMethodId)?.name ?? "-";
+}
+
+function getCategoryLabel(subcategoryId: string | null, categories: Category[]) {
+  if (!subcategoryId) return "Sem categoria";
+
+  for (const category of categories) {
+    const subcategory = category.subcategories.find((sub) => sub.id === subcategoryId);
+    if (subcategory) {
+      return `${category.name} ${subcategory.name}`;
+    }
+  }
+
+  return "Sem categoria";
+}
+
+function getTransactionAccountLabel(
+  transaction: Transaction,
+  accounts: Account[],
+  creditCards: CreditCard[]
+) {
+  return getAccountLabel(getTransactionEffectiveAccountId(transaction, creditCards), accounts);
+}
+
+function getTransactionPaymentMethodLabel(
+  transaction: Transaction,
+  paymentMethods: PaymentMethod[]
+) {
+  if (transaction.creditCardId) {
+    return "Cartão de Crédito";
+  }
+
+  return getPaymentMethodLabel(transaction.paymentMethodId, paymentMethods);
+}
+
+function getTransactionEffectiveAccountId(
+  transaction: Transaction,
+  creditCards: CreditCard[]
+): string | null {
+  if (!transaction.creditCardId) {
+    return transaction.accountId;
+  }
+
+  return creditCards.find((card) => card.id === transaction.creditCardId)?.paymentAccountId ?? null;
 }

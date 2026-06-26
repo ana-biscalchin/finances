@@ -73,6 +73,13 @@ export function addMonthsToYearMonth(yearMonth: string, amount: number): string 
   return `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`;
 }
 
+export function getLastDayOfMonth(yearMonth: string): string {
+  const [year, month] = yearMonth.split("-").map(Number);
+  const lastDay = new Date(year, month, 0);
+
+  return formatLocalBusinessDate(lastDay);
+}
+
 export function getMonthCalendarDays(yearMonth: string): Array<{
   date: string;
   day: number;

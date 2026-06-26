@@ -38,19 +38,25 @@ import {
   IconUpload,
   IconAlertTriangle,
   IconEraser,
-  IconCopy
+  IconCopy,
+  IconSearch
 } from "@tabler/icons-react";
 import { useClipboard } from "@mantine/hooks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { formatBusinessDateForDisplay, getTodayBusinessDate } from "../date-format";
+import {
+  formatBusinessDateForDisplay,
+  getLastDayOfMonth,
+  getTodayBusinessDate
+} from "../date-format";
 import { BusinessDateInput } from "../shared/BusinessDateInput";
 import { parseCsvHeaderLine } from "../shared/csv-utils";
 import { formatCategoryPromptGroups, getAmountColor } from "../shared/transaction-ui";
 import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
-import { CategorySelect, QuickCategoryEdit } from "../shared/CategorySelect";
+import { CategoryMultiSelect, CategorySelect, QuickCategoryEdit } from "../shared/CategorySelect";
 import { MonthSelector } from "../shared/MonthSelector";
 import { QuickAmountEdit, QuickDateEdit, QuickTextEdit } from "../shared/QuickEditFields";
+import { SortableTableHeader } from "../shared/SortableTableHeader";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -153,9 +159,14 @@ type BillData = {
   totalCents: number;
 };
 
+type SortDirection = "asc" | "desc";
+type BillSortColumn = "date" | "description" | "amount" | "category";
+type DateFilterMode = "all" | "until" | "period";
+
 const today = getTodayBusinessDate();
 const currentMonth = today.slice(0, 7);
 const emptySelectValue = "__none__";
+const missingFilterValue = "__missing__";
 
 function getNextMonth(monthStr: string): string {
   const [year, month] = monthStr.split("-").map(Number);
@@ -383,8 +394,14 @@ function CardBillPanel({
   onRevertPayment: (billId: string) => Promise<void>;
   onReload: () => void;
 }) {
-  const [filterSubcategoryId, setFilterSubcategoryId] = useState<string>(emptySelectValue);
-  const [sortBy, setSortBy] = useState<string>("date-desc");
+  const [filterSubcategoryIds, setFilterSubcategoryIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortColumn, setSortColumn] = useState<BillSortColumn>("date");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
+  const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>("all");
+  const [filterDateFrom, setFilterDateFrom] = useState(`${selectedMonth}-01`);
+  const [filterDateTo, setFilterDateTo] = useState(getLastDayOfMonth(selectedMonth));
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<string>>(new Set());
   const [bulkSubcategoryId, setBulkSubcategoryId] = useState<string>(emptySelectValue);
   const [isBulkSaving, setIsBulkSaving] = useState(false);
@@ -474,38 +491,108 @@ Texto da fatura a ser convertido:
 
   const sourceTransactions = billData?.transactions ?? [];
   const transactions = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
     const filtered = sourceTransactions.filter((transaction) => {
       if (transaction.status === "canceled" || transaction.status === "planned") {
         return false;
       }
 
-      if (filterSubcategoryId !== emptySelectValue) {
-        const desiredSubcategoryId =
-          filterSubcategoryId === "__clear__" ? null : filterSubcategoryId;
-        if (transaction.subcategoryId !== desiredSubcategoryId) {
-          return false;
-        }
+      if (
+        filterSubcategoryIds.length > 0 &&
+        !filterSubcategoryIds.some((subcategoryId) =>
+          subcategoryId === missingFilterValue
+            ? transaction.subcategoryId === null
+            : transaction.subcategoryId === subcategoryId
+        )
+      ) {
+        return false;
       }
 
-      return true;
+      if (dateFilterMode === "until" && transaction.eventDate > filterDateTo) {
+        return false;
+      }
+
+      if (
+        dateFilterMode === "period" &&
+        (transaction.eventDate < filterDateFrom || transaction.eventDate > filterDateTo)
+      ) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      const matchesDescription = transaction.description.toLowerCase().includes(query);
+      const matchesNotes = transaction.notes?.toLowerCase().includes(query) ?? false;
+      const formattedDate = formatBusinessDateForDisplay(transaction.eventDate);
+      const matchesDate = transaction.eventDate.includes(query) || formattedDate.includes(query);
+      const matchesCategory = getBillCategoryLabel(transaction.subcategoryId, categories)
+        .toLowerCase()
+        .includes(query);
+      const matchesType = getCardTransactionTypeLabel(transaction.type)
+        .toLowerCase()
+        .includes(query);
+      const matchesInstallment =
+        transaction.installmentNumber && transaction.installmentCount
+          ? `${transaction.installmentNumber}/${transaction.installmentCount}`.includes(query)
+          : false;
+
+      return (
+        matchesDescription ||
+        matchesNotes ||
+        matchesDate ||
+        matchesCategory ||
+        matchesType ||
+        matchesInstallment
+      );
     });
 
     return [...filtered].sort((a, b) => {
-      if (sortBy === "date-asc") {
-        return a.eventDate.localeCompare(b.eventDate);
+      const direction = sortDirection === "asc" ? 1 : -1;
+      let result = 0;
+
+      if (sortColumn === "date") {
+        result = a.eventDate.localeCompare(b.eventDate);
+      } else if (sortColumn === "description") {
+        result = a.description.localeCompare(b.description, "pt-BR");
+      } else if (sortColumn === "amount") {
+        result = a.amountCents - b.amountCents;
+      } else if (sortColumn === "category") {
+        result = getBillCategoryLabel(a.subcategoryId, categories).localeCompare(
+          getBillCategoryLabel(b.subcategoryId, categories),
+          "pt-BR"
+        );
       }
-      if (sortBy === "date-desc") {
-        return b.eventDate.localeCompare(a.eventDate);
-      }
-      if (sortBy === "name-asc") {
-        return a.description.localeCompare(b.description, "pt-BR");
-      }
-      if (sortBy === "name-desc") {
-        return b.description.localeCompare(a.description, "pt-BR");
-      }
-      return 0;
+
+      return result === 0
+        ? b.eventDate.localeCompare(a.eventDate) ||
+            a.description.localeCompare(b.description, "pt-BR")
+        : result * direction;
     });
-  }, [filterSubcategoryId, sourceTransactions, sortBy]);
+  }, [
+    categories,
+    dateFilterMode,
+    filterDateFrom,
+    filterDateTo,
+    filterSubcategoryIds,
+    searchQuery,
+    sortColumn,
+    sortDirection,
+    sourceTransactions
+  ]);
+
+  function handleSort(column: string) {
+    const nextColumn = column as BillSortColumn;
+    if (sortColumn === nextColumn) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortColumn(nextColumn);
+    setSortDirection(nextColumn === "date" || nextColumn === "amount" ? "desc" : "asc");
+  }
+
   const totalCents = billData?.totalCents ?? 0;
   const selectedTransactions = useMemo(
     () => sourceTransactions.filter((transaction) => selectedTransactionIds.has(transaction.id)),
@@ -552,6 +639,11 @@ Texto da fatura a ser convertido:
       setCreateForm((current) => ({ ...current, eventDate: today }));
     }
   }, [billData?.bill.id, selectedMonth]);
+
+  useEffect(() => {
+    setFilterDateFrom(`${selectedMonth}-01`);
+    setFilterDateTo(getLastDayOfMonth(selectedMonth));
+  }, [selectedMonth]);
 
   function openEditModal(transaction: CardTransaction) {
     setEditingTransaction(transaction);
@@ -1256,40 +1348,93 @@ Texto da fatura a ser convertido:
         ) : (
           <Stack gap={0}>
             <Box p="md" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
-              <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
-                <CategorySelect
-                  label="Categoria"
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                <TextInput
+                  label="Buscar"
+                  placeholder="Descrição, data, categoria..."
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                  leftSection={<IconSearch size={16} />}
+                />
+                <CategoryMultiSelect
+                  label="Categorias"
                   categories={categories}
                   filterNatures={["expense"]}
-                  value={filterSubcategoryId}
-                  onChange={(value) => setFilterSubcategoryId(value)}
-                  emptyOptionLabel="Todas"
+                  value={filterSubcategoryIds}
+                  onChange={setFilterSubcategoryIds}
                   placeholder="Todas"
+                  extraOptions={[{ value: missingFilterValue, label: "Sem categoria" }]}
                 />
-                <Select
-                  label="Ordenar por"
-                  data={[
-                    { value: "date-desc", label: "Data (Mais recente)" },
-                    { value: "date-asc", label: "Data (Mais antiga)" },
-                    { value: "name-asc", label: "Nome (A-Z)" },
-                    { value: "name-desc", label: "Nome (Z-A)" }
-                  ]}
-                  value={sortBy}
-                  onChange={(value) => setSortBy(value ?? "date-desc")}
-                />
-                <Group align="flex-end">
+              </SimpleGrid>
+              <Group justify="space-between" align="center" mt="sm">
+                <Button
+                  variant="subtle"
+                  size="xs"
+                  leftSection={
+                    isAdvancedFiltersOpen ? (
+                      <IconChevronUp size={14} />
+                    ) : (
+                      <IconChevronDown size={14} />
+                    )
+                  }
+                  onClick={() => setIsAdvancedFiltersOpen((opened) => !opened)}
+                >
+                  Busca avançada
+                </Button>
+                <Group gap="xs">
+                  <Text size="xs" c="dimmed">
+                    {transactions.length} de {sourceTransactions.length} compras
+                  </Text>
                   <Button
-                    fullWidth
                     variant="light"
+                    size="xs"
                     onClick={() => {
-                      setFilterSubcategoryId(emptySelectValue);
-                      setSortBy("date-desc");
+                      setFilterSubcategoryIds([]);
+                      setSearchQuery("");
+                      setDateFilterMode("all");
+                      setFilterDateFrom(`${selectedMonth}-01`);
+                      setFilterDateTo(getLastDayOfMonth(selectedMonth));
+                      setSortColumn("date");
+                      setSortDirection("desc");
                     }}
                   >
                     Limpar filtros
                   </Button>
                 </Group>
-              </SimpleGrid>
+              </Group>
+              <Collapse in={isAdvancedFiltersOpen}>
+                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm" mt="sm">
+                  <SegmentedControl
+                    data={[
+                      { value: "all", label: "Fatura inteira" },
+                      { value: "until", label: "Até data" },
+                      { value: "period", label: "Período" }
+                    ]}
+                    value={dateFilterMode}
+                    onChange={(value) => setDateFilterMode(value as DateFilterMode)}
+                  />
+                  {dateFilterMode === "period" ? (
+                    <BusinessDateInput
+                      label="De"
+                      value={filterDateFrom}
+                      onChange={setFilterDateFrom}
+                      referenceMonth={selectedMonth}
+                    />
+                  ) : (
+                    <Box />
+                  )}
+                  {dateFilterMode === "until" || dateFilterMode === "period" ? (
+                    <BusinessDateInput
+                      label={dateFilterMode === "until" ? "Data de corte" : "Até"}
+                      value={filterDateTo}
+                      onChange={setFilterDateTo}
+                      referenceMonth={selectedMonth}
+                    />
+                  ) : (
+                    <Box />
+                  )}
+                </SimpleGrid>
+              </Collapse>
             </Box>
 
             {selectedTransactionIds.size > 0 ? (
@@ -1366,10 +1511,38 @@ Texto da fatura a ser convertido:
                           onChange={toggleSelectAllTransactions}
                         />
                       </Table.Th>
-                      <Table.Th>Data</Table.Th>
-                      <Table.Th>Descrição</Table.Th>
-                      <Table.Th>Valor</Table.Th>
-                      <Table.Th>Categoria</Table.Th>
+                      <SortableTableHeader
+                        label="Data"
+                        column="date"
+                        sortColumn={sortColumn}
+                        sortDirection={sortDirection}
+                        onSort={handleSort}
+                        style={{ width: 96 }}
+                      />
+                      <SortableTableHeader
+                        label="Descrição"
+                        column="description"
+                        sortColumn={sortColumn}
+                        sortDirection={sortDirection}
+                        onSort={handleSort}
+                        style={{ minWidth: 260 }}
+                      />
+                      <SortableTableHeader
+                        label="Valor"
+                        column="amount"
+                        sortColumn={sortColumn}
+                        sortDirection={sortDirection}
+                        onSort={handleSort}
+                        style={{ width: 120 }}
+                      />
+                      <SortableTableHeader
+                        label="Categoria"
+                        column="category"
+                        sortColumn={sortColumn}
+                        sortDirection={sortDirection}
+                        onSort={handleSort}
+                        style={{ minWidth: 220 }}
+                      />
                       <Table.Th>Ações</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
@@ -1454,7 +1627,11 @@ Texto da fatura a ser convertido:
                                 <IconEdit size={18} />
                               </ActionIcon>
                             </Tooltip>
-                            <Tooltip label={isPaid ? "Fatura paga - não é possível excluir" : "Excluir compra"}>
+                            <Tooltip
+                              label={
+                                isPaid ? "Fatura paga - não é possível excluir" : "Excluir compra"
+                              }
+                            >
                               <ActionIcon
                                 variant="subtle"
                                 color="red"
@@ -2410,4 +2587,27 @@ function normalizeAmountInput(value: number | string) {
   }
 
   return `${integerPart},${decimalPart.slice(0, 2)}`;
+}
+
+function getBillCategoryLabel(subcategoryId: string | null, categories: Category[]) {
+  if (!subcategoryId) return "Sem categoria";
+
+  for (const category of categories) {
+    const subcategory = category.subcategories.find((sub) => sub.id === subcategoryId);
+    if (subcategory) {
+      return `${category.name} ${subcategory.name}`;
+    }
+  }
+
+  return "Sem categoria";
+}
+
+function getCardTransactionTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    expense: "Despesa",
+    refund: "Reembolso",
+    chargeback: "Estorno"
+  };
+
+  return labels[type] ?? type;
 }

@@ -259,7 +259,7 @@ describe("transactions & account balances business rules", () => {
       .from(transactions)
       .where(eq(transactions.id, txA.linkedTransactionId))
       .get();
-    
+
     expect(txB).toBeDefined();
     expect(txB?.type).toBe("income");
     expect(txB?.accountId).toBe(accountBId);
@@ -298,7 +298,7 @@ describe("transactions & account balances business rules", () => {
       .from(transactions)
       .where(eq(transactions.id, txA.linkedTransactionId))
       .get();
-    
+
     expect(txBUpdated?.amountCents).toBe(30000);
     expect(txBUpdated?.description).toBe("Transferência poupança editada");
     conn2.sqlite.close();
@@ -321,8 +321,16 @@ describe("transactions & account balances business rules", () => {
 
     // Verify both are deleted
     const conn3 = createDatabaseConnection(databasePath);
-    const txADeleted = conn3.db.select().from(transactions).where(eq(transactions.id, txA.id)).get();
-    const txBDeleted = conn3.db.select().from(transactions).where(eq(transactions.id, txA.linkedTransactionId)).get();
+    const txADeleted = conn3.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, txA.id))
+      .get();
+    const txBDeleted = conn3.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, txA.linkedTransactionId))
+      .get();
     expect(txADeleted).toBeUndefined();
     expect(txBDeleted).toBeUndefined();
     conn3.sqlite.close();
@@ -442,6 +450,82 @@ describe("transactions & account balances business rules", () => {
     conn.sqlite.close();
 
     expect(linked?.accountId).toBe(accountCId);
+  });
+
+  it("should convert an existing transaction into a linked transfer", async () => {
+    const categoryRes = await app.inject({
+      method: "POST",
+      url: "/categories",
+      payload: {
+        name: "Movimentações Internas",
+        nature: "transfer"
+      }
+    });
+    expect(categoryRes.statusCode).toBe(201);
+    const categoryId = categoryRes.json().id;
+
+    const subcategoryRes = await app.inject({
+      method: "POST",
+      url: "/subcategories",
+      payload: {
+        categoryId,
+        name: "Transferência entre contas",
+        behavior: "variable"
+      }
+    });
+    expect(subcategoryRes.statusCode).toBe(201);
+    const subcategoryId = subcategoryRes.json().id;
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: {
+        type: "expense",
+        description: "Pix enviado",
+        amountCents: 15000,
+        eventDate: "2026-06-12",
+        accountId: accountAId,
+        status: "confirmed"
+      }
+    });
+    expect(createRes.statusCode).toBe(201);
+    const original = createRes.json();
+    expect(original.linkedTransactionId).toBeNull();
+
+    const updateRes = await app.inject({
+      method: "PUT",
+      url: `/transactions/${original.id}`,
+      payload: {
+        type: "expense",
+        description: "Pix enviado para outra conta",
+        amountCents: 15000,
+        eventDate: "2026-06-12",
+        accountId: accountAId,
+        destinationAccountId: accountBId,
+        subcategoryId,
+        status: "confirmed"
+      }
+    });
+    expect(updateRes.statusCode).toBe(200);
+    const updated = updateRes.json();
+    expect(updated.linkedTransactionId).toBeTruthy();
+
+    const conn = createDatabaseConnection(databasePath);
+    const linked = conn.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, updated.linkedTransactionId))
+      .get();
+    conn.sqlite.close();
+
+    expect(linked).toMatchObject({
+      type: "income",
+      description: "Pix enviado para outra conta",
+      amountCents: 15000,
+      accountId: accountBId,
+      linkedTransactionId: original.id,
+      subcategoryId
+    });
   });
 
   it("should export transactions as CSV with proper headers and data", async () => {
@@ -582,28 +666,40 @@ describe("transactions & account balances business rules", () => {
 
   it("should preview imported transactions and identify duplicates", async () => {
     const connection = createDatabaseConnection(databasePath);
-    connection.db.insert(categories).values({
-      id: "cat-test-income",
-      nature: "income",
-      name: "Receitas Teste"
-    }).run();
-    connection.db.insert(categories).values({
-      id: "cat-test-expense",
-      nature: "expense",
-      name: "Despesas Teste"
-    }).run();
-    connection.db.insert(subcategories).values({
-      id: "sub-test-saldo-anterior",
-      categoryId: "cat-test-income",
-      name: "Saldo anterior",
-      behavior: "extra"
-    }).run();
-    connection.db.insert(subcategories).values({
-      id: "sub-test-farmacia",
-      categoryId: "cat-test-expense",
-      name: "Farmácia",
-      behavior: "variable"
-    }).run();
+    connection.db
+      .insert(categories)
+      .values({
+        id: "cat-test-income",
+        nature: "income",
+        name: "Receitas Teste"
+      })
+      .run();
+    connection.db
+      .insert(categories)
+      .values({
+        id: "cat-test-expense",
+        nature: "expense",
+        name: "Despesas Teste"
+      })
+      .run();
+    connection.db
+      .insert(subcategories)
+      .values({
+        id: "sub-test-saldo-anterior",
+        categoryId: "cat-test-income",
+        name: "Saldo anterior",
+        behavior: "extra"
+      })
+      .run();
+    connection.db
+      .insert(subcategories)
+      .values({
+        id: "sub-test-farmacia",
+        categoryId: "cat-test-expense",
+        name: "Farmácia",
+        behavior: "variable"
+      })
+      .run();
     connection.sqlite.close();
 
     // 1. Seed a transaction to trigger a duplicate later
@@ -623,11 +719,11 @@ describe("transactions & account balances business rules", () => {
     // 2. Call preview on CSV
     const csvContent = [
       "Data,Descrição,Valor,Tipo",
-      "01/06/2026,Salário Recebido,\"R$ 2.500,00\",Receita",
+      '01/06/2026,Salário Recebido,"R$ 2.500,00",Receita',
       "02-06-2026,Almoço em Restaurante,-35.50,Despesa",
       "03/06/2026,Compra Aleatória,-35.50,Despesa",
-      "04/06/2026,Saldo anterior,\"R$ 1.224,58\",(+) Saldo anterior",
-      "05/06/2026,Farmácia,\"R$ 55,89\",(-) Farmácia"
+      '04/06/2026,Saldo anterior,"R$ 1.224,58",(+) Saldo anterior',
+      '05/06/2026,Farmácia,"R$ 55,89",(-) Farmácia'
     ].join("\n");
 
     const previewRes = await app.inject({
@@ -1300,7 +1396,11 @@ describe("transactions & account balances business rules", () => {
     expect(deleteRes.statusCode).toBe(204);
 
     const conn = createDatabaseConnection(databasePath);
-    const deleted = conn.db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
+    const deleted = conn.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transactionId))
+      .get();
     expect(deleted).toBeUndefined();
     conn.sqlite.close();
   });
@@ -1391,24 +1491,27 @@ describe("transactions & account balances business rules", () => {
 
     const conn = createDatabaseConnection(databasePath);
     const transactionId = crypto.randomUUID();
-    conn.db.insert(transactions).values({
-      id: transactionId,
-      type: "expense",
-      description: "Parcela futura (2/3)",
-      amountCents: 10000,
-      eventDate: "2025-12-20",
-      budgetMonth: "2026-02",
-      accountId: null,
-      paymentMethodId: null,
-      subcategoryId: null,
-      creditCardId: cardId,
-      creditCardBillId: februaryBill.id,
-      status: "confirmed",
-      notes: null,
-      linkedTransactionId: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }).run();
+    conn.db
+      .insert(transactions)
+      .values({
+        id: transactionId,
+        type: "expense",
+        description: "Parcela futura (2/3)",
+        amountCents: 10000,
+        eventDate: "2025-12-20",
+        budgetMonth: "2026-02",
+        accountId: null,
+        paymentMethodId: null,
+        subcategoryId: null,
+        creditCardId: cardId,
+        creditCardBillId: februaryBill.id,
+        status: "confirmed",
+        notes: null,
+        linkedTransactionId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .run();
     conn.sqlite.close();
 
     const putRes = await app.inject({
@@ -1483,18 +1586,25 @@ describe("transactions & account balances business rules", () => {
 
     // 3. Manually insert installment records linked to this transaction to test foreign key constraints
     const conn = createDatabaseConnection(databasePath);
-    conn.db.insert(installments).values({
-      id: crypto.randomUUID(),
-      purchaseTransactionId: transactionId,
-      creditCardBillId: billId,
-      installmentNumber: 1,
-      installmentCount: 2,
-      amountCents: 1500,
-      dueMonth: "2026-06"
-    }).run();
+    conn.db
+      .insert(installments)
+      .values({
+        id: crypto.randomUUID(),
+        purchaseTransactionId: transactionId,
+        creditCardBillId: billId,
+        installmentNumber: 1,
+        installmentCount: 2,
+        amountCents: 1500,
+        dueMonth: "2026-06"
+      })
+      .run();
 
     // Verify installment is inserted
-    const insBefore = conn.db.select().from(installments).where(eq(installments.purchaseTransactionId, transactionId)).all();
+    const insBefore = conn.db
+      .select()
+      .from(installments)
+      .where(eq(installments.purchaseTransactionId, transactionId))
+      .all();
     expect(insBefore).toHaveLength(1);
     conn.sqlite.close();
 
@@ -1506,8 +1616,16 @@ describe("transactions & account balances business rules", () => {
     expect(deleteRes.statusCode).toBe(204);
 
     const conn2 = createDatabaseConnection(databasePath);
-    const txAfter = conn2.db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
-    const insAfter = conn2.db.select().from(installments).where(eq(installments.purchaseTransactionId, transactionId)).all();
+    const txAfter = conn2.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transactionId))
+      .get();
+    const insAfter = conn2.db
+      .select()
+      .from(installments)
+      .where(eq(installments.purchaseTransactionId, transactionId))
+      .all();
     conn2.sqlite.close();
 
     expect(txAfter).toBeUndefined();
@@ -1547,15 +1665,18 @@ describe("transactions & account balances business rules", () => {
 
     // 3. Manually insert installment
     const conn = createDatabaseConnection(databasePath);
-    conn.db.insert(installments).values({
-      id: crypto.randomUUID(),
-      purchaseTransactionId: transactionId,
-      creditCardBillId: billId,
-      installmentNumber: 1,
-      installmentCount: 2,
-      amountCents: 1500,
-      dueMonth: "2026-06"
-    }).run();
+    conn.db
+      .insert(installments)
+      .values({
+        id: crypto.randomUUID(),
+        purchaseTransactionId: transactionId,
+        creditCardBillId: billId,
+        installmentNumber: 1,
+        installmentCount: 2,
+        amountCents: 1500,
+        dueMonth: "2026-06"
+      })
+      .run();
     conn.sqlite.close();
 
     // 4. Delete via bill-specific route
@@ -1566,8 +1687,16 @@ describe("transactions & account balances business rules", () => {
     expect(deleteRes.statusCode).toBe(204);
 
     const conn2 = createDatabaseConnection(databasePath);
-    const txAfter = conn2.db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
-    const insAfter = conn2.db.select().from(installments).where(eq(installments.purchaseTransactionId, transactionId)).all();
+    const txAfter = conn2.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transactionId))
+      .get();
+    const insAfter = conn2.db
+      .select()
+      .from(installments)
+      .where(eq(installments.purchaseTransactionId, transactionId))
+      .all();
     conn2.sqlite.close();
 
     expect(txAfter).toBeUndefined();
@@ -1623,7 +1752,11 @@ describe("transactions & account balances business rules", () => {
 
     // 4. Verify original transaction updated to first installment (1/3)
     const conn = createDatabaseConnection(databasePath);
-    const firstTx = conn.db.select().from(transactions).where(eq(transactions.id, originalTx.id)).get();
+    const firstTx = conn.db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, originalTx.id))
+      .get();
     expect(firstTx).toBeDefined();
     expect(firstTx!.description).toBe("Compra Unica (1/3)");
     expect(firstTx!.amountCents).toBe(1000); // 3000 / 3
@@ -1727,7 +1860,7 @@ describe("transactions & account balances business rules", () => {
     });
     expect(billRes.statusCode).toBe(200);
     const billData = billRes.json();
-    
+
     // Total should be 100.00 - 30.00 = 70.00 (7000 cents)
     expect(billData.totalCents).toBe(7000);
   });

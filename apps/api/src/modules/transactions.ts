@@ -35,7 +35,10 @@ import {
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 type ParsedTransactionPayload = ReturnType<typeof parseTransactionPayload>;
-export type TransactionData = Omit<ParsedTransactionPayload, "destinationAccountId" | "installmentCount">;
+export type TransactionData = Omit<
+  ParsedTransactionPayload,
+  "destinationAccountId" | "installmentCount"
+>;
 
 type TransactionPayload = {
   type?: unknown;
@@ -80,7 +83,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     }
 
     if (transaction.linkedTransactionId) {
-      const linked = db.select().from(transactions).where(eq(transactions.id, transaction.linkedTransactionId)).get();
+      const linked = db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, transaction.linkedTransactionId))
+        .get();
       return {
         ...transaction,
         destinationAccountId: linked?.accountId ?? null
@@ -121,7 +128,9 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
       for (const t of created) {
         if (t.creditCardBillId && isBillPaid(db, t.creditCardBillId)) {
-          return reply.code(400).send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
+          return reply
+            .code(400)
+            .send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
         }
       }
 
@@ -172,8 +181,14 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
     // ── Single transaction ─────────────────────────────────────────────
     const transactionData = normalizeTransactionForStorage(connection, rawTransactionData);
-    if (transactionData.creditCardId && transactionData.creditCardBillId && isBillPaid(db, transactionData.creditCardBillId)) {
-      return reply.code(400).send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
+    if (
+      transactionData.creditCardId &&
+      transactionData.creditCardBillId &&
+      isBillPaid(db, transactionData.creditCardBillId)
+    ) {
+      return reply
+        .code(400)
+        .send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
     }
 
     const transaction = {
@@ -266,9 +281,31 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     }
 
     if (!current.linkedTransactionId && destinationAccountId) {
-      return reply
-        .code(400)
-        .send({ message: "Para transformar um lançamento em transferência, crie uma nova transferência vinculada." });
+      const linkedId = crypto.randomUUID();
+      const linkedType = transactionData.type === "expense" ? "income" : "expense";
+
+      db.transaction((tx) => {
+        tx.update(transactions)
+          .set({
+            ...transactionData,
+            linkedTransactionId: linkedId,
+            updatedAt: new Date().toISOString()
+          })
+          .where(eq(transactions.id, id))
+          .run();
+
+        tx.insert(transactions)
+          .values({
+            id: linkedId,
+            ...transactionData,
+            type: linkedType,
+            accountId: destinationAccountId,
+            linkedTransactionId: id
+          })
+          .run();
+      });
+
+      return db.select().from(transactions).where(eq(transactions.id, id)).get();
     }
 
     // Update main transaction
@@ -283,7 +320,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
     // If there is a linked transaction, update it too
     if (current.linkedTransactionId) {
-      const linked = db.select().from(transactions).where(eq(transactions.id, current.linkedTransactionId)).get();
+      const linked = db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, current.linkedTransactionId))
+        .get();
       if (linked) {
         // Linked transaction changes type (if main is expense, linked is income, and vice versa)
         const linkedType = transactionData.type === "expense" ? "income" : "expense";
@@ -317,8 +358,14 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply.code(404).send({ message: "Lançamento não encontrado." });
     }
 
-    if (current.creditCardId && current.creditCardBillId && isBillPaid(db, current.creditCardBillId)) {
-      return reply.code(400).send({ message: "Não é possível excluir lançamentos de uma fatura paga." });
+    if (
+      current.creditCardId &&
+      current.creditCardBillId &&
+      isBillPaid(db, current.creditCardBillId)
+    ) {
+      return reply
+        .code(400)
+        .send({ message: "Não é possível excluir lançamentos de uma fatura paga." });
     }
 
     db.transaction((tx) => {
@@ -327,17 +374,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         tx.delete(installments)
           .where(eq(installments.purchaseTransactionId, current.linkedTransactionId))
           .run();
-        tx.delete(transactions)
-          .where(eq(transactions.id, current.linkedTransactionId))
-          .run();
+        tx.delete(transactions).where(eq(transactions.id, current.linkedTransactionId)).run();
       }
 
-      tx.delete(installments)
-        .where(eq(installments.purchaseTransactionId, id))
-        .run();
-      tx.delete(transactions)
-        .where(eq(transactions.id, id))
-        .run();
+      tx.delete(installments).where(eq(installments.purchaseTransactionId, id)).run();
+      tx.delete(transactions).where(eq(transactions.id, id)).run();
     });
 
     return reply.code(204).send();
@@ -461,7 +502,9 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     const dateFormat = body.dateFormat ?? "DMY";
     const isCreditCardBillImport = body.importMode === "credit_card_bill";
     const targetBillMonth =
-      isCreditCardBillImport && typeof body.billMonth === "string" ? assertYearMonth(body.billMonth) : null;
+      isCreditCardBillImport && typeof body.billMonth === "string"
+        ? assertYearMonth(body.billMonth)
+        : null;
     const { rows: csvRows } = parseCsvContent(csvContent);
 
     if (csvRows.length === 0) {
@@ -496,7 +539,9 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         const rawSubcategory = mappings.subcategoryId ? row[mappings.subcategoryId] : "";
         const rawAccount = mappings.accountId ? row[mappings.accountId] : "";
         const rawInstallment = mappings.installment ? row[mappings.installment] : "";
-        const rawInstallmentNumber = mappings.installmentNumber ? row[mappings.installmentNumber] : "";
+        const rawInstallmentNumber = mappings.installmentNumber
+          ? row[mappings.installmentNumber]
+          : "";
         const rawInstallmentCount = mappings.installmentCount ? row[mappings.installmentCount] : "";
 
         const eventDate = parseDateString(rawDate, dateFormat);
@@ -535,7 +580,8 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         if (card) {
           creditCardId = card.id;
           accountId = null;
-          calculatedBudgetMonth = targetBillMonth ?? getCreditCardBillMonth(eventDate, card.closingDay);
+          calculatedBudgetMonth =
+            targetBillMonth ?? getCreditCardBillMonth(eventDate, card.closingDay);
         } else {
           accountId = rawAccount || defaultAccountId || null;
           paymentMethodId = null;
@@ -555,7 +601,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
           eventDate,
           description:
             installmentCount > 1
-              ? formatImportedInstallmentDescription(baseDescription, currentInstallment, installmentCount)
+              ? formatImportedInstallmentDescription(
+                  baseDescription,
+                  currentInstallment,
+                  installmentCount
+                )
               : description,
           amountCents: amountResult.amountCents,
           type,
@@ -621,14 +671,20 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         const sameAmount = isImportedAmountMatch(tx.amountCents, item.amountCents, isInstallment);
         const sameAccount = item.creditCardId
           ? tx.creditCardId === item.creditCardId
-          : (!tx.accountId || !item.accountId || tx.accountId === item.accountId);
+          : !tx.accountId || !item.accountId || tx.accountId === item.accountId;
         const sameBillMonth = item.creditCardId ? tx.budgetMonth === item.budgetMonth : true;
         const daysDiff = dateDiffInDays(tx.eventDate, item.eventDate);
         const nearDate = daysDiff <= 3;
         const sameImportedDescription =
           normalizeImportedText(tx.description) === normalizeImportedText(item.description);
         if (item.creditCardId) {
-          return sameAmount && sameAccount && sameBillMonth && sameImportedDescription && (isInstallment || nearDate);
+          return (
+            sameAmount &&
+            sameAccount &&
+            sameBillMonth &&
+            sameImportedDescription &&
+            (isInstallment || nearDate)
+          );
         }
 
         return sameAmount && sameAccount && sameBillMonth && nearDate;
@@ -687,16 +743,24 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       for (const t of body.transactions!) {
         const id = crypto.randomUUID();
         const eventDate = assertBusinessDate(t.eventDate);
-        let budgetMonth = t.budgetMonth ? assertYearMonth(t.budgetMonth) : yearMonthFromDate(eventDate);
+        let budgetMonth = t.budgetMonth
+          ? assertYearMonth(t.budgetMonth)
+          : yearMonthFromDate(eventDate);
         let creditCardBillId: string | null = null;
 
         if (t.creditCardId) {
-          const card = tx.select().from(creditCards).where(eq(creditCards.id, t.creditCardId)).get();
+          const card = tx
+            .select()
+            .from(creditCards)
+            .where(eq(creditCards.id, t.creditCardId))
+            .get();
           if (!card) {
             throw new ValidationError("Cartão de crédito não encontrado.");
           }
 
-          budgetMonth = t.budgetMonth ? assertYearMonth(t.budgetMonth) : getCreditCardBillMonth(eventDate, card.closingDay);
+          budgetMonth = t.budgetMonth
+            ? assertYearMonth(t.budgetMonth)
+            : getCreditCardBillMonth(eventDate, card.closingDay);
 
           const bill = tx
             .select()
@@ -747,8 +811,8 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
           amountCents: t.amountCents,
           eventDate,
           budgetMonth,
-          accountId: t.creditCardId ? null : (t.accountId || null),
-          paymentMethodId: t.creditCardId ? null : (t.paymentMethodId || null),
+          accountId: t.creditCardId ? null : t.accountId || null,
+          paymentMethodId: t.creditCardId ? null : t.paymentMethodId || null,
           subcategoryId: t.subcategoryId || null,
           creditCardId: t.creditCardId || null,
           creditCardBillId,
@@ -830,7 +894,10 @@ function parseTransactionPayload(body: unknown) {
   }
 
   const installmentCount = (() => {
-    const raw = parseOptionalInteger((payload as TransactionPayload).installmentCount, "installmentCount");
+    const raw = parseOptionalInteger(
+      (payload as TransactionPayload).installmentCount,
+      "installmentCount"
+    );
     if (raw === undefined || raw === null) return 1;
     if (raw < 1 || raw > 48) throw new ValidationError("installmentCount deve estar entre 1 e 48.");
     return raw;
@@ -838,14 +905,19 @@ function parseTransactionPayload(body: unknown) {
 
   const type = assertTransactionType(parseRequiredString(payload.type, "type"));
   const creditCardId = parseOptionalString(payload.creditCardId, "creditCardId");
-  const destinationAccountId = parseOptionalString(payload.destinationAccountId, "destinationAccountId");
+  const destinationAccountId = parseOptionalString(
+    payload.destinationAccountId,
+    "destinationAccountId"
+  );
 
   if (creditCardId && destinationAccountId) {
     throw new ValidationError("Compra no cartão não pode ser transferência entre contas.");
   }
 
   if (creditCardId && type !== "expense" && type !== "refund" && type !== "chargeback") {
-    throw new ValidationError("Lançamento de cartão de crédito deve ser despesa, reembolso ou estorno.");
+    throw new ValidationError(
+      "Lançamento de cartão de crédito deve ser despesa, reembolso ou estorno."
+    );
   }
 
   return {
@@ -872,7 +944,6 @@ function parseTransactionPayload(body: unknown) {
   };
 }
 
-
 function validateTransferPayload(
   connection: DatabaseConnection,
   payload: ParsedTransactionPayload,
@@ -894,10 +965,7 @@ function validateTransferPayload(
     return "Transferência precisa de uma conta de destino.";
   }
 
-  if (
-    payload.destinationAccountId &&
-    payload.accountId === payload.destinationAccountId
-  ) {
+  if (payload.destinationAccountId && payload.accountId === payload.destinationAccountId) {
     return "Conta de origem e conta de destino devem ser diferentes.";
   }
 
@@ -1010,11 +1078,7 @@ function getOrCreateCreditCardBill(
     return existingBill;
   }
 
-  const { closingDate, dueDate } = getCreditCardBillDates(
-    billMonth,
-    card.closingDay,
-    card.dueDay
-  );
+  const { closingDate, dueDate } = getCreditCardBillDates(billMonth, card.closingDay, card.dueDay);
   const now = new Date().toISOString();
   const bill = {
     id: crypto.randomUUID(),
@@ -1138,7 +1202,10 @@ function ensureOptionalCreditCardExists(
 }
 
 function parseCsvContent(csv: string): { headers: string[]; rows: Record<string, string>[] } {
-  const normalized = csv.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const normalized = csv
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
   const lines: string[] = [];
   let currentLine = "";
   let insideQuotes = false;
@@ -1261,7 +1328,9 @@ function parseDateString(val: string, format: "DMY" | "MDY" | "YMD" = "DMY"): st
   return null;
 }
 
-function parseAmountToCents(val: string): { amountCents: number; detectedType: "income" | "expense" } | null {
+function parseAmountToCents(
+  val: string
+): { amountCents: number; detectedType: "income" | "expense" } | null {
   if (!val) return null;
   let clean = val.replace(/[R$\s]/g, "");
 
@@ -1426,33 +1495,39 @@ export function createInstallmentMetadataForTransactions(
   const installmentPurchaseId = crypto.randomUUID();
   const baseDescription = stripInstallmentMarker(params.originalDescription);
 
-  connection.db.insert(installmentPurchases).values({
-    id: installmentPurchaseId,
-    creditCardId: params.creditCardId,
-    originalDescription: baseDescription,
-    normalizedDescription: normalizeImportedText(baseDescription),
-    originalEventDate: params.originalEventDate,
-    installmentCount: params.installmentCount,
-    totalAmountCents: params.totalAmountCents,
-    source: params.source,
-    status: "active",
-    createdAt: now,
-    updatedAt: now
-  }).run();
-
-  for (const { transaction, installmentNumber } of params.transactions) {
-    connection.db.insert(installments).values({
-      id: crypto.randomUUID(),
-      installmentPurchaseId,
-      purchaseTransactionId: transaction.id,
-      creditCardBillId: transaction.creditCardBillId,
-      installmentNumber,
+  connection.db
+    .insert(installmentPurchases)
+    .values({
+      id: installmentPurchaseId,
+      creditCardId: params.creditCardId,
+      originalDescription: baseDescription,
+      normalizedDescription: normalizeImportedText(baseDescription),
+      originalEventDate: params.originalEventDate,
       installmentCount: params.installmentCount,
-      amountCents: transaction.amountCents,
-      dueMonth: transaction.budgetMonth,
+      totalAmountCents: params.totalAmountCents,
+      source: params.source,
+      status: "active",
       createdAt: now,
       updatedAt: now
-    }).run();
+    })
+    .run();
+
+  for (const { transaction, installmentNumber } of params.transactions) {
+    connection.db
+      .insert(installments)
+      .values({
+        id: crypto.randomUUID(),
+        installmentPurchaseId,
+        purchaseTransactionId: transaction.id,
+        creditCardBillId: transaction.creditCardBillId,
+        installmentNumber,
+        installmentCount: params.installmentCount,
+        amountCents: transaction.amountCents,
+        dueMonth: transaction.budgetMonth,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run();
   }
 
   return installmentPurchaseId;
@@ -1527,7 +1602,8 @@ function isDuplicateImportedTransaction(
       return (
         transaction.creditCardId === candidate.creditCardId &&
         isImportedAmountMatch(transaction.amountCents, candidate.amountCents, isInstallment) &&
-        normalizeImportedText(transaction.description) === normalizeImportedText(candidate.description)
+        normalizeImportedText(transaction.description) ===
+          normalizeImportedText(candidate.description)
       );
     });
   }
@@ -1573,12 +1649,15 @@ function resolveImportedSubcategoryId(
     return byId.id;
   }
 
-  const compatibleNatures = transactionType === "income" ? ["income", "transfer"] : ["expense", "transfer"];
+  const compatibleNatures =
+    transactionType === "income" ? ["income", "transfer"] : ["expense", "transfer"];
   const compatibleItems = categoryLookup.filter((item) =>
     item.nature ? compatibleNatures.includes(item.nature) : true
   );
 
-  const exact = compatibleItems.find((item) => normalizeImportedText(item.name) === normalizedCategory);
+  const exact = compatibleItems.find(
+    (item) => normalizeImportedText(item.name) === normalizedCategory
+  );
   if (exact) {
     return exact.id;
   }
@@ -1591,19 +1670,28 @@ function resolveImportedSubcategoryId(
     return exactWithCategory.id;
   }
 
-  const contained = compatibleItems.find((item) => normalizedCategory.includes(normalizeImportedText(item.name)));
+  const contained = compatibleItems.find((item) =>
+    normalizedCategory.includes(normalizeImportedText(item.name))
+  );
   return contained?.id ?? null;
 }
 
 function normalizeImportedCategoryText(value: string): string {
   return normalizeImportedText(value)
     .replace(/^\(?\s*[+-]\s*\)?\s*/, "")
-    .replace(/\b(receita|income|entrada|credito|credit|cr|despesa|expense|saida|debito|debit|db)\b/g, "")
+    .replace(
+      /\b(receita|income|entrada|credito|credit|cr|despesa|expense|saida|debito|debit|db)\b/g,
+      ""
+    )
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function isImportedAmountMatch(existingAmountCents: number, importedAmountCents: number, isInstallment: boolean) {
+function isImportedAmountMatch(
+  existingAmountCents: number,
+  importedAmountCents: number,
+  isInstallment: boolean
+) {
   const differenceInCents = Math.abs(existingAmountCents - importedAmountCents);
   return isInstallment ? differenceInCents <= 2 : differenceInCents === 0;
 }

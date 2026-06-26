@@ -1,5 +1,6 @@
 import {
   Select,
+  MultiSelect,
   Badge,
   Box,
   Stack,
@@ -30,6 +31,18 @@ interface CategorySelectProps {
   styles?: React.ComponentProps<typeof Select>["styles"];
   comboboxProps?: React.ComponentProps<typeof Select>["comboboxProps"];
   onDropdownClose?: () => void;
+  extraOptions?: Array<{ value: string; label: string }>;
+}
+
+interface CategoryMultiSelectProps {
+  categories: SharedCategory[];
+  value: string[];
+  onChange: (value: string[]) => void;
+  label?: string;
+  placeholder?: string;
+  filterNatures?: string[];
+  disabled?: boolean;
+  size?: "xs" | "sm" | "md" | "lg";
   extraOptions?: Array<{ value: string; label: string }>;
 }
 
@@ -147,6 +160,38 @@ export function CategorySelect({
       styles={styles}
       comboboxProps={{ withinPortal: true, ...comboboxProps }}
       onDropdownClose={onDropdownClose}
+    />
+  );
+}
+
+export function CategoryMultiSelect({
+  categories,
+  value,
+  onChange,
+  label = "Categorias",
+  placeholder = "Todas",
+  filterNatures,
+  disabled,
+  size = "sm",
+  extraOptions = []
+}: CategoryMultiSelectProps) {
+  const data = [...extraOptions, ...buildCategoryGroups(categories, filterNatures)];
+
+  return (
+    <MultiSelect
+      label={label}
+      placeholder={value.length === 0 ? placeholder : undefined}
+      data={data}
+      value={value}
+      onChange={onChange}
+      searchable
+      clearable
+      hidePickedOptions
+      renderOption={renderCategoryOption}
+      filter={categoryFilter}
+      disabled={disabled}
+      size={size}
+      comboboxProps={{ withinPortal: true }}
     />
   );
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addMonthsToYearMonth,
+  getLastDayOfMonth,
   getMonthCalendarDays,
   getTodayBusinessDate,
   parseFlexibleDateToIso
@@ -29,6 +30,11 @@ describe("date format helpers", () => {
   it("moves year-month values across year boundaries", () => {
     expect(addMonthsToYearMonth("2026-12", 1)).toBe("2027-01");
     expect(addMonthsToYearMonth("2026-01", -1)).toBe("2025-12");
+  });
+
+  it("gets the last day of regular and leap-year months", () => {
+    expect(getLastDayOfMonth("2026-06")).toBe("2026-06-30");
+    expect(getLastDayOfMonth("2028-02")).toBe("2028-02-29");
   });
 
   it("builds a six-week calendar grid for a month", () => {
