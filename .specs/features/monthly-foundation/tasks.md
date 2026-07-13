@@ -288,10 +288,10 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** BILL-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Fatura mostra saldo, mínimo, encargos, situação e histórico de pagamentos.
-  - [ ] Formulário exige conta, data e componentes do pagamento; campos financeiros bloqueados não são editáveis.
-  - [ ] Teste: componentes cobrem parcial, reversão, bloqueio e erros; gate web passa com cobertura ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/coding-style.md` e `testing.md`.
+  - [x] Fatura mostra saldo, mínimo, encargos, situação e histórico de pagamentos.
+  - [x] Formulário exige conta, data e componentes do pagamento; campos financeiros bloqueados não são editáveis.
+  - [x] Teste: componentes cobrem parcial, reversão, bloqueio e erros; gate web passa com cobertura ≥ 80%.
+  - [x] Constituição: respeita `ana-standards/references/coding-style.md` e `testing.md`.
 - **Testes:** unit/component
 - **Gate:** completo do pacote
 - **Commit:** `feat(web): manage credit card payments`

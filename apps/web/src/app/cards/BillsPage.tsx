@@ -50,6 +50,7 @@ import {
   getTodayBusinessDate
 } from "../date-format";
 import { BusinessDateInput } from "../shared/BusinessDateInput";
+import { BillPaymentPanel } from "./BillPaymentPanel";
 import { parseCsvHeaderLine } from "../shared/csv-utils";
 import { formatCategoryPromptGroups, getAmountColor } from "../shared/transaction-ui";
 import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
@@ -157,6 +158,8 @@ type BillData = {
   bill: Bill;
   transactions: CardTransaction[];
   totalCents: number;
+  summary: { status: string; remainingCents: number; minimumMet: boolean };
+  payments: Array<{ id: string; paymentDate: string; principalCents: number; interestCents: number; penaltyCents: number; reversedAt: string | null }>;
 };
 
 type SortDirection = "asc" | "desc";
@@ -1323,6 +1326,7 @@ Texto da fatura a ser convertido:
       </Group>
 
       <Collapse in={!isCollapsed}>
+        {billData ? <BillPaymentPanel cardId={card.id} billId={billData.bill.id} accounts={accounts} remainingCents={billData.summary.remainingCents} minimumMet={billData.summary.minimumMet} status={billData.summary.status} payments={billData.payments} onChanged={onReload}/> : null}
         {panelError ? (
           <Alert color="red" variant="light" m="md">
             {panelError}

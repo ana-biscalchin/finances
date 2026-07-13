@@ -44,6 +44,10 @@ export function createBillPaymentService(connection: Connection, hooks: Hooks = 
   }
 
   return {
+    details(billId: string, asOfDate = new Date().toISOString().slice(0, 10)) {
+      const payments = db.select().from(creditCardBillPayments).where(eq(creditCardBillPayments.billId, billId)).all();
+      return { payments, summary: summary(billId, asOfDate) };
+    },
     pay(billId: string, idempotencyKey: string, input: unknown) {
       if (!idempotencyKey.trim()) throw new BillPaymentServiceError("Chave de idempotência é obrigatória.", 400);
       const existing = db.select().from(creditCardBillPayments)

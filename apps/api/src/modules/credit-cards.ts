@@ -293,7 +293,8 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     return {
       bill,
       transactions: transactionsWithInstallments,
-      totalCents
+      totalCents,
+      ...billPaymentService.details(bill.id)
     };
   });
 

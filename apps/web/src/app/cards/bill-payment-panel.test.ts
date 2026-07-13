@@ -1,0 +1,2 @@
+import { describe, expect, it } from "vitest"; import { canEditBillFinancialFields } from "./BillPaymentPanel.js";
+describe("bill payment presentation", () => { it("locks financial fields while any partial payment remains active", () => { const base = { id: "p", paymentDate: "2026-07-20", principalCents: 100, interestCents: 0, penaltyCents: 0 }; expect(canEditBillFinancialFields([{ ...base, reversedAt: null }])).toBe(false); expect(canEditBillFinancialFields([{ ...base, reversedAt: "2026-07-21" }])).toBe(true); }); });
