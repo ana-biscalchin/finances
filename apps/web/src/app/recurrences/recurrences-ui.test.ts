@@ -1,0 +1,2 @@
+import { describe, expect, it } from "vitest"; import { recurrenceVisualKind } from "./RecurrencesPage.js";
+describe("recurrence presentation", () => { it("keeps forecasts, confirmed recurrence, and installments distinct", () => { expect(recurrenceVisualKind({})).toBe("Previsão recorrente"); expect(recurrenceVisualKind({ recurrenceRuleId: "r" })).toBe("Recorrência confirmada"); expect(recurrenceVisualKind({ recurrenceRuleId: "r", installmentCount: 3 })).toBe("Parcela"); }); });

@@ -305,11 +305,11 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** REC-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Regra de conta ou cartão pode ser criada, pausada, retomada e encerrada.
-  - [ ] Previsões são visualmente distintas de gastos e parcelas.
-  - [ ] Confirmação de ocorrência mostra seu impacto na conta ou fatura correta.
-  - [ ] Teste: componentes cobrem previsão, confirmação, pausa e distinção de parcela; gate web passa com cobertura ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/coding-style.md` e `testing.md`.
+  - [x] Regra de conta ou cartão pode ser criada, pausada, retomada e encerrada.
+  - [x] Previsões são visualmente distintas de gastos e parcelas.
+  - [x] Confirmação de ocorrência mostra seu impacto na conta ou fatura correta.
+  - [x] Teste: componentes cobrem previsão, confirmação, pausa e distinção de parcela; gate web passa com cobertura ≥ 80%.
+  - [x] Constituição: respeita `ana-standards/references/coding-style.md` e `testing.md`.
 - **Testes:** unit/component
 - **Gate:** completo do pacote
 - **Commit:** `feat(web): manage recurring forecasts`
