@@ -6,6 +6,7 @@ import {
 } from "@finances/database";
 import {
   buildAccountTransfer,
+  assertAccountTransferIntegrity,
   transferInputSchema,
   updateAccountTransfer,
   type AccountTransferAggregate,
@@ -63,16 +64,18 @@ export function createTransferService(
     if (!outgoing || !incoming) {
       throw new Error(`Transfer ${id} has incomplete cash legs`);
     }
-    return buildAccountTransfer({
-      id,
-      outgoingTransactionId: outgoing.id,
-      incomingTransactionId: incoming.id,
-      sourceAccountId: transfer.sourceAccountId,
-      destinationAccountId: transfer.destinationAccountId,
-      amountCents: transfer.amountCents,
-      eventDate: transfer.eventDate,
-      description: transfer.description
-    });
+    if (outgoing.status !== "confirmed" || incoming.status !== "confirmed") throw new Error(`Transfer ${id} has non-confirmed cash legs`);
+    if (outgoing.subcategoryId || incoming.subcategoryId || outgoing.paymentMethodId || incoming.paymentMethodId) throw new Error(`Transfer ${id} has classified cash legs`);
+    if (rows.length !== 2) throw new Error(`Transfer ${id} must have exactly two cash legs`);
+    const aggregate: AccountTransferAggregate = {
+      transfer: { id, sourceAccountId: transfer.sourceAccountId, destinationAccountId: transfer.destinationAccountId, amountCents: transfer.amountCents, eventDate: transfer.eventDate, description: transfer.description, status: "confirmed" },
+      legs: [
+        { id: outgoing.id, transferId: id, accountId: outgoing.accountId ?? "", type: "expense", amountCents: outgoing.amountCents, eventDate: outgoing.eventDate, budgetMonth: outgoing.budgetMonth, description: outgoing.description, status: "confirmed", subcategoryId: null, paymentMethodId: null },
+        { id: incoming.id, transferId: id, accountId: incoming.accountId ?? "", type: "income", amountCents: incoming.amountCents, eventDate: incoming.eventDate, budgetMonth: incoming.budgetMonth, description: incoming.description, status: "confirmed", subcategoryId: null, paymentMethodId: null }
+      ]
+    };
+    assertAccountTransferIntegrity(aggregate);
+    return aggregate;
   }
 
   function persistAggregate(aggregate: AccountTransferAggregate): void {

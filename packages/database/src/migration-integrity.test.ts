@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -167,6 +167,30 @@ describe("destructive migration integrity", () => {
 });
 
 describe("rebuilt financial schema", () => {
+  it("backfills idempotency keys for payments created before migration 0010", () => {
+    const directory = mkdtempSync(resolve(tmpdir(), "finances-payment-migration-"));
+    const path = resolve(directory, "legacy.sqlite");
+    const sqlite = new Database(path);
+    sqlite.exec(`
+      CREATE TABLE credit_card_bill_payments (
+        id TEXT PRIMARY KEY NOT NULL,
+        principal_cents INTEGER NOT NULL
+      );
+      INSERT INTO credit_card_bill_payments VALUES ('payment-before-0010', 2500);
+    `);
+
+    const sql = readFileSync(resolve(process.cwd(), "drizzle/0010_sharp_tattoo.sql"), "utf8")
+      .replaceAll("--> statement-breakpoint", "");
+    sqlite.exec(sql);
+
+    expect(sqlite.prepare("SELECT idempotency_key FROM credit_card_bill_payments").get()).toEqual({
+      idempotency_key: "legacy-payment-before-0010"
+    });
+    expect(sqlite.pragma("integrity_check", { simple: true })).toBe("ok");
+    sqlite.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
   it("exports the new financial aggregates", () => {
     expect(Reflect.get(databasePackage, "accountTransfers")).toBeDefined();
     expect(Reflect.get(databasePackage, "creditCardBillPayments")).toBeDefined();

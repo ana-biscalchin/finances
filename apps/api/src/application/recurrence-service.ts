@@ -1,6 +1,6 @@
-import { creditCardBills, creditCards, recurrenceRules, transactions, type createDatabaseConnection } from "@finances/database";
+import { accounts, creditCardBillPayments, creditCardBills, creditCards, paymentMethods, recurrenceRules, subcategories, transactions, type createDatabaseConnection } from "@finances/database";
 import { buildRecurrenceForecast, getCreditCardBillDates, recurrenceInputSchema, splitRecurrenceFromMonth } from "@finances/domain";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 type Connection = ReturnType<typeof createDatabaseConnection>;
 export class RecurrenceServiceError extends Error { constructor(message: string, readonly statusCode: 400 | 404 | 409) { super(message); } }
@@ -13,11 +13,21 @@ export function createRecurrenceService(connection: Connection) {
     return rule;
   };
   const cardClosing = (cardId: string | null) => cardId ? db.select().from(creditCards).where(eq(creditCards.id, cardId)).get() : undefined;
+  const billLocked = (billId: string) => { const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get(); return Boolean(bill?.closedAt || db.select().from(creditCardBillPayments).where(and(eq(creditCardBillPayments.billId, billId), isNull(creditCardBillPayments.reversedAt))).get()); };
+  const validateReferences = (value: { subcategoryId: string; accountId?: string | null; creditCardId?: string | null; paymentMethodId?: string | null }) => {
+    const subcategory = db.select().from(subcategories).where(eq(subcategories.id, value.subcategoryId)).get();
+    const account = value.accountId ? db.select().from(accounts).where(eq(accounts.id, value.accountId)).get() : null;
+    const card = value.creditCardId ? db.select().from(creditCards).where(eq(creditCards.id, value.creditCardId)).get() : null;
+    const method = value.paymentMethodId ? db.select().from(paymentMethods).where(eq(paymentMethods.id, value.paymentMethodId)).get() : null;
+    if (!subcategory || (value.accountId && !account) || (value.creditCardId && !card) || (value.paymentMethodId && !method)) throw new RecurrenceServiceError("Categoria, conta, cartão ou meio de pagamento não encontrado.", 404);
+    if ((account && !account.isActive) || (card && !card.isActive) || (method && !method.isActive)) throw new RecurrenceServiceError("Conta, cartão ou meio de pagamento está arquivado.", 409);
+  };
   return {
     list: () => db.select().from(recurrenceRules).all(),
     create(input: unknown) {
       const result = recurrenceInputSchema.safeParse(input);
       if (!result.success) throw new RecurrenceServiceError(result.error.issues[0]?.message ?? "Recorrência inválida.", 400);
+      validateReferences(result.data);
       const rule = { id: crypto.randomUUID(), ...result.data, status: "active" };
       db.insert(recurrenceRules).values(rule).run(); return get(rule.id);
     },
@@ -31,7 +41,7 @@ export function createRecurrenceService(connection: Connection) {
     confirm(id: string, month: string) {
       const existing = db.select().from(transactions).where(and(eq(transactions.recurrenceRuleId, id), eq(transactions.recurrenceMonth, month))).get();
       if (existing) return existing;
-      const rule = get(id); const card = cardClosing(rule.creditCardId);
+      const rule = get(id); validateReferences(rule); const card = cardClosing(rule.creditCardId);
       const forecast = buildRecurrenceForecast(rule as Parameters<typeof buildRecurrenceForecast>[0], month, { cardClosingDay: card?.closingDay });
       if (!forecast) throw new RecurrenceServiceError("Recorrência inativa para o mês informado.", 409);
       let billId: string | null = null;
@@ -43,6 +53,7 @@ export function createRecurrenceService(connection: Connection) {
           db.insert(creditCardBills).values(bill).run();
         }
         billId = bill.id;
+        if (billLocked(billId)) throw new RecurrenceServiceError("Fatura fechada ou com pagamento ativo.", 409);
       }
       const occurrence = { id: crypto.randomUUID(), type: forecast.kind, description: forecast.description, amountCents: forecast.amountCents, eventDate: forecast.eventDate, budgetMonth: forecast.budgetMonth, accountId: forecast.accountId ?? null, paymentMethodId: forecast.paymentMethodId ?? null, subcategoryId: forecast.subcategoryId, creditCardId: forecast.creditCardId ?? null, creditCardBillId: billId, status: "confirmed", recurrenceRuleId: id, recurrenceMonth: month };
       db.insert(transactions).values(occurrence).run(); return db.select().from(transactions).where(eq(transactions.id, occurrence.id)).get()!;
@@ -53,6 +64,7 @@ export function createRecurrenceService(connection: Connection) {
     changeFrom(id: string, month: string, changes: Record<string, unknown>) {
       const current = get(id); const split = splitRecurrenceFromMonth(current as Parameters<typeof splitRecurrenceFromMonth>[0], month, changes);
       const next = { ...split.next, id: crypto.randomUUID() };
+      validateReferences(next);
       db.transaction(() => { db.update(recurrenceRules).set({ endMonth: split.previous.endMonth, status: "ended" }).where(eq(recurrenceRules.id, id)).run(); db.insert(recurrenceRules).values(next).run(); });
       return get(next.id);
     }

@@ -25,6 +25,31 @@ export function parseCsvHeaderLine(headerLine: string): string[] {
   return fields;
 }
 
+export function parseCsvRows(content: string, delimiter: "," | ";" | "\t"): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let index = 0; index < content.length; index++) {
+    const character = content[index];
+    if (character === '"') {
+      if (quoted && content[index + 1] === '"') { field += '"'; index++; }
+      else quoted = !quoted;
+    } else if (character === delimiter && !quoted) {
+      row.push(cleanCsvField(field)); field = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && content[index + 1] === "\n") index++;
+      row.push(cleanCsvField(field)); field = "";
+      if (row.some((value) => value !== "")) rows.push(row);
+      row = [];
+    } else field += character;
+  }
+  row.push(cleanCsvField(field));
+  if (row.some((value) => value !== "")) rows.push(row);
+  if (quoted) throw new Error("CSV contém campo entre aspas não finalizado.");
+  return rows;
+}
+
 export function detectCsvDelimiter(headerLine: string): "," | ";" | "\t" {
   const candidates = [",", ";", "\t"] as const;
 

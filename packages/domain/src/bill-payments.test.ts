@@ -98,9 +98,9 @@ describe("credit card bill payments", () => {
     expect(() => summarize({ ...base, dueDate: "invalid", payments: [] })).toThrow();
   });
 
-  it("treats a zero-total bill as paid and a bill without minimum as satisfied", () => {
+  it("treats a zero-total bill as paid and a missing minimum as not informed", () => {
     expect(summarize({ ...base, totalCents: 0, minimumDueCents: null, payments: [] })).toEqual(
-      expect.objectContaining({ status: "paid", minimumMet: true, remainingCents: 0 })
+      expect.objectContaining({ status: "paid", minimumMet: false, remainingCents: 0 })
     );
   });
 });

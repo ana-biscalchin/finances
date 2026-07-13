@@ -13,7 +13,8 @@
     "db:seed": "tsx src/seed.ts",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

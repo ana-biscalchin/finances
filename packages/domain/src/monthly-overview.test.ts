@@ -20,6 +20,7 @@ describe("monthly financial views", () => {
       { id: "transfer", type: "expense", amountCents: 10_000, budgetMonth: "2026-07", subcategoryId: null, status: "confirmed", transferId: "transfer-1" },
       { id: "payment", type: "expense", amountCents: 20_000, budgetMonth: "2026-07", subcategoryId: null, status: "confirmed", creditCardBillId: "bill", creditCardId: null },
       { id: "canceled", type: "expense", amountCents: 30_000, budgetMonth: "2026-07", subcategoryId: "food", status: "canceled" },
+      { id: "planned", type: "expense", amountCents: 30_000, budgetMonth: "2026-07", subcategoryId: "food", status: "planned" },
       { id: "august", type: "expense", amountCents: 40_000, budgetMonth: "2026-08", subcategoryId: "food", status: "confirmed" }
     ] });
     expect(result.summary.spentCents).toBe(0);

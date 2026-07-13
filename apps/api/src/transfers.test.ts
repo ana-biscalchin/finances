@@ -135,6 +135,12 @@ describe("atomic account transfers", () => {
     expect(connection.db.select().from(transactions).all()).toHaveLength(0);
   });
 
+  it("exposes corrupted transfer legs instead of reconstructing a valid aggregate", async () => {
+    const created = await app.inject({ method: "POST", url: "/transfers", payload: { sourceAccountId: "account-source", destinationAccountId: "account-destination", amountCents: 1000, eventDate: "2026-07-13", description: "Mover" } });
+    connection.db.update(transactions).set({ amountCents: 999 }).where(eq(transactions.id, created.json().legs[0].id)).run();
+    expect(() => createTransferService(connection).get(created.json().transfer.id)).toThrow("equivalent");
+  });
+
   it("returns explicit validation, absence, and conflict responses", async () => {
     const invalid = await app.inject({
       method: "POST",

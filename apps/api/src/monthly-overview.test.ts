@@ -27,5 +27,7 @@ describe("canonical monthly views", () => {
     ]).run();
     connection.db.insert(creditCardBillPayments).values({ id: "payment", idempotencyKey: "key", billId: "bill", accountId: "account", paymentTransactionId: "cash-payment", paymentDate: "2026-07-20", principalCents: 10_000 }).run();
     expect(service.cashPosition("2026-07")[0]).toEqual(expect.objectContaining({ currentBalanceCents: 90_000, expectedBalanceCents: 30_000 }));
+    connection.db.insert(transactions).values({ id: "confirmed-recurrence", type: "expense", description: "Prevista", amountCents: 20_000, eventDate: "2026-07-15", budgetMonth: "2026-07", accountId: "account", subcategoryId: "subcategory", recurrenceRuleId: "rule", recurrenceMonth: "2026-07", status: "confirmed" }).run();
+    expect(service.cashPosition("2026-07")[0]).toEqual(expect.objectContaining({ currentBalanceCents: 70_000, expectedBalanceCents: 30_000, forecastCents: 0 }));
   });
 });

@@ -64,7 +64,7 @@ describe("credit card bill payment service", () => {
     expect(connection.db.select().from(creditCardBillPayments).all()).toHaveLength(2);
   });
 
-  it("is idempotent and creates separate economic entries for interest and penalty", () => {
+  it("is idempotent and keeps interest and penalty in one decomposed cash movement", () => {
     const service = createBillPaymentService(connection);
     const input = {
       accountId: "account-1", paymentDate: "2026-07-21", amountCents: 11_500,
@@ -76,7 +76,8 @@ describe("credit card bill payment service", () => {
     expect(retry.payment.id).toBe(first.payment.id);
     expect(connection.db.select().from(creditCardBillPayments).all()).toHaveLength(1);
     const entries = connection.db.select().from(transactions).all();
-    expect(entries.filter((entry) => entry.notes?.includes("bill-payment-charge"))).toHaveLength(2);
+    expect(entries.filter((entry) => entry.notes?.includes("bill-payment-charge"))).toEqual([]);
+    expect(first.paymentTransaction.amountCents).toBe(11_500);
   });
 
   it("reverses without deleting history and restores the derived bill state", () => {
@@ -124,10 +125,14 @@ describe("credit card bill payment service", () => {
     expect(() => service.pay("bill-1", "invalid", { ...valid, amountCents: -1 })).toThrow();
     expect(() => service.pay("missing", "missing-bill", valid)).toThrow("Fatura não encontrada");
     expect(() => service.pay("bill-1", "missing-account", { ...valid, accountId: "missing" })).toThrow("Conta de pagamento");
+    connection.db.update(accounts).set({ isActive: false }).where(eq(accounts.id, "account-1")).run();
+    expect(() => service.pay("bill-1", "inactive-account", valid)).toThrow("arquivada");
+    connection.db.update(accounts).set({ isActive: true }).where(eq(accounts.id, "account-1")).run();
     expect(() => service.pay("bill-1", "excess", { ...valid, amountCents: 100_001, principalCents: 100_001 })).toThrow("excede");
     expect(() => service.reverse("bill-1", "missing")).toThrow("Pagamento não encontrado");
 
     const paid = service.pay("bill-1", "reversal-key", valid);
+    expect(() => service.pay("bill-1", "reversal-key", { ...valid, paymentDate: "2026-07-21" })).toThrow("pagamento diferente");
     service.reverse("bill-1", paid.payment.id, "2026-07-21T10:00:00Z");
     expect(service.reverse("bill-1", paid.payment.id, "2026-07-22T10:00:00Z").payment.id).toBe(paid.payment.id);
 

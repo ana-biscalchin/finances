@@ -6,7 +6,7 @@ import {
   type createDatabaseConnection
 } from "@finances/database";
 import { billPaymentInputSchema, summarizeBillPayments, type BillPaymentInput } from "@finances/domain";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 type Connection = ReturnType<typeof createDatabaseConnection>;
 type Hooks = { afterCashMovement?: () => void };
@@ -50,19 +50,21 @@ export function createBillPaymentService(connection: Connection, hooks: Hooks = 
     },
     pay(billId: string, idempotencyKey: string, input: unknown) {
       if (!idempotencyKey.trim()) throw new BillPaymentServiceError("Chave de idempotência é obrigatória.", 400);
+      const parsedResult = billPaymentInputSchema.safeParse(input);
+      if (!parsedResult.success) throw new BillPaymentServiceError(parsedResult.error.issues[0]?.message ?? "Pagamento inválido.", 400);
+      const parsed: BillPaymentInput = parsedResult.data;
       const existing = db.select().from(creditCardBillPayments)
         .where(eq(creditCardBillPayments.idempotencyKey, idempotencyKey)).get();
       if (existing) {
         if (existing.billId !== billId) throw new BillPaymentServiceError("Chave de idempotência já utilizada.", 409);
+        if (existing.accountId !== parsed.accountId || existing.paymentDate !== parsed.paymentDate || existing.principalCents !== parsed.principalCents || existing.interestCents !== parsed.interestCents || existing.penaltyCents !== parsed.penaltyCents || (existing.notes ?? null) !== (parsed.notes ?? null)) throw new BillPaymentServiceError("Chave de idempotência reutilizada com pagamento diferente.", 409);
         return resultFor(existing, existing.paymentDate);
       }
-      const parsedResult = billPaymentInputSchema.safeParse(input);
-      if (!parsedResult.success) throw new BillPaymentServiceError(parsedResult.error.issues[0]?.message ?? "Pagamento inválido.", 400);
-      const parsed: BillPaymentInput = parsedResult.data;
       const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
       if (!bill) throw new BillPaymentServiceError("Fatura não encontrada.", 404);
       const account = db.select().from(accounts).where(eq(accounts.id, parsed.accountId)).get();
       if (!account) throw new BillPaymentServiceError("Conta de pagamento não encontrada.", 404);
+      if (!account.isActive) throw new BillPaymentServiceError("Conta de pagamento está arquivada.", 409);
       const before = summary(billId, parsed.paymentDate);
       if (parsed.principalCents > before.remainingCents) throw new BillPaymentServiceError("Pagamento principal excede o saldo da fatura.", 409);
 
@@ -77,13 +79,6 @@ export function createBillPaymentService(connection: Connection, hooks: Hooks = 
           status: "confirmed", notes: `bill-payment:${paymentId}`
         }).run();
         hooks.afterCashMovement?.();
-        for (const [kind, amount] of [["interest", parsed.interestCents], ["penalty", parsed.penaltyCents]] as const) {
-          if (amount > 0) db.insert(transactions).values({
-            id: crypto.randomUUID(), type: "expense", description: kind === "interest" ? "Juros de fatura" : "Multa de fatura",
-            amountCents: amount, eventDate: parsed.paymentDate, budgetMonth: parsed.paymentDate.slice(0, 7),
-            creditCardBillId: billId, status: "confirmed", notes: `bill-payment-charge:${paymentId}:${kind}`
-          }).run();
-        }
         db.insert(creditCardBillPayments).values({
           id: paymentId, idempotencyKey, billId, accountId: parsed.accountId,
           paymentTransactionId: transactionId, paymentDate: parsed.paymentDate,
@@ -105,7 +100,6 @@ export function createBillPaymentService(connection: Connection, hooks: Hooks = 
       db.transaction(() => {
         db.update(creditCardBillPayments).set({ reversedAt }).where(eq(creditCardBillPayments.id, paymentId)).run();
         db.update(transactions).set({ status: "canceled" }).where(eq(transactions.id, payment.paymentTransactionId)).run();
-        db.update(transactions).set({ status: "canceled" }).where(like(transactions.notes, `bill-payment-charge:${paymentId}:%`)).run();
         const after = summary(billId, reversedAt.slice(0, 10));
         db.update(creditCardBills).set({ status: after.status, paidAt: null }).where(eq(creditCardBills.id, billId)).run();
       });

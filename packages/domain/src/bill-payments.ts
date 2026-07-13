@@ -46,7 +46,7 @@ export function summarizeBillPayments(input: {
   const interestCents = active.reduce((sum, payment) => sum + payment.interestCents, 0);
   const penaltyCents = active.reduce((sum, payment) => sum + payment.penaltyCents, 0);
   const remainingCents = parsed.totalCents - paidPrincipalCents;
-  const minimumMet = paidPrincipalCents >= (parsed.minimumDueCents ?? 0);
+  const minimumMet = parsed.minimumDueCents !== null && parsed.minimumDueCents !== undefined && paidPrincipalCents >= parsed.minimumDueCents;
   let status: BillPaymentStatus;
   if (remainingCents === 0) status = "paid";
   else if (parsed.asOfDate > parsed.dueDate) status = "overdue";

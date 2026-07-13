@@ -124,4 +124,7 @@ export function assertAccountTransferIntegrity(aggregate: AccountTransferAggrega
   ) {
     throw new Error("Account transfer legs do not match their aggregate");
   }
+  if (outgoing.eventDate !== transfer.eventDate || incoming.eventDate !== transfer.eventDate || outgoing.budgetMonth !== transfer.eventDate.slice(0, 7) || incoming.budgetMonth !== transfer.eventDate.slice(0, 7) || outgoing.description !== transfer.description || incoming.description !== transfer.description) {
+    throw new Error("Account transfer cash leg metadata does not match its aggregate");
+  }
 }

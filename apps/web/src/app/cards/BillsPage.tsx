@@ -89,6 +89,7 @@ type Bill = {
   dueDate: string;
   status: string;
   paidAt: string | null;
+  minimumDueCents: number | null;
 };
 
 type CardTransaction = {
@@ -434,7 +435,7 @@ Texto da fatura a ser convertido:
 [Cole o texto da sua fatura aqui]`;
   }, [categories]);
 
-  const isPaid = billData?.bill.status === "paid";
+  const isPaid = billData?.bill.status === "paid" || Boolean(billData?.payments.some((payment) => !payment.reversedAt));
   const isClosed = billData?.bill.closingDate ? today >= billData.bill.closingDate : false;
 
   let statusLabel = "Aberta";
@@ -673,12 +674,12 @@ Texto da fatura a ser convertido:
     }
 
     const response = await fetch(
-      `${apiBaseUrl}/credit-cards/${card.id}/bills/${billData.bill.id}/transactions/${transaction.id}`,
+      isPaid ? `${apiBaseUrl}/transactions/${transaction.id}/metadata` : `${apiBaseUrl}/credit-cards/${card.id}/bills/${billData.bill.id}/transactions/${transaction.id}`,
       {
-        method: "PUT",
+        method: isPaid ? "PATCH" : "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: changes.type ?? transaction.type,
+          ...(isPaid ? {} : { type: changes.type ?? transaction.type,
           description: changes.description ?? transaction.description,
           amountCents: changes.amountCents ?? transaction.amountCents,
           eventDate: changes.eventDate ?? transaction.eventDate,
@@ -687,7 +688,10 @@ Texto da fatura a ser convertido:
           notes: changes.notes === undefined ? transaction.notes : changes.notes,
           status: changes.status ?? transaction.status,
           installmentCount: changes.installmentCount,
-          preserveBillMonth: changes.preserveBillMonth
+          preserveBillMonth: changes.preserveBillMonth }),
+          description: changes.description ?? transaction.description,
+          subcategoryId: changes.subcategoryId === undefined ? transaction.subcategoryId : changes.subcategoryId,
+          notes: changes.notes === undefined ? transaction.notes : changes.notes
         })
       }
     );
@@ -1207,7 +1211,7 @@ Texto da fatura a ser convertido:
       </Group>
 
       <Collapse in={!isCollapsed}>
-        {billData ? <BillPaymentPanel cardId={card.id} billId={billData.bill.id} accounts={accounts} remainingCents={billData.summary.remainingCents} minimumMet={billData.summary.minimumMet} status={billData.summary.status} payments={billData.payments} onChanged={onReload}/> : null}
+        {billData ? <BillPaymentPanel cardId={card.id} billId={billData.bill.id} accounts={accounts} remainingCents={billData.summary.remainingCents} minimumDueCents={billData.bill.minimumDueCents} minimumMet={billData.summary.minimumMet} status={billData.summary.status} payments={billData.payments} onChanged={onReload}/> : null}
         {panelError ? (
           <Alert color="red" variant="light" m="md">
             {panelError}

@@ -32,7 +32,8 @@ import {
   buildCreditCardInstallmentTransactions,
   createInstallmentMetadataForTransactions,
   type TransactionData,
-  isBillPaid
+  isBillPaid,
+  isBillFinanciallyLocked
 } from "./transactions.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
@@ -66,6 +67,22 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
     if (!bill || bill.creditCardId !== id) return reply.code(404).send({ message: "Fatura não encontrada." });
     return billPaymentService.reverse(billId, paymentId);
+  });
+
+  app.patch("/credit-cards/:id/bills/:billId/minimum", async (request, reply) => {
+    const { id, billId } = request.params as { id: string; billId: string };
+    const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
+    if (!bill || bill.creditCardId !== id) return reply.code(404).send({ message: "Fatura não encontrada." });
+    if (isBillFinanciallyLocked(db, billId)) return reply.code(409).send({ message: "O mínimo não pode mudar após fechamento ou pagamento." });
+    const body = isRecord(request.body) ? request.body : {};
+    try {
+      const minimumDueCents = parseRequiredInteger(body.minimumDueCents, "minimumDueCents");
+      if (minimumDueCents < 0) throw new ValidationError("minimumDueCents não pode ser negativo.");
+      const totalCents = db.select().from(transactions).where(eq(transactions.creditCardBillId, billId)).all().filter((item) => item.creditCardId && ["confirmed", "reconciled"].includes(item.status)).reduce((sum, item) => sum + (item.type === "expense" ? item.amountCents : -item.amountCents), 0);
+      if (minimumDueCents > totalCents) throw new ValidationError("Pagamento mínimo não pode superar o total da fatura.");
+      db.update(creditCardBills).set({ minimumDueCents, updatedAt: new Date().toISOString() }).where(eq(creditCardBills.id, billId)).run();
+      return db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
+    } catch (error) { return sendPayloadError(error, reply, "Mínimo inválido."); }
   });
 
   app.get("/credit-cards", async (request) => {
@@ -318,8 +335,8 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       return reply.code(404).send({ message: "Fatura não encontrada." });
     }
 
-    if (bill.status === "paid") {
-      return reply.code(400).send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
+    if (isBillFinanciallyLocked(db, billId)) {
+      return reply.code(400).send({ message: "Não é possível alterar financeiramente uma fatura com pagamento ativo." });
     }
 
     const body = request.body;
@@ -387,8 +404,8 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         );
 
         for (const t of created) {
-          if (t.creditCardBillId && isBillPaid(db, t.creditCardBillId)) {
-            return reply.code(400).send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
+          if (t.creditCardBillId && isBillFinanciallyLocked(db, t.creditCardBillId)) {
+            return reply.code(400).send({ message: "Não é possível alterar financeiramente uma fatura com pagamento ativo." });
           }
         }
 
@@ -412,8 +429,8 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         return reply.code(201).send(created);
       }
 
-      if (targetBill.status === "paid") {
-        return reply.code(400).send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
+      if (isBillFinanciallyLocked(db, targetBill.id)) {
+        return reply.code(400).send({ message: "Não é possível alterar financeiramente uma fatura com pagamento ativo." });
       }
 
       const transaction = {
@@ -456,6 +473,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     if (!current || !belongsToBill) {
       return reply.code(404).send({ message: "Lançamento não encontrado nesta fatura." });
     }
+    if (isBillFinanciallyLocked(db, billId)) return reply.code(400).send({ message: "Fatura com pagamento ativo permite apenas renomear ou recategorizar." });
 
     const body = request.body;
     if (!isRecord(body)) return reply.code(400).send({ message: "Payload inválido." });
@@ -518,9 +536,11 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           transactionData,
           installmentCount
         );
+        if (created.some((item) => item.creditCardBillId && isBillFinanciallyLocked(db, item.creditCardBillId))) return reply.code(400).send({ message: "Uma das faturas das parcelas está fechada ou possui pagamento ativo." });
 
         const [first, ...rest] = created;
-        db.update(transactions)
+        db.transaction(() => {
+          db.update(transactions)
           .set({
             description: first.description,
             amountCents: first.amountCents,
@@ -536,11 +556,9 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           .where(eq(transactions.id, transactionId))
           .run();
 
-        for (const t of rest) {
-          db.insert(transactions).values(t).run();
-        }
+          for (const t of rest) db.insert(transactions).values(t).run();
 
-        createInstallmentMetadataForTransactions(connection, {
+          createInstallmentMetadataForTransactions(connection, {
           creditCardId: id,
           originalDescription: description,
           originalEventDate: eventDate,
@@ -551,6 +569,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
             transaction: index === 0 ? { ...transaction, id: transactionId } : transaction,
             installmentNumber: index + 1
           }))
+          });
         });
 
         return db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
@@ -589,8 +608,8 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       if (!bill || bill.creditCardId !== id)
         return reply.code(404).send({ message: "Fatura não encontrada." });
 
-      if (bill.status === "paid") {
-        return reply.code(400).send({ message: "Não é possível excluir lançamentos de uma fatura paga." });
+      if (isBillFinanciallyLocked(db, billId)) {
+        return reply.code(400).send({ message: "Não é possível excluir lançamentos de uma fatura com pagamento ativo." });
       }
 
       const current = db
