@@ -1,7 +1,7 @@
 # Tasks — Fundação mensal da Carteira da Ana
 
 **Design:** `.specs/features/monthly-foundation/design.md`  ·  **Spec:** `.specs/features/monthly-foundation/spec.md`
-**Status:** approved
+**Status:** in progress
 
 > Cada task de produção usa `ana-tdd` no Execute: RED → GREEN → REFACTOR. Cada task é salva por
 > `ana-commit`; nenhuma implementação ocorre diretamente na branch principal.
@@ -43,10 +43,10 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** MON-01, CASH-01, TRF-01, BILL-01, REC-01, IMP-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Schemas rejeitam centavos fracionários/não positivos, datas e meses inválidos e destinos incompatíveis.
-  - [ ] Tipos públicos são derivados dos schemas e exportados sem `any` ou cast de validação.
-  - [ ] Teste: `contracts.test.ts` cobre contratos válidos e inválidos; gate `pnpm --filter @finances/domain test` passa com cobertura ≥ 80% do código novo.
-  - [ ] Constituição: respeita `ana-standards/references/coding-style.md#4-contratos-de-dados-via-schema-na-fronteira`.
+  - [x] Schemas rejeitam centavos fracionários/não positivos, datas e meses inválidos e destinos incompatíveis.
+  - [x] Tipos públicos são derivados dos schemas e exportados sem `any` ou cast de validação.
+  - [x] Teste: `contracts.test.ts` cobre contratos válidos e inválidos; gate passa com 100% de cobertura no código novo.
+  - [x] Constituição: respeita `ana-standards/references/coding-style.md#4-contratos-de-dados-via-schema-na-fronteira`.
 - **Testes:** unit
 - **Gate:** rápido
 - **Commit:** `feat(domain): define canonical financial contracts`
