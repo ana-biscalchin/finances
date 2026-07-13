@@ -270,11 +270,11 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** CASH-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Cada conta mostra saldo atual, entradas/saídas previstas, faturas e saldo esperado.
-  - [ ] Recorrências futuras aparecem como previsão; compras e pagamentos não são duplicados.
-  - [ ] Detalhes são acessíveis por clique/teclado e não dependem apenas de hover.
-  - [ ] Teste: componentes cobrem projeção, saldo negativo, carregamento, vazio e erro; gate web passa com cobertura ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/testing.md`.
+  - [x] Cada conta mostra saldo atual, entradas/saídas previstas, faturas e saldo esperado.
+  - [x] Recorrências futuras aparecem como previsão; compras e pagamentos não são duplicados.
+  - [x] Detalhes são acessíveis por clique/teclado e não dependem apenas de hover.
+  - [x] Teste: componentes cobrem projeção, saldo negativo, carregamento, vazio e erro; gate web passa com cobertura ≥ 80%.
+  - [x] Constituição: respeita `ana-standards/references/testing.md`.
 - **Testes:** unit/component
 - **Gate:** completo do pacote
 - **Commit:** `feat(web): add accounts cash view`

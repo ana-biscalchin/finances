@@ -24,7 +24,13 @@ export function createMonthlyOverviewService(connection: Connection) {
         const paid = payments.filter((payment) => payment.billId === bill.id).reduce((sum, payment) => sum + payment.principalCents, 0);
         return total > paid ? [{ accountId, amountCents: total - paid }] : [];
       });
-      return buildCashPosition({ accounts: db.select().from(accounts).all(), transactions: purchases, forecasts, billPayments: obligations });
+      const accountRows = db.select().from(accounts).all();
+      return buildCashPosition({ accounts: accountRows, transactions: purchases, forecasts, billPayments: obligations }).map((item) => ({
+        ...item,
+        accountName: accountRows.find((account) => account.id === item.accountId)?.name ?? "Conta",
+        forecastCents: forecasts.filter((forecast) => forecast.accountId === item.accountId).reduce((sum, forecast) => sum + (forecast.kind === "expense" ? -forecast.amountCents : forecast.amountCents), 0),
+        outstandingBillsCents: obligations.filter((obligation) => obligation.accountId === item.accountId).reduce((sum, obligation) => sum + obligation.amountCents, 0)
+      }));
     },
     setBudget(month: string, subcategoryId: string, amountCents: number) {
       const existing = db.select().from(budgets).where(eq(budgets.budgetMonth, month)).all().find((item) => item.subcategoryId === subcategoryId);

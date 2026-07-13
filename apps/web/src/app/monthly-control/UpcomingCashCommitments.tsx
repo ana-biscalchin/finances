@@ -1,0 +1,2 @@
+import { List, Text } from "@mantine/core"; import type { CashPosition } from "../shared/api-contracts.js";
+export function UpcomingCashCommitments({ positions }: { positions: CashPosition }) { const items = positions.filter((item) => item.forecastCents !== 0 || item.outstandingBillsCents > 0); return items.length ? <List>{items.map((item) => <List.Item key={item.accountId}><Text>{item.accountName}: previsões e faturas já consideradas no saldo esperado.</Text></List.Item>)}</List> : <Text c="dimmed">Nenhum compromisso futuro identificado para o mês.</Text>; }
