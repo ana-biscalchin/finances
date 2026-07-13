@@ -223,6 +223,7 @@ export const creditCardBillPayments = sqliteTable(
   "credit_card_bill_payments",
   {
     id: text("id").primaryKey(),
+    idempotencyKey: text("idempotency_key").notNull(),
     billId: text("bill_id")
       .notNull()
       .references(() => creditCardBills.id),
@@ -241,6 +242,9 @@ export const creditCardBillPayments = sqliteTable(
     ...timestamps
   },
   (table) => [
+    uniqueIndex("credit_card_bill_payments_idempotency_unique").on(
+      table.idempotencyKey
+    ),
     uniqueIndex("credit_card_bill_payments_transaction_unique").on(
       table.paymentTransactionId
     ),

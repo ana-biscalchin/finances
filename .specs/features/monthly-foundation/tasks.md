@@ -136,12 +136,12 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** BILL-01, CASH-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Pagamento parcial, mínimo e final atualizam fatura e conta atomicamente pela data informada.
-  - [ ] Juros e multa geram despesas explícitas sem alterar compras originais.
-  - [ ] Retry com a mesma chave de idempotência não duplica pagamento.
-  - [ ] Reversão preserva histórico e restaura saldo/situação na mesma transação.
-  - [ ] Teste: `credit-card-payments.test.ts` cobre falhas intermediárias, idempotência e cálculos; gate da API passa com cobertura ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/error-handling.md` e `testing.md`.
+  - [x] Pagamento parcial, mínimo e final atualizam fatura e conta atomicamente pela data informada.
+  - [x] Juros e multa geram despesas explícitas sem alterar compras originais.
+  - [x] Retry com a mesma chave de idempotência não duplica pagamento.
+  - [x] Reversão preserva histórico e restaura saldo/situação na mesma transação.
+  - [x] Teste: `credit-card-payments.test.ts` cobre falhas intermediárias, idempotência e cálculos; gate da API passa com cobertura ≥ 80%.
+  - [x] Constituição: respeita `ana-standards/references/error-handling.md` e `testing.md`.
 - **Testes:** integração API + SQLite isolado
 - **Gate:** completo do pacote
 - **Commit:** `feat(api): support partial bill payments`

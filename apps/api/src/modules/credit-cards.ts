@@ -28,6 +28,7 @@ import {
   sendPayloadError,
   ValidationError
 } from "../http.js";
+import { createBillPaymentService } from "../application/bill-payment-service.js";
 import {
   buildCreditCardInstallmentTransactions,
   createInstallmentMetadataForTransactions,
@@ -48,8 +49,25 @@ type CreditCardPayload = {
 
 export function registerCreditCardRoutes(app: FastifyInstance, connection: DatabaseConnection) {
   const { db } = connection;
+  const billPaymentService = createBillPaymentService(connection);
 
   // ─── Cards ───────────────────────────────────────────────────────────
+
+  app.post("/credit-cards/:id/bills/:billId/payments", async (request, reply) => {
+    const { id, billId } = request.params as { id: string; billId: string };
+    const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
+    if (!bill || bill.creditCardId !== id) return reply.code(404).send({ message: "Fatura não encontrada." });
+    const key = request.headers["idempotency-key"];
+    const idempotencyKey = Array.isArray(key) ? key[0] ?? "" : key ?? "";
+    return reply.code(201).send(billPaymentService.pay(billId, idempotencyKey, request.body));
+  });
+
+  app.post("/credit-cards/:id/bills/:billId/payments/:paymentId/reverse", async (request, reply) => {
+    const { id, billId, paymentId } = request.params as { id: string; billId: string; paymentId: string };
+    const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
+    if (!bill || bill.creditCardId !== id) return reply.code(404).send({ message: "Fatura não encontrada." });
+    return billPaymentService.reverse(billId, paymentId);
+  });
 
   app.get("/credit-cards", async (request) => {
     const query = request.query as Record<string, unknown>;
