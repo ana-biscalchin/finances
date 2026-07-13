@@ -323,12 +323,12 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** IMP-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Arquivo com mapeamento detectável vai diretamente à revisão.
-  - [ ] Linhas podem ser corrigidas, selecionadas e ajustadas em lote; categoria é opcional.
-  - [ ] Duplicatas começam desmarcadas e resultado exibe contagens verificáveis.
-  - [ ] Falha de confirmação mantém a revisão e não reenvia automaticamente.
-  - [ ] Teste: componentes cobrem autodetecção, revisão, duplicidade, sucesso e falha; gate web passa com cobertura ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/error-handling.md` e `testing.md`.
+  - [x] Arquivo com mapeamento detectável vai diretamente à revisão.
+  - [x] Linhas podem ser corrigidas, selecionadas e ajustadas em lote; categoria é opcional.
+  - [x] Duplicatas começam desmarcadas e resultado exibe contagens verificáveis.
+  - [x] Falha de confirmação mantém a revisão e não reenvia automaticamente.
+  - [x] Teste: componentes cobrem autodetecção, revisão, duplicidade, sucesso e falha; gate web passa com cobertura ≥ 80%.
+  - [x] Constituição: respeita `ana-standards/references/error-handling.md` e `testing.md`.
 - **Testes:** unit/component
 - **Gate:** completo do pacote
 - **Commit:** `refactor(web): simplify CSV import`

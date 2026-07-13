@@ -1,0 +1,1 @@
+import { FileInput, Text } from "@mantine/core"; export function CsvFileStep({ onContent }: { onContent: (content: string) => void }) { return <><FileInput label="Arquivo CSV" accept=".csv,text/csv" onChange={(file) => { if (file) void file.text().then(onContent); }}/><Text size="sm" c="dimmed">Arquivos com colunas data, descrição e valor seguem direto para revisão.</Text></>; }
