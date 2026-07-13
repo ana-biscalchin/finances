@@ -1,4 +1,4 @@
-# Financas Pessoais
+# Carteira da Ana
 
 App local para gerenciamento de financas pessoais, com foco em controle mensal, faturas de cartao, categorias gerenciaveis, importacao CSV e relatorios explicativos.
 
@@ -10,14 +10,15 @@ O projeto ja possui:
 - API local em Node.js e Fastify;
 - banco SQLite local via Drizzle;
 - CRUD de contas, categorias, lancamentos e cartoes;
-- controle mensal com planejado, comprometido, realizado e disponivel;
+- controle mensal com planejamento, realizacao, disponibilidade e visao de caixa;
 - faturas de cartao com importacao CSV, parcelamentos e pagamento por conta;
 - importacao/exportacao CSV de lancamentos;
-- relatorios iniciais com Recharts.
+- relatorios iniciais com Recharts;
+- criacao, listagem, restauracao e exclusao de backups locais;
+- integracao opcional de backups com Google Drive.
 
 Ainda nao estao implementados:
 
-- backups;
 - importacao OFX;
 - API/UI de reservas, apesar do schema existir;
 - configuracoes finais e empacotamento Electron.
@@ -37,15 +38,13 @@ Ainda nao estao implementados:
 
 - [Memoria do projeto para agentes](AGENTS.md)
 - [Regras de negocio](docs/regras-negocio.md)
-- [Regras de cartao de credito](docs/regras-cartao.md)
 - [Modulos do projeto](docs/modulos.md)
 - [Categorias financeiras](docs/categorias.md)
 - [Orientacao de importacao CSV](docs/orientacao-importacao-csv.md)
 - [Decisoes tecnicas](docs/decisoes-tecnicas.md)
 - [Visual e usabilidade](docs/visual-usabilidade.md)
 - [Criterios de qualidade](docs/criterios-qualidade.md)
-- [Roadmap de features](TODO.md)
-- [Guia de features e fluxos](docs/guia-features-fluxos.md)
+- [Roadmap de features](.specs/project/ROADMAP.md)
 
 ## Desenvolvimento
 

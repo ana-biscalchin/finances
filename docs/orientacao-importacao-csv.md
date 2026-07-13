@@ -199,9 +199,12 @@ Para parcelas, a checagem tolera diferenca de ate 2 centavos no valor e nao exig
 
 Na confirmacao, `preventDuplicates` tambem evita recriar compras de cartao ja existentes no mesmo mes da fatura com mesmo cartao, descricao normalizada e valor compativel.
 
-## Conciliador de Extrato
+## Conciliador de Extrato — capacidade atual em simplificacao
 
-O conciliador em **Lancamentos > Conciliar extrato** e um fluxo diferente da importacao geral.
+O conciliador em **Lancamentos > Conciliar extrato** existe hoje como um fluxo diferente da
+importacao geral. Ele nao e mais a direcao principal do produto: a spec
+`.specs/features/monthly-foundation/spec.md` define sua substituicao por importacao com previa e
+conferencia simples. Ate essa mudanca ser implementada, o comportamento atual e:
 
 - O CSV e lido no cliente.
 - Ele exige apenas data, descricao e valor.

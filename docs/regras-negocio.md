@@ -97,6 +97,8 @@ Este documento descreve as regras que o app aplica hoje. Ele deve ser a referenc
 - Em lancamento manual com `installmentCount > 1`, a API divide o valor em parcelas mensais.
 - A ultima parcela recebe eventual diferenca de centavos.
 - Cada parcela avanca um mes a partir do `budgetMonth` inicial.
+- Cada parcela consome o planejamento no mes da respectiva fatura; a data original da compra permanece disponivel para analises separadas.
+- Quando o banco repetir a data original em faturas diferentes, essa data nao move as parcelas para o mesmo mes de planejamento.
 - Na importacao de fatura, uma linha `2/3` gera a parcela atual `2/3` na fatura aberta e as futuras restantes, sem criar a `1/3`.
 - Duplicatas de parcelas futuras sao evitadas na confirmacao da importacao.
 - Editar uma parcela existente nao deve recriar a serie nem mover automaticamente a parcela para outro mes de fatura.
@@ -167,5 +169,8 @@ Este documento descreve as regras que o app aplica hoje. Ele deve ser a referenc
 ## Reservas e backups
 
 - Reservas existem no schema (`reserve_goals` e `reserve_movements`), mas ainda nao possuem API/UI implementadas.
-- Backups ainda nao possuem API/UI implementadas.
+- Backups locais podem ser criados, listados, restaurados e excluidos pela API/UI.
+- Antes de restaurar, o sistema valida o arquivo e cria um backup de seguranca do estado atual.
+- Google Drive e uma integracao opcional para envio e download de backups.
+- Retencao, rotacao e verificacao periodica de backups ainda nao estao implementadas.
 - OFX ainda nao esta implementado.

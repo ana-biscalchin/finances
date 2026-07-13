@@ -157,7 +157,31 @@ Decisão atual:
 - Utilizar a API de Backup Online nativa do SQLite via `better-sqlite3` para realizar backups e restaurações de forma consistente, sem risco de corrupção ou perda de dados.
 - Armazenar backups no diretório `data/backups/` com data/hora no nome.
 - Criar backup automático `pre-restore-` imediatamente antes de cada restauração para garantir recuperação segura.
-- Detalhes completos em [Estratégia de Backup Local do SQLite](estrategia-backups.md).
+
+### Arquivos e nomenclatura
+
+- Backup manual: `backup-YYYY-MM-DD-HHmmss.sqlite`.
+- Ponto anterior à restauração: `pre-restore-YYYY-MM-DD-HHmmss.sqlite`.
+- Banco e backups ficam em `data/`, fora do versionamento.
+
+### Segurança da criação e restauração
+
+- O banco usa WAL; por isso o arquivo ativo não deve ser copiado diretamente.
+- A criação usa `db.backup(destinationPath)` para obter uma cópia transacional consistente.
+- Antes da restauração, o arquivo é aberto e validado com `PRAGMA integrity_check`.
+- Depois da validação, o estado atual recebe um backup `pre-restore-` antes de qualquer substituição.
+- A restauração usa a API de backup do SQLite para preservar a conexão principal utilizada pela API.
+- A interface exige confirmação explícita antes de restaurar e informa nome, data, tamanho e tipo dos arquivos.
+
+### Contratos implementados
+
+- `POST /backups/create`: cria backup manual.
+- `GET /backups`: lista do mais recente para o mais antigo.
+- `POST /backups/:name/restore`: valida, cria o ponto de segurança e restaura.
+- `DELETE /backups/:name`: exclui um arquivo de backup permitido.
+- A tela de Configurações cria, lista, restaura e exclui backups locais e oferece integração opcional com Google Drive.
+
+Retenção automática, rotação e verificação periódica continuam pendentes.
 
 ## Estado Atual E Pendencias
 
@@ -188,7 +212,7 @@ Status: parcial.
 
 - Exportacao CSV implementada.
 - Importacao CSV implementada.
-- Backups do SQLite definidos e em desenvolvimento (ver [Estratégia de Backup Local do SQLite](estrategia-backups.md)).
+- Backups locais do SQLite implementados com criacao, listagem, restauracao segura e exclusao; integracao opcional com Google Drive tambem esta disponivel.
 - Importacao OFX pendente.
 - Avaliar senha local ou criptografia do banco, se fizer sentido.
 

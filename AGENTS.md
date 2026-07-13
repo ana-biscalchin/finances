@@ -1,13 +1,16 @@
-# Memoria Do Projeto Para Agentes
+# Carteira Da Ana — Memoria Do Projeto Para Agentes
 
 Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 
 ## Identidade Do Projeto
 
 - Nome do repo remoto: `ana-biscalchin/finances`.
-- Caminho local atual: `/home/ana/financas`.
-- Objetivo: app local de financas pessoais.
-- Status atual: app local em desenvolvimento com nucleos de contas, categorias, lancamentos, faturas, controle mensal, importacao CSV e relatorios iniciais implementados.
+- Produto: `Carteira da Ana`, projeto pessoal da Ana.
+- Caminho local atual: `/home/ana/Documents/pessoal/finances`.
+- Objetivo: gerenciar financas pessoais.
+- Status atual: prototipo local em desenvolvimento com nucleos de contas, categorias, lancamentos, faturas, controle mensal, importacao CSV, relatorios e backups implementados.
+- Distribuicao atual: aplicacao web local.
+- Distribuicao futura: web ou desktop, ainda a decidir.
 
 ## Stack Decidida
 
@@ -19,7 +22,7 @@ Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 - Gerenciador de pacotes: pnpm (workspaces).
 - Graficos: Recharts.
 - Icones: Tabler Icons.
-- Empacotamento futuro: Electron.
+- Empacotamento futuro: decisao aberta; Electron e uma possibilidade, nao uma escolha confirmada.
 
 ## Principios Importantes
 
@@ -27,6 +30,7 @@ Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 - Preparar arquitetura para Electron, sem comecar por Electron.
 - Banco local no inicio, com backups simples.
 - Controle mensal e a tela central do app.
+- O Controle mensal ainda nao esta satisfatorio; avaliar seus problemas antes de redesenha-lo.
 - Relatorios devem ser bonitos, claros e explicativos.
 - Categorias e subcategorias devem ser gerenciaveis e renomeaveis.
 - Meios de pagamento sao hardcoded/semeados e nao precisam de CRUD.
@@ -41,15 +45,16 @@ Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 ## Documentos De Referencia
 
 - `README.md`: visao geral do projeto.
+- `.specs/codebase/STACK.md`: stack, versoes, comandos e observacoes do ambiente.
+- `.specs/codebase/ARCHITECTURE.md`: componentes, integracoes e fluxos criticos.
 - `docs/regras-negocio.md`: regras de negocio atuais.
-- `docs/regras-cartao.md`: regras especificas de cartao e fatura.
+- `docs/regras-negocio.md`: regras financeiras, inclusive cartao e fatura.
 - `docs/decisoes-tecnicas.md`: stack e decisoes tecnicas.
 - `docs/modulos.md`: modulos funcionais.
 - `docs/categorias.md`: taxonomia inicial de categorias.
 - `docs/orientacao-importacao-csv.md`: guia de importacao CSV.
 - `docs/visual-usabilidade.md`: direcao visual e UX.
 - `docs/criterios-qualidade.md`: regras para avaliar codigo, especialmente codigo gerado por IA.
-- `TODO.md`: roadmap de features pendentes.
 
 ## Estrutura Do Projeto
 
@@ -75,13 +80,15 @@ Manter separacao entre UI, API, banco e dominio.
 - Modo claro/escuro.
 - Estrategia de leitura OFX.
 - API/UI de reservas.
+- Distribuicao futura como aplicacao web ou desktop.
 
 ## Como Trabalhar Neste Repo
 
 - Antes de implementar regra financeira, consultar `docs/regras-negocio.md`.
 - Antes de aceitar codigo gerado por IA, consultar `docs/criterios-qualidade.md`.
+- Consultar `.specs/codebase/STACK.md` e `.specs/codebase/ARCHITECTURE.md` antes de mudancas estruturais.
 - Registrar decisoes novas em `docs/`.
-- Manter `TODO.md` apenas com tarefas pendentes conforme as etapas forem concluidas.
+- Usar `.specs/project/ROADMAP.md` para planejamento futuro quando ele for preenchido.
 - Preferir commits pequenos por etapa funcional.
 - Nao apagar historico ou conteudo sem confirmacao explicita.
 - Nao commitar banco SQLite local, backups, `.env` ou artefatos de build.
@@ -107,7 +114,6 @@ Ao terminar uma etapa de desenvolvimento, sempre responder com:
 - Features que precisam ser testadas visualmente.
 - O que o app ja e capaz de fazer.
 - Quais testes unitarios foram implementados/executados.
-- Quais comandos de verificacao foram rodados.
-- URL local para revisao.
+
 
 Quando houver app visual para revisar, deixar `pnpm dev` rodando em segundo plano para a usuaria abrir o app.

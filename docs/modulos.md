@@ -22,7 +22,8 @@ Status: implementado.
 Funcoes principais:
 
 - Selecionar mes de analise.
-- Ver valores planejados, realizados, comprometidos e disponiveis.
+- Ver valores planejados, realizados, comprometidos e disponiveis no comportamento atual.
+- Evoluir a leitura principal para planejado, gasto e disponivel, indicando quando estiver acima do planejado, conforme a spec ativa.
 - Alternar entre regime de competencia e regime de caixa.
 - Agrupar a visao de competencia por categoria e subcategoria.
 - Editar planejamento mensal inline.
@@ -50,7 +51,8 @@ Funcoes principais:
 - Filtrar por mes, conta, meio de pagamento, categoria e tipo.
 - Criar transferencias entre contas por lancamentos vinculados.
 - Exportar CSV.
-- Importar CSV com previa, mapeamento de colunas, reconciliacao e prevencao de duplicatas.
+- Importar CSV com previa, mapeamento de colunas e prevencao de duplicatas.
+- Conciliar extratos pelo fluxo atual de correspondencias, planejado para simplificacao.
 
 Arquivos principais:
 
@@ -111,7 +113,7 @@ Arquivos principais:
 
 - `apps/api/src/modules/credit-cards.ts`
 - `apps/web/src/app/cards/BillsPage.tsx`
-- `docs/regras-cartao.md`
+- `docs/regras-negocio.md`
 
 ### Orcamentos
 
@@ -163,6 +165,30 @@ Arquivo principal:
 
 - `packages/database/src/seed-data.ts`
 
+### Backups e configuracoes
+
+Status: implementado parcialmente.
+
+Funcoes atuais:
+
+- Criar, listar e excluir backups locais do SQLite.
+- Validar e restaurar backup com ponto de seguranca anterior a restauracao.
+- Configurar e usar integracao opcional com Google Drive.
+- Exibir o caminho local dos dados e o historico de backups.
+
+Ainda faltam:
+
+- Retencao e rotacao automatica.
+- Verificacao periodica dos backups.
+- Preferencias gerais que nao sejam de backup.
+
+Arquivos principais:
+
+- `apps/api/src/modules/backups.ts`
+- `apps/api/src/modules/settings.ts`
+- `apps/web/src/app/settings/SettingsPage.tsx`
+- `apps/api/src/backups.test.ts`
+
 ## Parcial ou futuro
 
 ### Reservas
@@ -181,17 +207,6 @@ Falta implementar:
 - Tela de reservas.
 - Relatorios de evolucao de reservas.
 
-### Backups
-
-Status: nao implementado.
-
-Falta implementar:
-
-- Criar backup manual do SQLite.
-- Listar backups.
-- Restaurar backup com confirmacao.
-- Definir retencao e local padrao.
-
 ### OFX
 
 Status: nao implementado.
@@ -200,6 +215,33 @@ CSV ja existe para importacao/exportacao. OFX permanece como melhoria futura.
 
 ### Configuracoes
 
-Status: tela placeholder.
+Status: parcialmente implementado.
 
-Preferencias, backup/restauro, leitura OFX, autenticacao local e criptografia ainda nao foram definidos.
+Backup local, restauracao e integracao opcional com Google Drive estao implementados. Preferencias
+gerais, leitura OFX, autenticacao local e criptografia ainda nao foram definidos.
+
+## Fluxos financeiros principais
+
+### Compra e pagamento de cartao
+
+1. A compra preserva a data original e entra no mes da respectiva fatura.
+2. A compra aumenta a fatura e o consumo mensal, mas nao altera uma conta.
+3. O pagamento cria a saida na conta pagadora sem somar uma segunda despesa ao consumo.
+4. Parcelas futuras permanecem em suas respectivas faturas, mesmo quando o banco repete a data original.
+
+### Competencia e caixa
+
+- `Visao do mes` explica planejamento e consumo economico.
+- `Dinheiro nas contas` explica entradas, saidas, faturas e risco de saldo negativo.
+- A mesma compra de cartao aparece como consumo no mes da parcela e como caixa apenas quando a fatura e paga.
+
+### Importacao
+
+O comportamento atual oferece mapeamento, previa, protecao contra duplicidade e um conciliador por
+pontuacao. A direcao aprovada e uma conferencia simples antes da confirmacao; matching avancado e IA
+nao devem orientar novas implementacoes agora.
+
+### Transferencia interna
+
+A API representa a transferencia por uma saida na origem e uma entrada equivalente no destino.
+Ambas ficam vinculadas e devem ser tratadas atomicamente, sem impacto em consumo ou renda.

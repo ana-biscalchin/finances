@@ -61,16 +61,15 @@ Deve combinar:
 
 - Tabela agrupada.
 - Barras de progresso por categoria.
-- Destaques para estouro ou proximidade do limite.
+- Destaques para valores acima do planejado ou proximidade do limite.
 - Seletor de mes.
 - Abas de competencia e caixa.
 - Detalhamento por fonte e meio quando a categoria/subcategoria for aberta para edicao.
 
 Indicadores:
 
-- Planejado/alocado.
-- Comprometido.
-- Realizado.
+- Planejado.
+- Gasto.
 - Disponivel.
 - Percentual usado.
 
