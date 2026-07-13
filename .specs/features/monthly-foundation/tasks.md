@@ -193,12 +193,12 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** MON-01, CASH-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Visão mensal retorna planejado, gasto, disponível e valor acima do planejado por subcategoria/categoria.
-  - [ ] Parcela consome o mês da fatura; pagamento e transferência não duplicam gasto.
-  - [ ] Caixa retorna saldo atual, previsões recorrentes, faturas e saldo esperado por conta.
-  - [ ] Edição de orçamento usa chave única mês + subcategoria e zero remove com contrato explícito.
-  - [ ] Teste: domínio e `budgets.test.ts` cobrem consumo, caixa, parcelas, recorrências e ausência de duplicidade; gates passam com cobertura ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/coding-style.md#2-arquitetura-em-camadas`.
+  - [x] Visão mensal retorna planejado, gasto, disponível e valor acima do planejado por subcategoria/categoria.
+  - [x] Parcela consome o mês da fatura; pagamento e transferência não duplicam gasto.
+  - [x] Caixa retorna saldo atual, previsões recorrentes, faturas e saldo esperado por conta.
+  - [x] Edição de orçamento usa chave única mês + subcategoria e zero remove com contrato explícito.
+  - [x] Teste: domínio e `budgets.test.ts` cobrem consumo, caixa, parcelas, recorrências e ausência de duplicidade; gates passam com cobertura ≥ 80%.
+  - [x] Constituição: respeita `ana-standards/references/coding-style.md#2-arquitetura-em-camadas`.
 - **Testes:** unit + integração API
 - **Gate:** completo dos pacotes
 - **Commit:** `feat(api): expose monthly financial views`
