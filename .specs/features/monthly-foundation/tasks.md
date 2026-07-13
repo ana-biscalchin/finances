@@ -60,12 +60,12 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** MON-01, TRF-01, BILL-01, REC-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Migration cria backup e valida integridade antes de recriar tabelas.
-  - [ ] Constraints garantem chaves únicas, valores válidos e referências necessárias.
-  - [ ] Dados determinísticos são preservados; dados ambíguos descartados aparecem em relatório explícito.
-  - [ ] Falha em qualquer validação interrompe a migração e mantém caminho de restauração.
-  - [ ] Teste: migration em banco temporário cobre sucesso, descarte relatado e rollback; gate `pnpm --filter @finances/database test` passa com cobertura ≥ 80% do código novo.
-  - [ ] Constituição: respeita `ana-standards/references/testing.md` e `ana-standards/references/error-handling.md`.
+  - [x] Migration cria backup e valida integridade antes de recriar tabelas.
+  - [x] Constraints garantem chaves únicas, valores válidos e referências necessárias.
+  - [x] Dados determinísticos são preservados; dados ambíguos descartados aparecem em relatório explícito.
+  - [x] Falha em qualquer validação interrompe a migração e mantém caminho de restauração.
+  - [x] Teste: migration em banco temporário cobre sucesso, descarte relatado e rollback; gate `pnpm --filter @finances/database test` passa com cobertura ≥ 80% do código novo.
+  - [x] Constituição: respeita `ana-standards/references/testing.md` e `ana-standards/references/error-handling.md`.
 - **Testes:** integração SQLite isolada
 - **Gate:** completo do pacote
 - **Commit:** `feat(database): rebuild financial schema`

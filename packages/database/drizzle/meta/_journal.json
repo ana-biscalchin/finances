@@ -64,6 +64,13 @@
       "when": 1782226429261,
       "tag": "0008_brown_kylun",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1783953917342,
+      "tag": "0009_salty_goblin_queen",
+      "breakpoints": true
     }
   ]
 }
