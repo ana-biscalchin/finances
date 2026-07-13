@@ -83,10 +83,10 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** TRF-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Origem igual ao destino, valor inválido ou par divergente são rejeitados.
-  - [ ] O agregado produz exatamente uma saída e uma entrada economicamente neutras.
-  - [ ] Teste: `transfers.test.ts` cobre criação, edição e invariantes; gate do domínio passa com cobertura ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/coding-style.md#2-arquitetura-em-camadas`.
+  - [x] Origem igual ao destino, valor inválido ou par divergente são rejeitados.
+  - [x] O agregado produz exatamente uma saída e uma entrada economicamente neutras.
+  - [x] Teste: `transfers.test.ts` cobre criação, edição e invariantes; gate do domínio passa com cobertura ≥ 80%.
+  - [x] Constituição: respeita `ana-standards/references/coding-style.md#2-arquitetura-em-camadas`.
 - **Testes:** unit
 - **Gate:** rápido
 - **Commit:** `feat(domain): model account transfers`
