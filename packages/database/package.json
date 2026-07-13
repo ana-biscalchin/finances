@@ -11,6 +11,8 @@
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "tsx src/migrate.ts",
     "db:seed": "tsx src/seed.ts",
+    "db:seed:demo": "tsx src/seed-demo.ts",
+    "db:reset:dev": "tsx src/reset-development.ts",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",

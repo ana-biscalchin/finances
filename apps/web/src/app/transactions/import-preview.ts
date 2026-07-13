@@ -1,7 +1,5 @@
-export type ImportPreviewBulkAccount = {
-  id: string;
-  defaultPaymentMethodId: string | null;
-};
+import type { Account } from "../shared/api-contracts";
+import { changeAccountPaymentSource } from "./payment-source-state";
 
 export type ImportPreviewBulkItem = {
   tempId: string;
@@ -22,14 +20,9 @@ export function applyImportPreviewBulkEdits<T extends ImportPreviewBulkItem>(
   items: T[],
   selectedTempIds: Set<string>,
   edit: ImportPreviewBulkEdit,
-  accounts: ImportPreviewBulkAccount[],
+  accounts: Account[],
   emptySelectValue: string
 ): T[] {
-  const selectedAccount =
-    edit.accountId === emptySelectValue
-      ? null
-      : accounts.find((account) => account.id === edit.accountId);
-
   return items.map((item) => {
     if (!selectedTempIds.has(item.tempId)) {
       return item;
@@ -45,8 +38,12 @@ export function applyImportPreviewBulkEdits<T extends ImportPreviewBulkItem>(
       nextItem.accountId = edit.accountId === "__clear__" ? null : edit.accountId;
       if (edit.accountId === "__clear__") {
         nextItem.paymentMethodId = null;
-      } else if (edit.paymentMethodId === emptySelectValue && selectedAccount?.defaultPaymentMethodId) {
-        nextItem.paymentMethodId = selectedAccount.defaultPaymentMethodId;
+      } else if (edit.paymentMethodId === emptySelectValue) {
+        nextItem.paymentMethodId = changeAccountPaymentSource(
+          accounts,
+          edit.accountId,
+          nextItem.paymentMethodId
+        ).paymentMethodId;
       }
     }
 

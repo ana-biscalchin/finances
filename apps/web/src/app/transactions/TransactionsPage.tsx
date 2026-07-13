@@ -52,6 +52,14 @@ import { MonthSelector } from "../shared/MonthSelector";
 import { QuickAmountEdit, QuickDateEdit, QuickTextEdit } from "../shared/QuickEditFields";
 import { SortableTableHeader } from "../shared/SortableTableHeader";
 import { SimpleCsvImportDialog } from "./SimpleCsvImportDialog";
+import { apiClient } from "../shared/api-client";
+import { accountsSchema, type Account } from "../shared/api-contracts";
+import {
+  changeAccountPaymentSource,
+  chooseCardPaymentSource,
+  getAccountPaymentMethodOptions,
+  isValidAccountPaymentSource
+} from "./payment-source-state";
 
 type Transaction = {
   id: string;
@@ -67,14 +75,6 @@ type Transaction = {
   status: string;
   notes: string | null;
   transferId?: string | null;
-};
-
-type Account = {
-  id: string;
-  name: string;
-  isActive: boolean;
-  isPrimary: boolean;
-  defaultPaymentMethodId: string | null;
 };
 
 type PaymentMethod = {
@@ -161,8 +161,6 @@ const emptyForm: TransactionFormState = {
   installmentCount: 1
 };
 
-const creditCardPaymentMethodId = "pm-credit-card";
-
 export function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -201,17 +199,19 @@ export function TransactionsPage() {
     () => accounts.map((account) => ({ value: account.id, label: account.name })),
     [accounts]
   );
-  const paymentMethodOptions = useMemo(
+  const formPaymentMethodOptions = useMemo(
     () => [
-      { value: emptySelectValue, label: "Sem meio de pagamento" },
-      ...paymentMethods
-        .filter((pm) => (pm as PaymentMethod & { kind?: string }).kind !== "credit_card")
-        .map((paymentMethod) => ({
-          value: paymentMethod.id,
-          label: paymentMethod.name
-        }))
+      { value: emptySelectValue, label: "Selecione uma forma" },
+      ...getAccountPaymentMethodOptions(accounts, toNullableSelectValue(form.accountId))
     ],
-    [paymentMethods]
+    [accounts, form.accountId]
+  );
+  const bulkPaymentMethodOptions = useMemo(
+    () =>
+      bulkAccountId === emptySelectValue || bulkAccountId === "__clear__"
+        ? []
+        : getAccountPaymentMethodOptions(accounts, bulkAccountId),
+    [accounts, bulkAccountId]
   );
   const filterPaymentMethodOptions = useMemo(
     () => [
@@ -270,22 +270,17 @@ export function TransactionsPage() {
   async function loadReferences() {
     const [accountsResponse, paymentMethodsResponse, categoriesResponse, creditCardsResponse] =
       await Promise.all([
-        fetch(`${apiBaseUrl}/accounts`),
+        apiClient.get("/accounts", accountsSchema),
         fetch(`${apiBaseUrl}/payment-methods`),
         fetch(`${apiBaseUrl}/categories?includeInactive=true`),
         fetch(`${apiBaseUrl}/credit-cards`)
       ]);
 
-    if (
-      !accountsResponse.ok ||
-      !paymentMethodsResponse.ok ||
-      !categoriesResponse.ok ||
-      !creditCardsResponse.ok
-    ) {
+    if (!paymentMethodsResponse.ok || !categoriesResponse.ok || !creditCardsResponse.ok) {
       throw new Error("Não foi possível carregar os dados do formulário.");
     }
 
-    const nextAccounts = (await accountsResponse.json()) as Account[];
+    const nextAccounts = accountsResponse;
     const nextPaymentMethods = (await paymentMethodsResponse.json()) as PaymentMethod[];
     const nextCategories = (await categoriesResponse.json()) as Category[];
     const nextCreditCards = (await creditCardsResponse.json()) as CreditCard[];
@@ -472,14 +467,16 @@ export function TransactionsPage() {
   }
 
   function updateAccount(accountId: string) {
-    const account = accounts.find((currentAccount) => currentAccount.id === accountId);
-
+    const next = changeAccountPaymentSource(
+      accounts,
+      toNullableSelectValue(accountId),
+      toNullableSelectValue(form.paymentMethodId)
+    );
     setForm((current) => ({
       ...current,
-      accountId,
-      paymentMethodId: account
-        ? (account.defaultPaymentMethodId ?? emptySelectValue)
-        : emptySelectValue
+      accountId: next.accountId ?? emptySelectValue,
+      paymentMethodId: next.paymentMethodId ?? emptySelectValue,
+      creditCardId: emptySelectValue
     }));
   }
 
@@ -494,6 +491,18 @@ export function TransactionsPage() {
       const creditCardId = isCardMode ? toNullableSelectValue(form.creditCardId) : null;
       if (isCardMode && !creditCardId) {
         throw new Error("Selecione um cartão de crédito.");
+      }
+      if (
+        !isCardMode &&
+        form.type === "expense" &&
+        !isTransferCategory &&
+        !isValidAccountPaymentSource(
+          accounts,
+          toNullableSelectValue(form.accountId),
+          toNullableSelectValue(form.paymentMethodId)
+        )
+      ) {
+        throw new Error("Selecione uma conta e uma forma de pagamento associada.");
       }
       if (isTransferCategory) {
         const originAccountId = toNullableSelectValue(form.accountId);
@@ -691,9 +700,7 @@ export function TransactionsPage() {
         !filterPaymentMethodIds.some((paymentMethodId) =>
           paymentMethodId === missingFilterValue
             ? transaction.paymentMethodId === null && !transaction.creditCardId
-            : paymentMethodId === creditCardPaymentMethodId
-              ? Boolean(transaction.creditCardId) || transaction.paymentMethodId === paymentMethodId
-              : transaction.paymentMethodId === paymentMethodId
+            : transaction.paymentMethodId === paymentMethodId
         )
       ) {
         return false;
@@ -885,9 +892,14 @@ export function TransactionsPage() {
               data={[{ value: emptySelectValue, label: "Sem conta" }, ...accountOptions]}
               value={transaction.accountId ?? emptySelectValue}
               onChange={(value) =>
-                void updateTransactionInline(transaction, {
-                  accountId: value === emptySelectValue ? null : value
-                })
+                void updateTransactionInline(
+                  transaction,
+                  changeAccountPaymentSource(
+                    accounts,
+                    value === emptySelectValue ? null : value,
+                    transaction.paymentMethodId
+                  )
+                )
               }
               searchable
               styles={{
@@ -914,7 +926,10 @@ export function TransactionsPage() {
             <Select
               size="xs"
               variant="unstyled"
-              data={paymentMethodOptions}
+              data={[
+                { value: emptySelectValue, label: "Selecione uma forma" },
+                ...getAccountPaymentMethodOptions(accounts, transaction.accountId)
+              ]}
               value={transaction.paymentMethodId ?? emptySelectValue}
               onChange={(value) =>
                 void updateTransactionInline(transaction, {
@@ -1002,11 +1017,6 @@ export function TransactionsPage() {
       return;
     }
 
-    const selectedAccount =
-      bulkAccountId !== emptySelectValue && bulkAccountId !== "__clear__"
-        ? accounts.find((account) => account.id === bulkAccountId)
-        : null;
-
     setIsBulkSaving(true);
     setError(null);
 
@@ -1018,13 +1028,13 @@ export function TransactionsPage() {
 
         if (!transaction.creditCardId) {
           if (bulkAccountId !== emptySelectValue) {
-            nextTransaction.accountId = bulkAccountId === "__clear__" ? null : bulkAccountId;
-            if (
-              bulkPaymentMethodId === emptySelectValue &&
-              selectedAccount?.defaultPaymentMethodId
-            ) {
-              nextTransaction.paymentMethodId = selectedAccount.defaultPaymentMethodId;
-            }
+            const source = changeAccountPaymentSource(
+              accounts,
+              bulkAccountId === "__clear__" ? null : bulkAccountId,
+              nextTransaction.paymentMethodId
+            );
+            nextTransaction.accountId = source.accountId;
+            nextTransaction.paymentMethodId = source.paymentMethodId;
           }
 
           if (bulkPaymentMethodId !== emptySelectValue) {
@@ -1126,7 +1136,6 @@ export function TransactionsPage() {
               variant="light"
               leftSection={<IconUpload size={18} />}
               onClick={() => {
-                
                 setIsImportModalOpen(true);
               }}
             >
@@ -1308,7 +1317,10 @@ export function TransactionsPage() {
                         ...accountOptions
                       ]}
                       value={bulkAccountId}
-                      onChange={(value) => setBulkAccountId(value ?? emptySelectValue)}
+                      onChange={(value) => {
+                        setBulkAccountId(value ?? emptySelectValue);
+                        setBulkPaymentMethodId(emptySelectValue);
+                      }}
                       searchable
                     />
                     <Select
@@ -1317,9 +1329,7 @@ export function TransactionsPage() {
                       data={[
                         { value: emptySelectValue, label: "Manter forma atual" },
                         { value: "__clear__", label: "Sem meio de pagamento" },
-                        ...paymentMethodOptions.filter(
-                          (option) => option.value !== emptySelectValue
-                        )
+                        ...bulkPaymentMethodOptions
                       ]}
                       value={bulkPaymentMethodId}
                       onChange={(value) => setBulkPaymentMethodId(value ?? emptySelectValue)}
@@ -1537,11 +1547,16 @@ export function TransactionsPage() {
                   setForm((current) => {
                     const isCard = value === "card";
                     const defaultCard = creditCards.find((c) => c.isDefault && c.isActive);
+                    const cardSource = chooseCardPaymentSource(
+                      isCard ? (defaultCard?.id ?? null) : null
+                    );
                     return {
                       ...current,
                       paymentMode: isCard ? "card" : "account",
+                      accountId: isCard ? emptySelectValue : current.accountId,
+                      paymentMethodId: isCard ? emptySelectValue : current.paymentMethodId,
                       creditCardId: isCard
-                        ? (defaultCard?.id ?? emptySelectValue)
+                        ? (cardSource.creditCardId ?? emptySelectValue)
                         : emptySelectValue
                     };
                   })
@@ -1574,7 +1589,7 @@ export function TransactionsPage() {
               )}
               <Select
                 label="Meio de pagamento"
-                data={paymentMethodOptions}
+                data={formPaymentMethodOptions}
                 value={form.paymentMethodId}
                 onChange={(value) =>
                   setForm((current) => ({
@@ -1728,8 +1743,15 @@ export function TransactionsPage() {
         </Affix>
       ) : null}
 
-      <SimpleCsvImportDialog opened={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onImported={() => { setIsImportModalOpen(false); void loadTransactions(); }} />
-
+      <SimpleCsvImportDialog
+        accounts={accounts}
+        opened={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImported={() => {
+          setIsImportModalOpen(false);
+          void loadTransactions();
+        }}
+      />
     </Stack>
   );
 }
@@ -1747,7 +1769,10 @@ function buildEmptyFormWithDefaults(
     eventDate,
     budgetMonth: eventDate.slice(0, 7),
     accountId: primaryAccount?.id ?? emptySelectValue,
-    paymentMethodId: primaryAccount?.defaultPaymentMethodId ?? emptySelectValue,
+    paymentMethodId: primaryAccount
+      ? (changeAccountPaymentSource(accounts, primaryAccount.id, null).paymentMethodId ??
+        emptySelectValue)
+      : emptySelectValue,
     paymentMode: "account",
     creditCardId: defaultCard?.id ?? emptySelectValue,
     installmentCount: 1
@@ -1788,10 +1813,7 @@ function buildTransactionSearchParams({
 }) {
   const params = new URLSearchParams({ budgetMonth: selectedMonth });
   if (filterType !== emptySelectValue) params.set("type", filterType);
-  if (
-    filterPaymentMethodIds.length === 1 &&
-    filterPaymentMethodIds[0] !== creditCardPaymentMethodId
-  ) {
+  if (filterPaymentMethodIds.length === 1) {
     params.set("paymentMethodId", filterPaymentMethodIds[0]);
   }
   if (filterSubcategoryIds.length === 1) {

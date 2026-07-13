@@ -7,6 +7,7 @@ import {
 } from "@finances/database";
 import { billPaymentInputSchema, summarizeBillPayments, type BillPaymentInput } from "@finances/domain";
 import { and, eq } from "drizzle-orm";
+import { getDefaultAccountPaymentMethodId } from "../modules/accounts/payment-method-associations.js";
 
 type Connection = ReturnType<typeof createDatabaseConnection>;
 type Hooks = { afterCashMovement?: () => void };
@@ -75,7 +76,7 @@ export function createBillPaymentService(connection: Connection, hooks: Hooks = 
           id: transactionId, type: "expense", description: `Pagamento de fatura ${bill.billMonth}`,
           amountCents: parsed.amountCents, eventDate: parsed.paymentDate,
           budgetMonth: parsed.paymentDate.slice(0, 7), accountId: parsed.accountId,
-          paymentMethodId: account.defaultPaymentMethodId, creditCardBillId: billId,
+          paymentMethodId: getDefaultAccountPaymentMethodId(connection, account.id), creditCardBillId: billId,
           status: "confirmed", notes: `bill-payment:${paymentId}`
         }).run();
         hooks.afterCashMovement?.();

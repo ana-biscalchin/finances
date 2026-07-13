@@ -1,5 +1,5 @@
 import { detectCsvDelimiter, parseCsvRows } from "../shared/csv-utils.js";
-export type SimpleImportRow = { tempId: string; eventDate: string; budgetMonth: string; description: string; amountCents: number; type: "income" | "expense"; accountId: string | null; subcategoryId: string | null; isDuplicate?: boolean; selected: boolean };
+export type SimpleImportRow = { tempId: string; eventDate: string; budgetMonth: string; description: string; amountCents: number; type: "income" | "expense"; accountId: string | null; paymentMethodId: string | null; creditCardId: string | null; subcategoryId: string | null; isDuplicate?: boolean; selected: boolean };
 export function parseSimpleCsv(content: string): SimpleImportRow[] {
   const firstLine = content.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? ""; const delimiter = detectCsvDelimiter(firstLine); const rows = parseCsvRows(content.replace(/^\uFEFF/, ""), delimiter); if (rows.length < 2) return [];
   const headers = rows[0]!.map((item) => item.toLocaleLowerCase("pt-BR"));
@@ -7,7 +7,7 @@ export function parseSimpleCsv(content: string): SimpleImportRow[] {
   if (dateIndex < 0 || descriptionIndex < 0 || amountIndex < 0) throw new Error("CSV precisa conter data, descrição e valor.");
   return rows.slice(1).map((fields, rowIndex) => {
     const numeric = fields[amountIndex]!.replace(/[^0-9,.-]/g, ""); const decimal = numeric.includes(",") ? numeric.replaceAll(".", "").replace(",", ".") : numeric; const signed = Number(decimal); if (!Number.isFinite(signed)) throw new Error(`Valor inválido na linha ${rowIndex + 2}.`); const rawDate = fields[dateIndex]!; const eventDate = rawDate.includes("/") ? rawDate.split("/").reverse().join("-") : rawDate;
-    return { tempId: `row-${rowIndex}`, eventDate, budgetMonth: eventDate.slice(0, 7), description: fields[descriptionIndex]!, amountCents: Math.round(Math.abs(signed) * 100), type: signed < 0 ? "expense" : "income", accountId: null, subcategoryId: null, selected: true };
+    return { tempId: `row-${rowIndex}`, eventDate, budgetMonth: eventDate.slice(0, 7), description: fields[descriptionIndex]!, amountCents: Math.round(Math.abs(signed) * 100), type: signed < 0 ? "expense" : "income", accountId: null, paymentMethodId: null, creditCardId: null, subcategoryId: null, selected: true };
   });
 }
 export const applyDuplicateSelection = (rows: SimpleImportRow[]) => rows.map((row) => ({ ...row, selected: !row.isDuplicate }));

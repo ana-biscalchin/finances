@@ -5,7 +5,9 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 ## Visão do mês e orçamento
 
 - A construção inicial é mensal, com evolução patrimonial de longo prazo no backlog.
-- O orçamento tem uma única alocação por mês e subcategoria. Não varia por conta nem por meio de pagamento.
+- O orçamento mantém um total por mês e subcategoria e pode ser distribuído entre contas e cartões de crédito.
+- A distribuição pode ficar incompleta; o valor ainda sem origem permanece visível e não impede salvar.
+- A forma de pagamento não recebe orçamento próprio: ela explica como uma conta foi usada. O realizado é agrupado pela conta ou pelo cartão.
 - A interface mostra **planejado**, **gasto**, **disponível** e **acima do planejado**. `Comprometido` não é indicador principal.
 - `disponível = max(planejado - gasto, 0)` e `acima do planejado = max(gasto - planejado, 0)`.
 - Valor zero remove uma alocação, mediante confirmação na interface.
@@ -15,9 +17,12 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 
 ## Dinheiro nas contas
 
-- Conta representa onde existe saldo. O saldo atual parte do saldo inicial e soma os lançamentos realizados.
+- Conta representa onde existe saldo. Pix, débito e pré-pago são formas associadas à conta e não carregam saldo próprio.
+- Flash Alimentação e Flash Conveniência são contas de benefício independentes; o saldo não usado permanece para o mês seguinte.
+- Uma conta pode aceitar várias formas ativas e ter no máximo uma forma padrão.
+- O saldo atual parte do saldo inicial e soma os lançamentos realizados.
 - Receitas, reembolsos e estornos aumentam o saldo; despesas o reduzem.
-- `GET /cash-position?month=YYYY-MM` mostra saldo atual, previsões recorrentes, faturas e saldo esperado por conta.
+- `GET /cash-position?month=YYYY-MM` separa entradas livres, benefícios, plano direto restante, compras esperadas no cartão, faturas e saldo esperado por conta.
 - Recorrências futuras são previsões: não alteram saldo nem gasto até serem confirmadas.
 - A data-base explícita do saldo inicial permanece no backlog.
 
@@ -27,6 +32,7 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 - Datas de negócio usam `YYYY-MM-DD`; meses usam `YYYY-MM`.
 - Tipos: `income`, `expense`, `refund` e `chargeback`.
 - Lançamentos manuais e importados são realizados (`confirmed`) por padrão. `canceled` não entra em saldos ou agregações.
+- Despesa de consumo em conta exige uma forma ativa associada. Compra no cartão usa somente o cartão.
 - Categorias e subcategorias usam IDs internos, podem ser renomeadas e preservam o histórico.
 - Exclusão de lançamento é definitiva. Arquivamento de cadastros continua restaurável quando aplicável.
 - O escopo monetário atual é exclusivamente BRL.
@@ -52,7 +58,7 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 
 ## Recorrências
 
-- Regras mensais podem apontar para conta ou cartão e podem ser pausadas, retomadas ou encerradas.
+- Regras mensais podem apontar para conta+forma ou cartão e podem ser pausadas, retomadas ou encerradas.
 - Uma previsão não cria transação. A confirmação cria no máximo uma ocorrência real por regra e mês.
 - Dia 29–31 é ajustado ao último dia do mês.
 - No cartão, a ocorrência confirmada entra na fatura calculada; parcelamentos não são recorrências.

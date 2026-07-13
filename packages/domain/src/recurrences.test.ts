@@ -17,7 +17,7 @@ function exported<T>(name: string): T {
 
 const accountRule: Rule = {
   kind: "expense", description: "Aluguel", amountCents: 100_000,
-  subcategoryId: "subcategory-1", accountId: "account-1", frequency: "monthly",
+  subcategoryId: "subcategory-1", accountId: "account-1", paymentMethodId: "pm-pix", frequency: "monthly",
   dayOfMonth: 31, startMonth: "2026-01", status: "active"
 };
 
@@ -36,7 +36,7 @@ describe("monthly recurrence forecasts", () => {
   });
 
   it("places card forecasts in the bill month determined by closing day", () => {
-    const rule = { ...accountRule, accountId: null, creditCardId: "card-1", dayOfMonth: 15 };
+    const rule = { ...accountRule, accountId: null, paymentMethodId: null, creditCardId: "card-1", dayOfMonth: 15 };
     const forecast = exported<(rule: Rule, month: string, options: { cardClosingDay: number }) => Forecast>("buildRecurrenceForecast")(rule, "2026-07", { cardClosingDay: 10 });
     expect(forecast.eventDate).toBe("2026-07-15");
     expect(forecast.budgetMonth).toBe("2026-08");

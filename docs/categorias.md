@@ -1,13 +1,13 @@
 # Categorias Financeiras
 
-Este documento registra a taxonomia de receitas, despesas e movimentações usada no app. A taxonomia baseia-se em princípios de Fluxo de Caixa (Cash Flow), separando entradas, saídas e movimentações neutras.
+Este documento registra a taxonomia de receitas e despesas usada no app. Transferências entre contas próprias e pagamentos de fatura são movimentações estruturais, não categorias de consumo.
 
 ## Estrutura
 
 As categorias são organizadas em dois níveis principais:
 
 ```text
-Natureza (Receita, Despesa, Transferência)
+Natureza (Receita ou Despesa)
 └─ Categoria Pai
    └─ Subcategoria (Tag: Fixo/Variável/Extra)
 ```
@@ -26,11 +26,11 @@ Dinheiro saindo das suas contas para o "mundo exterior" ou para poupanças futur
 
 - Moradia, alimentação, compras, boletos e **aportes em investimentos**. (Nota de engenharia financeira: aportes são vistos como "saída" do caixa do dia a dia para construir patrimônio em outra conta não-caixa).
 
-### 3. Transferência (Transfer)
+### Movimentações estruturais
 
 Dinheiro mudando de bolso. Não deixa mais rico nem mais pobre.
 
-- Pagamento de fatura de cartão (pagar o cartão já gasto não é despesa nova), transferência entre bancos próprios.
+- Pagamento de fatura de cartão (pagar o cartão já gasto não é despesa nova) e transferência entre bancos próprios aparecem no fluxo de caixa, mas ficam fora da taxonomia de categorias.
 
 ---
 
@@ -53,12 +53,6 @@ Dinheiro mudando de bolso. Não deixa mais rico nem mais pobre.
   - Estorno `(Extra)`
   - Cashback `(Variável)`
   - Saldo anterior `(Extra)`
-
-### TRANSFERÊNCIAS (Neutro)
-
-- **Movimentações Internas**
-  - Entre minhas contas `(Variável)`
-  - Pagamento de fatura `(Fixo)`
 
 ### DESPESAS (Saídas)
 
@@ -129,4 +123,5 @@ Dinheiro mudando de bolso. Não deixa mais rico nem mais pobre.
 - As tags "Fixo/Variável/Extra" ajudam nos relatórios de despesas para mostrar o que é "Custo de Vida" vs "Estilo de Vida".
 - "Aporte" é registrado como Despesa para sair do fluxo de caixa diário. Em relatórios de "Quanto eu gastei de fato", a categoria "Investimentos" é simplesmente subtraída.
 - "Resgate" é registrado como Receita para entrar no fluxo de caixa disponível do mês.
-- Pagamento da fatura não é compra nova do cartão. As compras já foram registradas na fatura; ao marcar a fatura como paga, o app registra a saída da conta escolhida em `Movimentações Internas > Pagamento de fatura` para refletir o caixa sem duplicar o total da fatura.
+- Pagamento da fatura não é compra nova do cartão. As compras já foram registradas na fatura; ao pagar, o app registra a saída na conta escolhida e a vincula diretamente à fatura, sem categoria e sem duplicar o consumo.
+- Transferências são vinculadas diretamente às duas contas envolvidas. Suas duas pernas não recebem categoria e não alteram receitas, despesas ou orçamento.

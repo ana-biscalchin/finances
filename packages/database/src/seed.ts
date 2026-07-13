@@ -1,6 +1,6 @@
 import { createDatabaseConnection } from "./connection.js";
-import { categories, subcategories, paymentMethods } from "./schema.js";
-import { categorySeeds, paymentMethodSeeds } from "./seed-data.js";
+import { accountPaymentMethods, accounts, categories, subcategories, paymentMethods } from "./schema.js";
+import { accountPaymentMethodSeeds, accountSeeds, categorySeeds, paymentMethodSeeds } from "./seed-data.js";
 import { notInArray } from "drizzle-orm";
 
 const { db, sqlite } = createDatabaseConnection();
@@ -36,6 +36,20 @@ db.update(paymentMethods)
   })
   .where(notInArray(paymentMethods.id, activePaymentMethodIds))
   .run();
+
+for (const account of accountSeeds) {
+  db.insert(accounts).values({ ...account, initialBalanceCents: 0 }).onConflictDoUpdate({
+    target: accounts.id,
+    set: { ...account, isActive: true, updatedAt: now }
+  }).run();
+}
+
+for (const association of accountPaymentMethodSeeds) {
+  db.insert(accountPaymentMethods).values(association).onConflictDoUpdate({
+    target: accountPaymentMethods.id,
+    set: { ...association, isActive: true, archivedAt: null, updatedAt: now }
+  }).run();
+}
 
 for (const [categorySortOrder, category] of categorySeeds.entries()) {
   db.insert(categories)

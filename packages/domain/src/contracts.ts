@@ -33,11 +33,89 @@ export const transactionStatusSchema = z.enum([
   "canceled"
 ]);
 
+export const accountTypeSchema = z.enum([
+  "checking", "savings", "cash", "investment", "benefit", "digital_wallet"
+]);
+export const accountPaymentMethodInputSchema = z.object({
+  paymentMethodId: entityIdSchema,
+  isDefault: z.boolean().default(false)
+});
+export const accountInputSchema = z.object({
+  name: z.string().trim().min(1),
+  type: accountTypeSchema,
+  institution: z.string().trim().nullish(),
+  initialBalanceCents: z.number().int().default(0),
+  sortOrder: z.number().int().nonnegative().optional(),
+  isPrimary: z.boolean().default(false),
+  paymentMethods: z.array(accountPaymentMethodInputSchema).default([])
+}).superRefine((value, context) => {
+  const ids = value.paymentMethods.map((item) => item.paymentMethodId);
+  if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", message: "Duplicate account payment method", path: ["paymentMethods"] });
+  if (value.paymentMethods.filter((item) => item.isDefault).length > 1) context.addIssue({ code: "custom", message: "Account can have only one default payment method", path: ["paymentMethods"] });
+});
+
 export const budgetInputSchema = z.object({
   budgetMonth: yearMonthSchema,
   subcategoryId: entityIdSchema,
   amountCents: positiveCentsSchema
 });
+
+export const budgetAllocationInputSchema = z
+  .object({
+    accountId: entityIdSchema.nullish(),
+    creditCardId: entityIdSchema.nullish(),
+    amountCents: positiveCentsSchema
+  })
+  .superRefine((value, context) => {
+    if (Number(Boolean(value.accountId)) + Number(Boolean(value.creditCardId)) !== 1) {
+      context.addIssue({
+        code: "custom",
+        message: "Allocation must have exactly one payment source",
+        path: ["accountId"]
+      });
+    }
+  });
+
+export const distributedBudgetInputSchema = z
+  .object({
+    budgetMonth: yearMonthSchema,
+    subcategoryId: entityIdSchema,
+    amountCents: nonNegativeCentsSchema,
+    allocations: z.array(budgetAllocationInputSchema).default([])
+  })
+  .superRefine((value, context) => {
+    const sourceKeys = value.allocations.map((allocation) =>
+      allocation.accountId
+        ? `account:${allocation.accountId}`
+        : `credit_card:${allocation.creditCardId ?? ""}`
+    );
+    if (new Set(sourceKeys).size !== sourceKeys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Duplicate payment source",
+        path: ["allocations"]
+      });
+    }
+
+    const distributedCents = value.allocations.reduce(
+      (total, allocation) => total + allocation.amountCents,
+      0
+    );
+    if (distributedCents > value.amountCents) {
+      context.addIssue({
+        code: "custom",
+        message: "Distribution cannot exceed budget total",
+        path: ["allocations"]
+      });
+    }
+    if (value.amountCents === 0 && value.allocations.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Zero budget must have an empty distribution",
+        path: ["allocations"]
+      });
+    }
+  });
 
 export const transferInputSchema = z
   .object({
@@ -106,6 +184,14 @@ export const recurrenceInputSchema = z
       });
     }
 
+    if (value.accountId && value.kind === "expense" && !value.paymentMethodId) {
+      context.addIssue({
+        code: "custom",
+        message: "Account expense recurrence requires a payment method",
+        path: ["paymentMethodId"]
+      });
+    }
+
     if (value.creditCardId && value.kind !== "expense") {
       context.addIssue({
         code: "custom",
@@ -140,6 +226,10 @@ export const importTransactionInputSchema = z.object({
 });
 
 export type BudgetInput = z.infer<typeof budgetInputSchema>;
+export type AccountInput = z.infer<typeof accountInputSchema>;
+export type AccountPaymentMethodInput = z.infer<typeof accountPaymentMethodInputSchema>;
+export type BudgetAllocationInput = z.infer<typeof budgetAllocationInputSchema>;
+export type DistributedBudgetInput = z.infer<typeof distributedBudgetInputSchema>;
 export type TransferInput = z.infer<typeof transferInputSchema>;
 export type BillPaymentInput = z.infer<typeof billPaymentInputSchema>;
 export type RecurrenceInput = z.infer<typeof recurrenceInputSchema>;

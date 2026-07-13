@@ -18,7 +18,6 @@ export const accounts = sqliteTable("accounts", {
   initialBalanceCents: integer("initial_balance_cents").notNull().default(0),
   sortOrder: integer("sort_order").notNull().default(0),
   isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
-  defaultPaymentMethodId: text("default_payment_method_id").references(() => paymentMethods.id),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   ...timestamps
 });
@@ -35,6 +34,30 @@ export const paymentMethods = sqliteTable(
     ...timestamps
   },
   (table) => [uniqueIndex("payment_methods_name_unique").on(table.name)]
+);
+
+export const accountPaymentMethods = sqliteTable(
+  "account_payment_methods",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id),
+    paymentMethodId: text("payment_method_id")
+      .notNull()
+      .references(() => paymentMethods.id),
+    isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    archivedAt: text("archived_at"),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("account_payment_methods_account_method_unique").on(
+      table.accountId,
+      table.paymentMethodId
+    ),
+    index("account_payment_methods_account_active_idx").on(table.accountId, table.isActive)
+  ]
 );
 
 export const categories = sqliteTable(
@@ -345,21 +368,26 @@ export const reserveMovements = sqliteTable(
   ]
 );
 
-export const budgets = sqliteTable(
-  "budgets",
+export const plannedExpenses = sqliteTable(
+  "planned_expenses",
   {
     id: text("id").primaryKey(),
     budgetMonth: text("budget_month").notNull(),
-    subcategoryId: text("subcategory_id")
-      .notNull()
-      .references(() => subcategories.id),
+    subcategoryId: text("subcategory_id").notNull().references(() => subcategories.id),
+    name: text("name").notNull(),
     amountCents: integer("amount_cents").notNull(),
+    accountId: text("account_id").references(() => accounts.id),
+    creditCardId: text("credit_card_id").references(() => creditCards.id),
+    recurrenceRuleId: text("recurrence_rule_id").references(() => recurrenceRules.id),
+    sortOrder: integer("sort_order").notNull().default(0),
     ...timestamps
   },
   (table) => [
-    uniqueIndex("budgets_month_subcategory_unique").on(table.budgetMonth, table.subcategoryId),
-    index("budgets_subcategory_idx").on(table.subcategoryId),
-    check("budgets_positive_amount", sql`${table.amountCents} > 0`)
+    index("planned_expenses_month_subcategory_idx").on(table.budgetMonth, table.subcategoryId),
+    index("planned_expenses_account_idx").on(table.accountId),
+    index("planned_expenses_card_idx").on(table.creditCardId),
+    check("planned_expenses_positive_amount", sql`${table.amountCents} > 0`),
+    check("planned_expenses_single_source", sql`(${table.accountId} IS NOT NULL) <> (${table.creditCardId} IS NOT NULL)`)
   ]
 );
 

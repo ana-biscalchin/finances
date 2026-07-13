@@ -1,1 +1,0 @@
-ALTER TABLE `credit_cards` ADD `is_default` integer DEFAULT false NOT NULL;

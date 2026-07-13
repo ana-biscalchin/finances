@@ -20,6 +20,7 @@ describe("reports API", () => {
     databasePath = resolve(tempDir, "test.sqlite");
     const connection = createDatabaseConnection(databasePath);
     migrate(connection.db, { migrationsFolder });
+    connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).onConflictDoNothing().run();
     connection.sqlite.close();
     app = buildServer({ databasePath, logger: false });
   });
@@ -38,7 +39,8 @@ describe("reports API", () => {
         name: "Conta Corrente",
         type: "checking",
         institution: "Nubank",
-        initialBalanceCents: 100000 // R$ 1.000,00
+        initialBalanceCents: 100000, // R$ 1.000,00
+        paymentMethods: [{ paymentMethodId: "pm-pix", isDefault: true }]
       }
     });
     expect(accountRes.statusCode).toBe(201);
@@ -90,6 +92,7 @@ describe("reports API", () => {
       url: "/transactions",
       payload: {
         accountId: account.id,
+        paymentMethodId: "pm-pix",
         subcategoryId: subcategory.id,
         type: "expense",
         amountCents: 10000,
@@ -106,6 +109,7 @@ describe("reports API", () => {
       url: "/transactions",
       payload: {
         accountId: account.id,
+        paymentMethodId: "pm-pix",
         subcategoryId: subcategory.id,
         type: "expense",
         amountCents: 5000,
@@ -186,7 +190,7 @@ describe("reports API", () => {
     expect(pmPartRes.statusCode).toBe(200);
     const pmPart = pmPartRes.json();
     expect(pmPart).toHaveLength(1);
-    expect(pmPart[0].paymentMethodName).toBe("Geral / Sem Meio Específico");
+    expect(pmPart[0].paymentMethodName).toBe("Pix");
     expect(pmPart[0].amountCents).toBe(15000);
   });
 
@@ -347,7 +351,8 @@ describe("reports API", () => {
       payload: {
         name: "Conta categoria",
         type: "checking",
-        initialBalanceCents: 100000
+        initialBalanceCents: 100000,
+        paymentMethods: [{ paymentMethodId: "pm-pix", isDefault: true }]
       }
     });
     const account = accountRes.json();
@@ -377,11 +382,6 @@ describe("reports API", () => {
     conn.db
       .insert(paymentMethods)
       .values({ id: "pm-pix", name: "Pix", kind: "instant_transfer" })
-      .onConflictDoNothing()
-      .run();
-    conn.db
-      .insert(paymentMethods)
-      .values({ id: "pm-credit-card", name: "Cartão de crédito", kind: "credit_card" })
       .onConflictDoNothing()
       .run();
     conn.sqlite.close();
@@ -442,8 +442,8 @@ describe("reports API", () => {
         amountCents: 18000,
         paymentBreakdown: expect.arrayContaining([
           expect.objectContaining({
-            paymentMethodId: "pm-credit-card",
-            paymentMethodName: "Cartão de crédito",
+            paymentMethodId: `credit-card:${card.id}`,
+            paymentMethodName: "Cartão categoria",
             amountCents: 11000
           }),
           expect.objectContaining({
@@ -800,7 +800,8 @@ describe("reports API", () => {
     const paymentMethods = paymentMethodRes.json();
     expect(paymentMethods).toContainEqual(
       expect.objectContaining({
-        paymentMethodId: "pm-credit-card",
+        paymentMethodId: `credit-card:${card.id}`,
+        paymentMethodName: "Visa fechamento",
         amountCents: 20000
       })
     );

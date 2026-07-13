@@ -15,6 +15,7 @@ import { registerTransferRoutes } from "./modules/transfers.js";
 import { registerRecurrenceRoutes } from "./modules/recurrences.js";
 import { registerMonthlyOverviewRoutes } from "./modules/monthly-overview.js";
 import { registerSimpleImportRoutes } from "./modules/simple-import.js";
+import { registerPlannedExpenseRoutes } from "./modules/planned-expenses.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -88,6 +89,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   registerTransferRoutes(app, connection);
   registerRecurrenceRoutes(app, connection);
   registerMonthlyOverviewRoutes(app, connection);
+  registerPlannedExpenseRoutes(app, connection);
   registerSimpleImportRoutes(app, connection);
 
   return app;

@@ -93,7 +93,7 @@ describe("financial contracts", () => {
       startMonth: "2026-07"
     };
 
-    expect(subject.safeParse({ ...base, accountId: "account-1" }).success).toBe(true);
+    expect(subject.safeParse({ ...base, accountId: "account-1", paymentMethodId: "method-1" }).success).toBe(true);
     expect(subject.safeParse({ ...base, creditCardId: "card-1" }).success).toBe(true);
     expect(
       subject.safeParse({

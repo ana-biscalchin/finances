@@ -10,7 +10,8 @@ O projeto ja possui:
 - API local em Node.js e Fastify;
 - banco SQLite local via Drizzle;
 - CRUD de contas, categorias, lancamentos e cartoes;
-- controle mensal com planejamento, realizacao, disponibilidade e visao de caixa;
+- controle mensal com planejamento distribuído por conta/cartão, realização, disponibilidade e visão de caixa;
+- contas com formas de pagamento associadas, incluindo benefícios pré-pagos separados;
 - faturas de cartao com importacao CSV, parcelamentos e pagamento por conta;
 - importacao/exportacao CSV de lancamentos;
 - relatorios iniciais com Recharts;
@@ -79,7 +80,18 @@ pnpm db:generate
 pnpm db:migrate
 pnpm db:seed
 pnpm db:setup
+pnpm db:reset:dev
 ```
+
+Para preencher uma base de desenvolvimento com um cenário financeiro fictício do mês atual:
+
+```bash
+pnpm db:seed:demo
+```
+
+O seed de demonstração usa IDs próprios e não deve ser executado sobre a base pessoal.
+
+O reset é destrutivo e exclusivo para desenvolvimento/UAT. Ele exige `DATABASE_PATH`, `DEVELOPMENT_DATABASE_ROOT`, `RESET_ENVIRONMENT=development|uat` e `ALLOW_DESTRUCTIVE_DATABASE_RESET=RESET`.
 
 Arquivo local do banco:
 

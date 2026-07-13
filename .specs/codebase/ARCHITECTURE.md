@@ -36,7 +36,7 @@ flowchart LR
 ### Dinheiro nas contas
 
 1. `AccountsCashView` consulta `GET /cash-position`.
-2. O serviço combina saldos realizados, previsões recorrentes e faturas.
+2. O serviço combina saldos realizados, orçamento restante por origem, previsões recorrentes e faturas sem duplicar eventos.
 3. Previsões não persistem lançamentos até confirmação.
 4. Pagamentos de fatura e transferências movimentam caixa com rastreabilidade própria.
 
@@ -71,7 +71,7 @@ flowchart LR
 ## Persistência e segurança local
 
 - Valores são centavos inteiros e datas de negócio não dependem de UTC.
-- Migrations destrutivas criam backup prévio, validam integridade e revertem em falha.
+- O protótipo usa uma baseline canônica. O reset destrutivo exige ambiente de desenvolvimento/UAT, caminho explícito dentro da raiz permitida e confirmação `RESET`.
 - O banco principal e backups ficam fora do Git.
 - A restauração cria um ponto de segurança antes de alterar o banco conectado.
 

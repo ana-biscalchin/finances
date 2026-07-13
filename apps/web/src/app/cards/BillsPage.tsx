@@ -77,7 +77,6 @@ type Account = {
   name: string;
   type: string;
   institution: string | null;
-  defaultPaymentMethodId: string | null;
   isActive: boolean;
 };
 

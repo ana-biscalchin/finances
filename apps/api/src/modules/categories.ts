@@ -2,7 +2,7 @@ import {
   categories,
   subcategories,
   transactions,
-  budgets,
+  plannedExpenses,
   type createDatabaseConnection
 } from "@finances/database";
 import { assertCategoryNature } from "@finances/domain";
@@ -250,41 +250,7 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
         .where(eq(transactions.subcategoryId, id))
         .run();
 
-      const sourceBudgets = tx
-        .select()
-        .from(budgets)
-        .where(eq(budgets.subcategoryId, id))
-        .all();
-      const targetBudgets = tx
-        .select()
-        .from(budgets)
-        .where(eq(budgets.subcategoryId, targetSubcategoryId))
-        .all();
-
-      for (const sourceBudget of sourceBudgets) {
-        const existingTargetBudget = targetBudgets.find(
-          (targetBudget) => targetBudget.budgetMonth === sourceBudget.budgetMonth
-        );
-
-        if (existingTargetBudget) {
-          tx.update(budgets)
-            .set({
-              amountCents: existingTargetBudget.amountCents + sourceBudget.amountCents,
-              updatedAt: new Date().toISOString()
-            })
-            .where(eq(budgets.id, existingTargetBudget.id))
-            .run();
-          tx.delete(budgets).where(eq(budgets.id, sourceBudget.id)).run();
-        } else {
-          tx.update(budgets)
-            .set({
-              subcategoryId: targetSubcategoryId,
-              updatedAt: new Date().toISOString()
-            })
-            .where(eq(budgets.id, sourceBudget.id))
-            .run();
-        }
-      }
+      tx.update(plannedExpenses).set({ subcategoryId: targetSubcategoryId, updatedAt: new Date().toISOString() }).where(eq(plannedExpenses.subcategoryId, id)).run();
 
       tx.update(subcategories)
         .set({

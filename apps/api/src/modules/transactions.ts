@@ -33,6 +33,7 @@ import {
   ValidationError,
   parseOptionalInteger
 } from "../http.js";
+import { validateActiveAccountPaymentMethod } from "./accounts/payment-method-associations.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 type ParsedTransactionPayload = ReturnType<typeof parseTransactionPayload>;
@@ -661,6 +662,17 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       for (const t of body.transactions!) {
         const id = crypto.randomUUID();
         const eventDate = assertBusinessDate(t.eventDate);
+        ensureOptionalAccountExists(connection, t.creditCardId ? null : t.accountId ?? null);
+        ensureOptionalPaymentMethodExists(connection, t.creditCardId ? null : t.paymentMethodId ?? null);
+        ensureOptionalSubcategoryExists(connection, t.subcategoryId ?? null);
+        ensureOptionalCreditCardExists(connection, t.creditCardId ?? null);
+        ensurePaymentSource(connection, {
+          type: t.type,
+          accountId: t.creditCardId ? null : t.accountId ?? null,
+          paymentMethodId: t.creditCardId ? null : t.paymentMethodId ?? null,
+          creditCardId: t.creditCardId ?? null,
+          subcategoryId: t.subcategoryId ?? null
+        });
         let budgetMonth = t.budgetMonth
           ? assertYearMonth(t.budgetMonth)
           : yearMonthFromDate(eventDate);
@@ -1045,11 +1057,25 @@ function ensureReferencesOrReply(
     ensureOptionalPaymentMethodExists(connection, payload.paymentMethodId);
     ensureOptionalSubcategoryExists(connection, payload.subcategoryId);
     ensureOptionalCreditCardExists(connection, payload.creditCardId);
+    ensurePaymentSource(connection, payload);
     return true;
   } catch (error) {
     sendPayloadError(error, reply, "Referências do lançamento inválidas.");
     return false;
   }
+}
+
+function ensurePaymentSource(
+  connection: DatabaseConnection,
+  payload: Pick<ParsedTransactionPayload, "type" | "accountId" | "paymentMethodId" | "creditCardId" | "subcategoryId">
+) {
+  if (payload.creditCardId) return;
+  const isConsumption = payload.type === "expense" && Boolean(payload.subcategoryId);
+  if (!isConsumption) return;
+  if (!payload.accountId || !payload.paymentMethodId) {
+    throw new ValidationError("Despesa em conta exige conta e forma de pagamento.");
+  }
+  validateActiveAccountPaymentMethod(connection, payload.accountId, payload.paymentMethodId);
 }
 
 function ensureOptionalAccountExists(connection: DatabaseConnection, accountId: string | null) {

@@ -7,6 +7,8 @@ export * from "./dates.js";
 export * from "./financial-classification.js";
 export * from "./money.js";
 export * from "./monthly-overview.js";
+export * from "./payment-source-planning.js";
+export * from "./planned-expenses.js";
 export * from "./transactions.js";
 export * from "./recurrences.js";
 export * from "./transfers.js";
