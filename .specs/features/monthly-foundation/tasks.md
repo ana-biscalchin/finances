@@ -252,11 +252,11 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** MON-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Tela mostra planejado, gasto e disponível, com `Acima do planejado` como situação visual.
-  - [ ] Edição inline salva de forma pessimista; erro mantém valor anterior; zero pede confirmação.
-  - [ ] Estado vazio diferencia ausência de dados de falha e oferece ações contextuais.
-  - [ ] Teste: componentes cobrem edição, erro, remoção e estados visuais; gate web passa com cobertura ≥ 80% do código novo.
-  - [ ] Constituição: respeita `ana-standards/references/testing.md` e `surgical-edits.md`.
+  - [x] Tela mostra planejado, gasto e disponível, com `Acima do planejado` como situação visual.
+  - [x] Edição inline salva de forma pessimista; erro mantém valor anterior; zero pede confirmação.
+  - [x] Estado vazio diferencia ausência de dados de falha e oferece ações contextuais.
+  - [x] Teste: componentes cobrem edição, erro, remoção e estados visuais; gate web passa com cobertura ≥ 80% do código novo.
+  - [x] Constituição: respeita `ana-standards/references/testing.md` e `surgical-edits.md`.
 - **Testes:** unit/component
 - **Gate:** completo do pacote
 - **Commit:** `feat(web): simplify monthly overview`

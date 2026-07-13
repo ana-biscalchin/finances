@@ -1,4 +1,4 @@
-import { accounts, budgets, creditCardBillPayments, creditCardBills, creditCards, transactions, type createDatabaseConnection } from "@finances/database";
+import { accounts, budgets, categories, creditCardBillPayments, creditCardBills, creditCards, subcategories, transactions, type createDatabaseConnection } from "@finances/database";
 import { buildCashPosition, buildMonthlyOverview } from "@finances/domain";
 import { eq } from "drizzle-orm";
 import { createRecurrenceService } from "./recurrence-service.js";
@@ -8,7 +8,10 @@ export function createMonthlyOverviewService(connection: Connection) {
   const { db } = connection;
   return {
     overview(month: string) {
-      return buildMonthlyOverview({ month, budgets: db.select().from(budgets).where(eq(budgets.budgetMonth, month)).all(), transactions: db.select().from(transactions).all() });
+      const overview = buildMonthlyOverview({ month, budgets: db.select().from(budgets).where(eq(budgets.budgetMonth, month)).all(), transactions: db.select().from(transactions).all() });
+      const categoryRows = new Map(db.select().from(categories).all().map((item) => [item.id, item]));
+      const subcategoryRows = new Map(db.select().from(subcategories).all().map((item) => [item.id, item]));
+      return { ...overview, items: overview.items.map((item) => { const subcategory = subcategoryRows.get(item.subcategoryId); return { ...item, subcategoryName: subcategory?.name ?? "Sem categoria", categoryId: subcategory?.categoryId ?? null, categoryName: subcategory ? categoryRows.get(subcategory.categoryId)?.name ?? "Sem categoria" : "Sem categoria" }; }) };
     },
     cashPosition(month: string) {
       const forecasts = createRecurrenceService(connection).forecast(month).filter((item) => item.accountId);
