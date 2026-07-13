@@ -212,12 +212,12 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** IMP-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Confirm direto rejeita os mesmos dados inválidos da criação manual.
-  - [ ] Prévia não exige categoria e identifica duplicidade por regra determinística documentada.
-  - [ ] Resposta informa criados, duplicados ignorados e inválidos.
-  - [ ] Confirmação é atômica e uma falha não importa subconjunto silenciosamente.
-  - [ ] Teste: importação geral e de fatura cobre validação, parcelas e duplicidade; gate da API passa com cobertura ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/coding-style.md#4-contratos-de-dados-via-schema-na-fronteira`.
+  - [x] Confirm direto rejeita os mesmos dados inválidos da criação manual.
+  - [x] Prévia não exige categoria e identifica duplicidade por regra determinística documentada.
+  - [x] Resposta informa criados, duplicados ignorados e inválidos.
+  - [x] Confirmação é atômica e uma falha não importa subconjunto silenciosamente.
+  - [x] Teste: importação geral e de fatura cobre validação, parcelas e duplicidade; gate da API passa com cobertura ≥ 80%.
+  - [x] Constituição: respeita `ana-standards/references/coding-style.md#4-contratos-de-dados-via-schema-na-fronteira`.
 - **Testes:** integração API
 - **Gate:** completo do pacote
 - **Commit:** `refactor(api): simplify transaction imports`
