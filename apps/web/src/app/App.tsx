@@ -29,13 +29,18 @@ import { AccountsPage } from "./accounts/AccountsPage";
 import { BillsPage } from "./cards/BillsPage";
 import { CategoriesPage } from "./categories/CategoriesPage";
 import { TransactionsPage } from "./transactions/TransactionsPage";
-import { ControleMensalPage } from "./monthly-control/ControleMensalPage";
+import { MonthlyOverviewPage } from "./monthly-control/MonthlyOverviewPage";
+import { AccountsCashView } from "./monthly-control/AccountsCashView";
+import { RecurrencesPage } from "./recurrences/RecurrencesPage";
 import { ReportsPage } from "./reports/ReportsPage";
 import { SettingsPage } from "./settings/SettingsPage";
 
 
 type PageKey =
   | "monthly-control"
+  | "cash-position"
+  | "recurrences"
+  | "patrimony"
   | "transactions"
   | "bills"
   | "accounts"
@@ -44,7 +49,7 @@ type PageKey =
   | "reports"
   | "settings";
 
-const pages: Array<{
+export const pages: Array<{
   key: PageKey;
   label: string;
   description: string;
@@ -52,10 +57,13 @@ const pages: Array<{
 }> = [
   {
     key: "monthly-control",
-    label: "Controle mensal",
-    description: "Orçado, comprometido, realizado e disponível por mês.",
+    label: "Visão do mês",
+    description: "O que entrou, o que foi gasto e quanto ainda pode ser usado.",
     icon: IconCalendarStats
   },
+  { key: "cash-position", label: "Dinheiro nas contas", description: "Saldos, pagamentos e risco de ficar negativo.", icon: IconBuildingBank },
+  { key: "recurrences", label: "Recorrências", description: "Previsões mensais em conta e cartão.", icon: IconCalendarStats },
+  { key: "patrimony", label: "Patrimônio · futuro", description: "Ativos, dívidas, reservas e evolução — módulo futuro.", icon: IconPigMoney },
   {
     key: "transactions",
     label: "Lançamentos",
@@ -145,7 +153,7 @@ export function App() {
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
-          <Title order={4}>Finanças Pessoais</Title>
+          <Title order={4}>Carteira da Ana</Title>
         </Group>
       </AppShell.Header>
 
@@ -220,7 +228,11 @@ export function App() {
         ) : isTransactionsPage ? (
           <TransactionsPage />
         ) : isMonthlyControlPage ? (
-          <ControleMensalPage selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />
+          <MonthlyOverviewPage selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />
+        ) : activePage === "cash-position" ? (
+          <AccountsCashView selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />
+        ) : activePage === "recurrences" ? (
+          <RecurrencesPage selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />
         ) : isReportsPage ? (
           <ReportsPage
             selectedMonth={selectedMonth}

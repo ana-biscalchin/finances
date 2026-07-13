@@ -346,11 +346,11 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** UX-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Cabeçalho usa `Carteira da Ana`.
-  - [ ] Visão do mês e Dinheiro nas contas são acessíveis por nomes orientados à tarefa.
-  - [ ] Patrimônio aparece explicitamente como futuro, sem tela falsa de capacidade pronta.
-  - [ ] Teste: shell cobre navegação, mês compartilhado e módulos futuros; gate web passa com cobertura ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/surgical-edits.md`.
+  - [x] Cabeçalho usa `Carteira da Ana`.
+  - [x] Visão do mês e Dinheiro nas contas são acessíveis por nomes orientados à tarefa.
+  - [x] Patrimônio aparece explicitamente como futuro, sem tela falsa de capacidade pronta.
+  - [x] Teste: shell cobre navegação, mês compartilhado e módulos futuros; gate web passa com cobertura ≥ 80%.
+  - [x] Constituição: respeita `ana-standards/references/surgical-edits.md`.
 - **Testes:** unit/component
 - **Gate:** completo do pacote
 - **Commit:** `feat(web): align product navigation`

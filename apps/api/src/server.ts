@@ -74,7 +74,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   }));
 
   app.get("/meta", async () => ({
-    name: "Financas Pessoais",
+    name: "Carteira da Ana",
     version: "0.1.0",
     storage: "local-sqlite"
   }));
