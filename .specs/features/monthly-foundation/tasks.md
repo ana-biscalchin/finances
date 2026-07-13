@@ -173,13 +173,13 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** REC-01, CASH-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Previsão futura não cria transação nem gasto.
-  - [ ] Confirmação cria uma única ocorrência real por regra/mês e cartão associa à fatura correta.
-  - [ ] Dia 29–31 ajusta para o último dia sem conversão UTC.
-  - [ ] Pausa, retomada, encerramento e `esta e as próximas` preservam fatos passados.
-  - [ ] Parcelamentos não são tratados como recorrências.
-  - [ ] Teste: domínio e API cobrem conta, cartão, idempotência e estados da série; gates dos pacotes passam com cobertura ≥ 80% do código novo.
-  - [ ] Constituição: respeita `ana-standards/references/coding-style.md` e `testing.md`.
+  - [x] Previsão futura não cria transação nem gasto.
+  - [x] Confirmação cria uma única ocorrência real por regra/mês e cartão associa à fatura correta.
+  - [x] Dia 29–31 ajusta para o último dia sem conversão UTC.
+  - [x] Pausa, retomada, encerramento e `esta e as próximas` preservam fatos passados.
+  - [x] Parcelamentos não são tratados como recorrências.
+  - [x] Teste: domínio e API cobrem conta, cartão, idempotência e estados da série; gates dos pacotes passam com cobertura ≥ 80% do código novo.
+  - [x] Constituição: respeita `ana-standards/references/coding-style.md` e `testing.md`.
 - **Testes:** unit + integração API isolada
 - **Gate:** completo dos pacotes
 - **Commit:** `feat(finances): add recurring forecasts`
