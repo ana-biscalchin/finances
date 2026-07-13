@@ -1,4 +1,5 @@
 export * from "./accounts.js";
+export * from "./bill-payments.js";
 export * from "./categories.js";
 export * from "./contracts.js";
 export * from "./credit-card-bills.js";

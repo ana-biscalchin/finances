@@ -118,11 +118,11 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** BILL-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Estados `open`, `partial`, `paid` e `overdue` são derivados sem sobreposição.
-  - [ ] Principal, juros e multa são separados e pagamento acima do saldo é rejeitado.
-  - [ ] Reversão deixa de considerar o pagamento sem apagar seu histórico.
-  - [ ] Teste: `bill-payments.test.ts` cobre parcial, mínimo, final, atraso, encargos, excesso e reversão; gate do domínio passa com cobertura ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/testing.md`.
+  - [x] Estados `open`, `partial`, `paid` e `overdue` são derivados sem sobreposição.
+  - [x] Principal, juros e multa são separados e pagamento acima do saldo é rejeitado.
+  - [x] Reversão deixa de considerar o pagamento sem apagar seu histórico.
+  - [x] Teste: `bill-payments.test.ts` cobre parcial, mínimo, final, atraso, encargos, excesso e reversão; gate do domínio passa com cobertura ≥ 80%.
+  - [x] Constituição: respeita `ana-standards/references/testing.md`.
 - **Testes:** unit
 - **Gate:** rápido
 - **Commit:** `feat(domain): model credit card bill payments`
