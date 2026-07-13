@@ -1,108 +1,83 @@
-# ARCHITECTURE.md
-
-> Gerado por `ana-repo-bootstrap` v0.5. Evidência de código + entrevista.
+# Arquitetura
 
 **Produto:** Carteira da Ana  
-**Perfil:** Node.js/TypeScript em monorepo  
-**Atualizado:** 2026-07-10
+**Atualizado:** 2026-07-13
 
 ## Visão geral
 
-Carteira da Ana é uma aplicação local de finanças pessoais. A interface React consulta uma API Fastify por HTTP; a API coordena regras financeiras de `packages/domain` e persiste dados em um banco SQLite por meio de `packages/database`. O Controle mensal é o fluxo principal do produto, agregando orçamentos, lançamentos, contas e faturas nas visões de competência e caixa.
+A aplicação React local consulta uma API Fastify. A API coordena regras puras de domínio e persiste em SQLite com Drizzle. Google Drive é opcional e usado apenas para backups.
 
 ```mermaid
 flowchart LR
-    Person[Ana] --> Web[React + Mantine<br/>apps/web]
-    Web -->|HTTP JSON| API[Fastify<br/>apps/api]
-    API --> Domain[Regras financeiras<br/>packages/domain]
-    API --> Database[Drizzle + better-sqlite3<br/>packages/database]
-    Database --> SQLite[(data/financas.sqlite)]
-    API --> Backups[(data/backups)]
-    API -. OAuth e arquivos .-> Drive[Google Drive]
+    Ana --> Web[React + Mantine]
+    Web --> API[Fastify]
+    API --> Domain[packages/domain]
+    API --> DB[(SQLite + Drizzle)]
+    API -. opcional .-> Drive[Google Drive]
 ```
 
-## Componentes
-
-| Componente | Path | Responsabilidade | Depende de |
-| --- | --- | --- | --- |
-| Interface web | `apps/web` | Exibir páginas, capturar ações e consumir a API local | React, Mantine, domínio, API HTTP |
-| API local | `apps/api` | Registrar rotas, validar entradas, coordenar regras e persistência | Fastify, domínio, database |
-| Domínio financeiro | `packages/domain` | Regras puras de dinheiro, datas, lançamentos, faturas e conciliação | TypeScript |
-| Persistência | `packages/database` | Schema, conexão, migrations, seeds, integridade e restauração SQLite | Drizzle ORM, better-sqlite3 |
-| Compartilhado | `packages/shared` | Espaço para contratos compartilhados; atualmente mínimo | TypeScript |
-| Banco principal | `data/financas.sqlite` | Persistir os dados financeiros locais | SQLite |
-| Backups locais | `data/backups` | Armazenar backups manuais e pontos pré-restauração | API, SQLite |
+| Camada | Caminho | Responsabilidade |
+| --- | --- | --- |
+| Interface | `apps/web` | Navegação, formulários e visualizações mensais |
+| API | `apps/api` | Contratos HTTP, serviços de aplicação e transações |
+| Domínio | `packages/domain` | Dinheiro, datas e classificação financeira puramente testáveis |
+| Persistência | `packages/database` | Schema, migrations, conexão, integridade e backup SQLite |
 
 ## Fluxos críticos
 
-### 1. Controle mensal
+### Visão do mês
 
-1. `ControleMensalPage` mantém o mês selecionado e alterna entre competência e caixa.
-2. A interface consulta `GET /controle-mensal?month=YYYY-MM&view=competence|cash`.
-3. `registerBudgetRoutes` carrega orçamentos, lançamentos, contas, categorias, cartões e faturas.
-4. As classificações de `packages/domain/src/financial-classification.ts` distinguem consumo, movimento de conta, compra no crédito, pagamento de fatura e transferência.
-5. A visão de competência agrupa valores planejados, realizados, comprometidos e disponíveis por categoria e subcategoria.
-6. A visão de caixa calcula entradas, saídas, saldos por conta, compromissos de fatura e projeções.
-7. `ControleMensalPage` e `CashMonthlyView` apresentam os resultados e permitem atualizar planejamentos por `PUT /budgets`.
-8. Transferências internas e pagamentos de fatura não geram novo consumo econômico.
-9. Compras no cartão afetam o orçamento pelo mês da fatura, não pela data de saída da conta.
+1. `MonthlyOverviewPage` consulta `GET /monthly-overview` para o mês compartilhado.
+2. `monthly-overview-service` reúne orçamento e lançamentos.
+3. O domínio calcula planejado, gasto, disponível e acima do planejado.
+4. `PUT /monthly-budgets` mantém uma alocação por mês e subcategoria.
+5. Parcelas contam no mês da fatura; transferências e pagamentos não duplicam gasto.
 
-Esse é o fluxo mais importante do produto. A avaliação da usuária é que sua experiência ou resultado ainda não está bom; os problemas específicos precisam ser levantados antes de qualquer redesenho.
+### Dinheiro nas contas
 
-### 2. Compra no cartão e pagamento da fatura
+1. `AccountsCashView` consulta `GET /cash-position`.
+2. O serviço combina saldos realizados, previsões recorrentes e faturas.
+3. Previsões não persistem lançamentos até confirmação.
+4. Pagamentos de fatura e transferências movimentam caixa com rastreabilidade própria.
 
-1. A compra é criada pelas rotas de transações ou pelas rotas específicas de cartão.
-2. `getCreditCardBillMonth` calcula o mês da fatura usando a data da compra e o dia de fechamento.
-3. `getOrCreateCreditCardBill` localiza ou cria a fatura do cartão e mês calculado.
-4. A compra persiste com `creditCardId`, sem `accountId` e sem `paymentMethodId`.
-5. Compras parceladas são expandidas em lançamentos mensais; a diferença de centavos fica na última parcela.
-6. A fatura soma somente as compras correspondentes, sem incluir seu próprio pagamento.
-7. Ao pagar, a API marca a fatura como `paid` e cria ou atualiza um lançamento de despesa associado à conta pagadora.
-8. O pagamento movimenta o saldo da conta, mas `isCreditCardPayment` impede que ele seja contado novamente como consumo.
-9. Antes de editar ou excluir compras, a API aplica as restrições de fatura paga cobertas por testes.
+### Transferência atômica
 
-### 3. Importação e conciliação CSV
+1. A interface envia origem, destino, valor e data a `POST /transfers`.
+2. `transfer-service` grava `account_transfers` e duas pernas em uma transação SQLite.
+3. As pernas carregam `transferId`; edição e exclusão atualizam o agregado inteiro.
+4. Classificadores excluem ambas do consumo econômico.
 
-1. A interface lê o arquivo local e permite mapear data, descrição, valor, tipo, categoria e outros campos.
-2. A prévia é enviada às rotas de importação ou a `POST /reconciliation/match-preview`.
-3. A API interpreta delimitador, datas, moeda, parcelas e direção financeira.
-4. A detecção de duplicidade compara conta ou cartão, valor, descrição, data próxima e mês da fatura, conforme o tipo de importação.
-5. Na conciliação, `calculateMatchScore` classifica candidatos como correspondência exata, provável ou inexistente.
-6. A usuária escolhe conciliar, criar ou ignorar cada item.
-7. A confirmação persiste apenas os itens selecionados e volta a aplicar a prevenção de duplicidades.
-8. Importações de cartão criam despesas sem conta ou meio de pagamento e podem projetar parcelas futuras.
+### Compra e pagamento de fatura
 
-## Integrações externas
+1. A compra preserva `eventDate`; o fechamento define `budgetMonth` e a fatura.
+2. Parcelas são lançamentos separados nos meses das respectivas faturas.
+3. `POST /credit-cards/:id/bills/:billId/payments` registra principal, juros, multa, conta e data com idempotência.
+4. O pagamento gera movimento de caixa e o estado da fatura é derivado do histórico.
+5. Reversões são explícitas; fatos pagos bloqueiam mudanças financeiras.
 
-| Sistema | Usado por | Observações |
-| --- | --- | --- |
-| Google Drive API | `apps/api/src/modules/settings.ts` | Lista, envia e baixa backups; exige OAuth e acesso de rede |
-| Google OAuth 2.0 | API e tela de configurações | Usa callback local em `http://localhost:3000/auth/google/callback` |
-| Sistema de arquivos local | Banco e backups | Banco em `data/financas.sqlite`; backups em `data/backups/` |
-| Navegador local | `apps/web` | Interface atualmente servida por Vite em `localhost:5173` |
+### Recorrência
 
-Não há serviço remoto obrigatório para o funcionamento financeiro principal.
+1. Uma regra mensal gera somente previsões na leitura.
+2. A confirmação idempotente cria a ocorrência em conta ou cartão.
+3. Pausa, retomada e encerramento não reescrevem ocorrências passadas.
 
-## Decisões arquiteturais
+### Importação simples
 
-- O produto funciona localmente e usa SQLite como fonte principal de dados.
-- Valores monetários são persistidos como centavos inteiros.
-- Datas de negócio usam `YYYY-MM-DD`; competências usam `YYYY-MM`.
-- Compras no cartão não movimentam contas no momento da compra.
-- Transferências são representadas por dois lançamentos vinculados e não constituem consumo.
-- Categorias preservam histórico por identificadores internos.
-- Arquivamento não equivale a exclusão e deve admitir restauração quando aplicável.
-- Meios de pagamento são dados semeados, sem CRUD próprio.
-- API, interface, domínio e banco pertencem à mesma aplicação local.
-- A distribuição futura — aplicação web ou desktop empacotada — ainda não foi decidida.
+1. O navegador interpreta o CSV e envia linhas normalizadas a `/simple-import/preview`.
+2. A usuária revisa, corrige em lote e escolhe linhas; duplicatas começam desmarcadas.
+3. `/simple-import/confirm` aplica o contrato normal de criação em uma transação atômica.
+4. Não há conciliador bancário no fluxo canônico.
 
-## Lacunas
+## Persistência e segurança local
 
-- O Controle mensal precisa de avaliação funcional e visual antes que seus problemas sejam especificados.
-- A estratégia de distribuição futura entre web e desktop permanece aberta.
-- Reservas possuem schema, mas não têm API nem interface.
-- Importação OFX não está implementada.
-- A integração real com Google Drive não foi validada nesta análise.
-- Não há gate de cobertura de testes configurado.
-- A documentação existente apresenta informações desatualizadas sobre backups.
-- O ambiente desta análise não atende ao Node mínimo e não possui `pnpm`, impedindo a execução das verificações.
+- Valores são centavos inteiros e datas de negócio não dependem de UTC.
+- Migrations destrutivas criam backup prévio, validam integridade e revertem em falha.
+- O banco principal e backups ficam fora do Git.
+- A restauração cria um ponto de segurança antes de alterar o banco conectado.
+
+## Limites atuais
+
+- Produto e dados financeiros funcionam localmente; Drive não é obrigatório.
+- Escopo monetário: BRL.
+- Patrimônio, investimentos/rentabilidade, dívidas e relatórios prescritivos estão no backlog.
+- Distribuição futura como web ou desktop continua aberta.

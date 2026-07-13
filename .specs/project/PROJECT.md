@@ -19,9 +19,9 @@ Ana é a proprietária, usuária principal e responsável pelas decisões do pro
 
 ## Prioridade do produto
 
-O Controle mensal é o fluxo central. Ele deve oferecer uma leitura confiável e clara do planejado, realizado, comprometido e disponível, considerando corretamente contas, meios de pagamento, cartões, faturas e transferências.
+A Visão do mês é o fluxo central. Ela apresenta planejado, gasto, disponível e acima do planejado sem exigir interpretação de `comprometido`. Dinheiro nas contas permite conferir saldos, previsões, faturas e risco de saldo negativo.
 
-A implementação atual do Controle mensal ainda não é considerada satisfatória. Os problemas específicos precisam ser diagnosticados antes de definir mudanças.
+A construção inicial é mensal, mas o produto deve comportar patrimônio e evolução financeira de longo prazo.
 
 ## Restrições
 

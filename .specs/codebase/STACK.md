@@ -94,10 +94,9 @@ Serviços locais:
 
 ## Observações da detecção
 
-- O runtime encontrado nesta sessão foi Node.js 20.20.0, abaixo do mínimo declarado pelo projeto.
-- `pnpm` não estava disponível nesta sessão; por isso os testes não puderam ser executados.
+- Os gates foram validados com Node.js 25.3.0 e pnpm 11.5.2.
 - O diagnóstico genérico classificou o projeto como `nextjs-node` por encontrar `package.json`, mas o código comprova que o frontend usa React com Vite, não Next.js.
 - O backup local está implementado na API e na interface e possui testes automatizados.
 - A integração com Google Drive está implementada, mas sua operação real depende de configuração OAuth e não foi validada nesta análise.
-- A documentação existente sobre o estado dos backups está desatualizada em relação ao código.
+- Backup local e restauração estão implementados e cobertos por testes de integridade.
 - A decisão entre distribuição web e empacotamento desktop permanece aberta.

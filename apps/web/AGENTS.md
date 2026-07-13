@@ -49,7 +49,7 @@ Interface local da Carteira da Ana. Apresenta os fluxos financeiros, coleta aç�
 
 Para adicionar ou alterar um fluxo visual:
 
-1. Consulte `docs/visual-usabilidade.md`.
+1. Consulte `docs/regras-negocio.md` e a tela vizinha relevante.
 2. Varra a página, os módulos vizinhos e `src/app/shared`.
 3. Reutilize componentes, tipos e helpers existentes.
 4. Mantenha chamadas HTTP na borda da página ou em abstração compartilhada já existente.

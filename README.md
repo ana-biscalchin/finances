@@ -38,13 +38,9 @@ Ainda nao estao implementados:
 
 - [Memoria do projeto para agentes](AGENTS.md)
 - [Regras de negocio](docs/regras-negocio.md)
-- [Modulos do projeto](docs/modulos.md)
 - [Categorias financeiras](docs/categorias.md)
-- [Orientacao de importacao CSV](docs/orientacao-importacao-csv.md)
-- [Decisoes tecnicas](docs/decisoes-tecnicas.md)
-- [Visual e usabilidade](docs/visual-usabilidade.md)
-- [Criterios de qualidade](docs/criterios-qualidade.md)
-- [Roadmap de features](.specs/project/ROADMAP.md)
+- [Arquitetura](.specs/codebase/ARCHITECTURE.md)
+- [Stack e comandos](.specs/codebase/STACK.md)
 
 ## Desenvolvimento
 

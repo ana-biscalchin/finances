@@ -18,7 +18,7 @@ Concentrar tipos, validações e regras financeiras puras reutilizadas pela API 
 | `src/transactions.ts` | Tipos e status de lançamentos |
 | `src/financial-classification.ts` | Classificação econômica e impacto em contas |
 | `src/credit-card-bills.ts` | Mês, fechamento e vencimento de faturas |
-| `src/reconciliation.ts` | Pontuação e proximidade para conciliação |
+| `src/monthly-overview.ts` | Visão mensal e posição de caixa |
 
 ## Como funciona
 
@@ -74,7 +74,7 @@ Suítes observadas:
 - `dates.test.ts`
 - `money.test.ts`
 - `transactions.test.ts`
-- `reconciliation.test.ts`
+- `monthly-overview.test.ts`
 
 ## Pontos de atenção
 

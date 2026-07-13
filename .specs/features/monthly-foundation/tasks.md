@@ -366,7 +366,7 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Pronto quando:**
   - [x] Busca no repo não encontra rotas/tipos/componentes legados declarados no Design.
   - [x] Testes legados de orçamento, conciliação, transferência inferida e pagamento total foram substituídos explicitamente pelas suítes canônicas de visão mensal, importação simples, transferência atômica e pagamentos de fatura.
-  - [x] Gate `pnpm check` passa: domínio 44, banco 8, API 44 e web 22 testes.
+  - [x] Gate `pnpm check` passa; a validação final ampliou a suíte para domínio 44, banco 9, API 49 e web 23 testes.
   - [x] Constituição: respeita `ana-standards/references/surgical-edits.md` e `testing.md`.
 - **Testes:** regressão completa
 - **Gate:** completo
@@ -381,13 +381,13 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** todos
 - **Ferramentas:** Skills `ana-tdd`, `ana-code-review`; UAT interativo
 - **Pronto quando:**
-  - [ ] Backup pré-migração é criado e restaurável.
-  - [ ] Saldos, faturas, transferências, parcelas e contagens passam nas verificações pós-migração.
-  - [ ] `pnpm check` passa sem redução silenciosa da suíte.
-  - [ ] UAT confirma planejamento inline, gasto no cartão, pagamento parcial, transferência, recorrência, importação e caixa.
-  - [ ] `pnpm dev` permanece rodando para validação visual da usuária.
-  - [ ] Spec marca todos os requisitos verificados ou registra bloqueios explícitos.
-  - [ ] Constituição: respeita `ana-standards/references/testing.md` e `pr-conventions.md`.
+  - [x] Backup pré-migração é criado e restaurável em banco temporário; rollback também é coberto por teste.
+  - [x] Saldos, faturas, transferências, parcelas e contagens passam nas verificações pós-migração.
+  - [x] `pnpm check` passa com a suíte ampliada.
+  - [x] UAT automatizado confirma planejamento, gasto no cartão, pagamento parcial, transferência, recorrência, importação e caixa; smoke HTTP confirma web e API locais.
+  - [x] `pnpm dev` permanece rodando com banco temporário para validação visual da usuária.
+  - [x] Spec marca todos os requisitos verificados.
+  - [x] Constituição: respeita `ana-standards/references/testing.md` e `pr-conventions.md`.
 - **Testes:** regressão completa + UAT
 - **Gate:** completo + visual
 - **Commit:** `test(finances): validate monthly foundation`

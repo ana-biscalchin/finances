@@ -247,8 +247,7 @@ Toda entrada usa schema Zod com `safeParse` no handler.
 ```text
 GET /monthly-overview?month=YYYY-MM
 GET /cash-position?month=YYYY-MM
-PUT /budgets
-POST /budgets/copy
+PUT /monthly-budgets
 ```
 
 `MonthlyOverview` retorna receitas, gastos, orçamento e categorias em centavos. `CashPosition`

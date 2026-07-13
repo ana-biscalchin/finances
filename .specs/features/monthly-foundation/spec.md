@@ -28,11 +28,11 @@ enquanto transferências e faturas preservam a integridade entre consumo e caixa
 
 ## Goals
 
-- [ ] Permitir iniciar e acompanhar o planejamento mensal sem expor `comprometido` como indicador principal.
-- [ ] Fazer transferências e pagamentos de fatura manterem saldos consistentes mesmo diante de falhas.
-- [ ] Simplificar a importação para prévia, conferência e confirmação, preservando proteções básicas.
-- [ ] Antecipar movimentações recorrentes de conta e cartão sem confundi-las com parcelamentos.
-- [ ] Preparar a navegação para mês, dinheiro nas contas e patrimônio, construindo primeiro o núcleo mensal.
+- [x] Permitir iniciar e acompanhar o planejamento mensal sem expor `comprometido` como indicador principal.
+- [x] Fazer transferências e pagamentos de fatura manterem saldos consistentes mesmo diante de falhas.
+- [x] Simplificar a importação para prévia, conferência e confirmação, preservando proteções básicas.
+- [x] Antecipar movimentações recorrentes de conta e cartão sem confundi-las com parcelamentos.
+- [x] Preparar a navegação para mês, dinheiro nas contas e patrimônio, construindo primeiro o núcleo mensal.
 
 ## Fora de escopo
 
@@ -221,14 +221,14 @@ quando substituem comportamentos existentes ainda não convertidos em IDs vivos.
 
 ## Critérios de sucesso
 
-- [ ] A usuária inicia o planejamento e entende o resultado sem interpretar `comprometido`.
-- [ ] Cada categoria evidencia planejado, gasto, disponível ou valor acima do planejado.
-- [ ] Criar e ajustar o orçamento acontece diretamente na visão mensal, com retorno imediato.
-- [ ] Cada parcela consome o planejamento no mês da respectiva fatura, mesmo quando o banco repete a data original.
-- [ ] Os saldos batem com saldo inicial, lançamentos, transferências e pagamentos de fatura.
-- [ ] Nenhuma falha simulada deixa apenas parte de transferência ou pagamento persistida.
-- [ ] A importação termina com prévia e conferência simples, sem matching obrigatório.
-- [ ] Recorrências de conta e cartão são geradas sem duplicidade e sem serem confundidas com parcelamentos.
+- [x] A usuária inicia o planejamento e entende o resultado sem interpretar `comprometido`.
+- [x] Cada categoria evidencia planejado, gasto, disponível ou valor acima do planejado.
+- [x] Criar e ajustar o orçamento acontece diretamente na visão mensal, com retorno imediato.
+- [x] Cada parcela consome o planejamento no mês da respectiva fatura, mesmo quando o banco repete a data original.
+- [x] Os saldos batem com saldo inicial, lançamentos, transferências e pagamentos de fatura.
+- [x] Nenhuma falha simulada deixa apenas parte de transferência ou pagamento persistida.
+- [x] A importação termina com prévia e conferência simples, sem matching obrigatório.
+- [x] Recorrências de conta e cartão são geradas sem duplicidade e sem serem confundidas com parcelamentos.
 
 ## Decisões e prontidão de contexto
 

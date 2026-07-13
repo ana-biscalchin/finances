@@ -49,12 +49,7 @@ Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 - `.specs/codebase/ARCHITECTURE.md`: componentes, integracoes e fluxos criticos.
 - `docs/regras-negocio.md`: regras de negocio atuais.
 - `docs/regras-negocio.md`: regras financeiras, inclusive cartao e fatura.
-- `docs/decisoes-tecnicas.md`: stack e decisoes tecnicas.
-- `docs/modulos.md`: modulos funcionais.
 - `docs/categorias.md`: taxonomia inicial de categorias.
-- `docs/orientacao-importacao-csv.md`: guia de importacao CSV.
-- `docs/visual-usabilidade.md`: direcao visual e UX.
-- `docs/criterios-qualidade.md`: regras para avaliar codigo, especialmente codigo gerado por IA.
 
 ## Estrutura Do Projeto
 
@@ -85,9 +80,8 @@ Manter separacao entre UI, API, banco e dominio.
 ## Como Trabalhar Neste Repo
 
 - Antes de implementar regra financeira, consultar `docs/regras-negocio.md`.
-- Antes de aceitar codigo gerado por IA, consultar `docs/criterios-qualidade.md`.
 - Consultar `.specs/codebase/STACK.md` e `.specs/codebase/ARCHITECTURE.md` antes de mudancas estruturais.
-- Registrar decisoes novas em `docs/`.
+- Registrar regras financeiras em `docs/regras-negocio.md` e decisoes estruturais em `.specs/codebase/`.
 - Usar `.specs/project/ROADMAP.md` para planejamento futuro quando ele for preenchido.
 - Preferir commits pequenos por etapa funcional.
 - Nao apagar historico ou conteudo sem confirmacao explicita.

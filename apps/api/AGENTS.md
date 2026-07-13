@@ -12,13 +12,13 @@ API HTTP local da Carteira da Ana. Registra rotas Fastify, valida entradas, coor
 | --- | --- |
 | `src/server.ts` | Cria o servidor, registra CORS, error handler e módulos de rota |
 | `src/http.ts` | Erros e parsers compartilhados da fronteira HTTP |
-| `src/modules/budgets.ts` | Orçamentos e agregação do Controle mensal |
+| `src/modules/monthly-overview.ts` | Orçamento mensal e posição de caixa |
 | `src/modules/transactions.ts` | Lançamentos, transferências, CSV e parcelamentos |
 | `src/modules/credit-cards.ts` | Cartões, faturas, compras e pagamentos |
 | `src/modules/accounts.ts` | Contas, saldo, arquivamento e conta principal |
 | `src/modules/categories.ts` | Categorias, subcategorias, arquivo e fusão |
 | `src/modules/reports.ts` | Agregações dos relatórios |
-| `src/modules/reconciliation.ts` | Prévia e confirmação de conciliação |
+| `src/modules/simple-import.ts` | Prévia e confirmação da importação simples |
 | `src/modules/backups.ts` | Backup, listagem, restauração e exclusão local |
 | `src/modules/settings.ts` | Configurações e integração opcional com Google Drive |
 
@@ -75,16 +75,15 @@ pnpm --filter @finances/api build
 Principais suítes:
 
 - `transactions.test.ts`
-- `budgets.test.ts`
+- `monthly-overview.test.ts`
 - `reports.test.ts`
 - `categories.test.ts`
-- `reconciliation.test.ts`
 - `backups.test.ts`
 - `settings.test.ts`
 
 ## Pontos de atenção
 
-- `budgets.ts` e `transactions.ts` são módulos grandes e concentram múltiplas responsabilidades.
+- `transactions.ts` ainda é um módulo grande e concentra múltiplas responsabilidades.
 - O Controle mensal é o fluxo principal, mas precisa de avaliação antes de mudanças.
 - A documentação antiga sobre backups está desatualizada em relação ao código.
 - Google Drive existe no código, mas sua operação real ainda não foi validada.
