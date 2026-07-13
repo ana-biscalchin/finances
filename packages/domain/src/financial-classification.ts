@@ -17,7 +17,7 @@ export type FinancialTransactionLike = {
   accountId?: string | null;
   creditCardId?: string | null;
   creditCardBillId?: string | null;
-  linkedTransactionId?: string | null;
+  transferId?: string | null;
 };
 
 export function isCanceledTransaction(transaction: Pick<FinancialTransactionLike, "status">) {
@@ -53,7 +53,7 @@ export function isCreditCardPayment(transaction: FinancialTransactionLike) {
 }
 
 export function isInternalTransfer(transaction: FinancialTransactionLike) {
-  return Boolean(transaction.linkedTransactionId);
+  return Boolean(transaction.transferId);
 }
 
 export function isConsumptionExpense(transaction: FinancialTransactionLike) {

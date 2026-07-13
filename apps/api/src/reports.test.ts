@@ -237,10 +237,18 @@ describe("reports API", () => {
 
     const payRes = await app.inject({
       method: "POST",
-      url: `/credit-cards/${card.id}/bills/${bill.id}/pay`,
-      payload: { accountId: account.id }
+      url: `/credit-cards/${card.id}/bills/${bill.id}/payments`,
+      headers: { "idempotency-key": "reports-full-payment" },
+      payload: {
+        accountId: account.id,
+        paymentDate: bill.dueDate,
+        amountCents: 12000,
+        principalCents: 12000,
+        interestCents: 0,
+        penaltyCents: 0
+      }
     });
-    expect(payRes.statusCode).toBe(204);
+    expect(payRes.statusCode).toBe(201);
 
     const summaryRes = await app.inject({
       method: "GET",
@@ -568,15 +576,13 @@ describe("reports API", () => {
 
     const transferRes = await app.inject({
       method: "POST",
-      url: "/transactions",
+      url: "/transfers",
       payload: {
-        type: "expense",
+        sourceAccountId: accountARes.json().id,
+        destinationAccountId: accountBRes.json().id,
         description: "Transferência interna",
         amountCents: 25000,
-        eventDate: "2026-06-10",
-        accountId: accountARes.json().id,
-        destinationAccountId: accountBRes.json().id,
-        status: "confirmed"
+        eventDate: "2026-06-10"
       }
     });
     expect(transferRes.statusCode).toBe(201);
@@ -594,10 +600,10 @@ describe("reports API", () => {
     const createdTransfer = conn.db
       .select()
       .from(transactions)
-      .where(eq(transactions.id, transferRes.json().id))
+      .where(eq(transactions.id, transferRes.json().legs[0].id))
       .get();
     conn.sqlite.close();
-    expect(createdTransfer?.linkedTransactionId).toBeTruthy();
+    expect(createdTransfer?.transferId).toBeTruthy();
   });
 
   it("should separate competence and cash views in reports", async () => {

@@ -266,39 +266,6 @@ function FaturasView() {
     }
   }
 
-  async function markAsPaid(cardId: string, billId: string, accountId: string) {
-    try {
-      const res = await fetch(`${apiBaseUrl}/credit-cards/${cardId}/bills/${billId}/pay`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId })
-      });
-      if (!res.ok) {
-        throw new Error(await getResponseError(res, "Erro ao marcar fatura como paga."));
-      }
-      await loadBillForCard(cardId, selectedMonth);
-    } catch (e) {
-      reportClientError("bills.markAsPaid", e);
-      setError(getErrorMessage(e));
-    }
-  }
-
-  async function revertPayment(cardId: string, billId: string) {
-    try {
-      const res = await fetch(`${apiBaseUrl}/credit-cards/${cardId}/bills/${billId}/revert`, {
-        method: "POST"
-      });
-      if (!res.ok) {
-        throw new Error(await getResponseError(res, "Erro ao reverter o pagamento da fatura."));
-      }
-      await loadBillForCard(cardId, selectedMonth);
-    } catch (e) {
-      reportClientError("bills.revertPayment", e);
-      setError(getErrorMessage(e));
-      throw e;
-    }
-  }
-
   // Track which card+month combos have already been loaded to avoid redundant
   // fetches that would reset child component state (e.g. the create form).
   const loadedBillKeysRef = useRef<Set<string>>(new Set());
@@ -362,8 +329,6 @@ function FaturasView() {
             accounts={accounts}
             isCollapsed={collapsedCards[card.id] ?? false}
             onToggleCollapsed={() => toggleCardCollapsed(card.id)}
-            onMarkAsPaid={(billId, accountId) => markAsPaid(card.id, billId, accountId)}
-            onRevertPayment={(billId) => revertPayment(card.id, billId)}
             onReload={() => loadBillForCardStable(card.id, selectedMonth, true)}
           />
         ))
@@ -381,8 +346,6 @@ function CardBillPanel({
   accounts,
   isCollapsed,
   onToggleCollapsed,
-  onMarkAsPaid,
-  onRevertPayment,
   onReload
 }: {
   card: CreditCard;
@@ -393,8 +356,6 @@ function CardBillPanel({
   accounts: Account[];
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
-  onMarkAsPaid: (billId: string, accountId: string) => Promise<void>;
-  onRevertPayment: (billId: string) => Promise<void>;
   onReload: () => void;
 }) {
   const [filterSubcategoryIds, setFilterSubcategoryIds] = useState<string[]>([]);
@@ -453,11 +414,6 @@ function CardBillPanel({
   const [isImportPreviewLoading, setIsImportPreviewLoading] = useState(false);
   const [isImportConfirming, setIsImportConfirming] = useState(false);
   const [importModalError, setImportModalError] = useState<string | null>(null);
-  const [isPayModalOpen, setIsPayModalOpen] = useState(false);
-  const [paymentAccountId, setPaymentAccountId] = useState<string>(
-    card.paymentAccountId ?? emptySelectValue
-  );
-  const [isPayingBill, setIsPayingBill] = useState(false);
 
   const clipboard = useClipboard({ timeout: 2000 });
 
@@ -628,11 +584,6 @@ Texto da fatura a ser convertido:
   const allVisiblePreviewSelected =
     visiblePreviewIds.length > 0 &&
     visiblePreviewIds.every((tempId) => selectedImportTempIds.has(tempId));
-  const accountOptions = useMemo(
-    () => accounts.map((account) => ({ value: account.id, label: account.name })),
-    [accounts]
-  );
-
   useEffect(() => {
     setSelectedTransactionIds(new Set());
     setPanelError(null);
@@ -663,50 +614,6 @@ Texto da fatura a ser convertido:
   function openCreateDrawer() {
     setPanelError(null);
     setIsCreateDrawerOpen(true);
-  }
-
-  function openPayModal() {
-    setPanelError(null);
-    setPaymentAccountId(card.paymentAccountId ?? accounts[0]?.id ?? emptySelectValue);
-    setIsPayModalOpen(true);
-  }
-
-  async function payBill() {
-    if (!billData) return;
-
-    if (paymentAccountId === emptySelectValue) {
-      setPanelError("Escolha a conta usada para pagar a fatura.");
-      return;
-    }
-
-    setIsPayingBill(true);
-    setPanelError(null);
-
-    try {
-      await onMarkAsPaid(billData.bill.id, paymentAccountId);
-      setIsPayModalOpen(false);
-    } catch (error) {
-      reportClientError("bills.createTransaction", error);
-      setPanelError(getErrorMessage(error));
-    } finally {
-      setIsPayingBill(false);
-    }
-  }
-
-  async function revertBill() {
-    if (!billData) return;
-    const confirmed = window.confirm(
-      `Deseja reverter o pagamento da fatura de ${card.name} (${selectedMonth})? O lançamento de saída da conta correspondente será excluído.`
-    );
-    if (!confirmed) return;
-
-    setPanelError(null);
-    try {
-      await onRevertPayment(billData.bill.id);
-    } catch (error) {
-      reportClientError("bills.deleteTransaction", error);
-      setPanelError(getErrorMessage(error));
-    }
   }
 
   function closeCreateDrawer() {
@@ -1281,32 +1188,6 @@ Texto da fatura a ser convertido:
           >
             Importar fatura
           </Button>
-          {billData && !isPaid ? (
-            <Tooltip label="Marcar como paga (sem duplicar despesa)">
-              <Button
-                size="xs"
-                leftSection={<IconCheck size={14} />}
-                variant="light"
-                color="teal"
-                onClick={openPayModal}
-              >
-                Marcar como paga
-              </Button>
-            </Tooltip>
-          ) : null}
-          {billData && isPaid ? (
-            <Tooltip label="Reverter pagamento (exclui o lançamento da conta)">
-              <Button
-                size="xs"
-                leftSection={<IconEraser size={14} />}
-                variant="light"
-                color="red"
-                onClick={() => void revertBill()}
-              >
-                Reverter pagamento
-              </Button>
-            </Tooltip>
-          ) : null}
           <Text fw={700} c={totalCents > 0 ? "red" : "dimmed"}>
             {totalCents > 0 ? `− ${formatMoney(moneyFromCents(totalCents))}` : "R$ 0,00"}
           </Text>
@@ -1658,70 +1539,6 @@ Texto da fatura a ser convertido:
         )}
       </Collapse>
 
-      <Modal
-        opened={isPayModalOpen}
-        onClose={() => {
-          if (!isPayingBill) setIsPayModalOpen(false);
-        }}
-        title={
-          <Group gap="xs">
-            <IconCheck size={22} color="var(--mantine-color-teal-filled)" />
-            <Text fw={700} size="lg">
-              Pagar fatura
-            </Text>
-          </Group>
-        }
-        radius="md"
-        padding="lg"
-      >
-        <Stack gap="md">
-          {billData ? (
-            <Paper withBorder p="sm" radius="sm">
-              <Group justify="space-between" align="center">
-                <div>
-                  <Text fw={700}>{card.name}</Text>
-                  <Text size="xs" c="dimmed">
-                    Vencimento {formatBusinessDateForDisplay(billData.bill.dueDate)}
-                  </Text>
-                </div>
-                <Text fw={700} c={totalCents > 0 ? "red" : "dimmed"}>
-                  {totalCents > 0 ? `− ${formatMoney(moneyFromCents(totalCents))}` : "R$ 0,00"}
-                </Text>
-              </Group>
-            </Paper>
-          ) : null}
-
-          <Select
-            label="Conta de pagamento"
-            placeholder="Selecione a conta"
-            data={accountOptions}
-            value={paymentAccountId === emptySelectValue ? null : paymentAccountId}
-            onChange={(value) => setPaymentAccountId(value ?? emptySelectValue)}
-            searchable
-            nothingFoundMessage="Nenhuma conta ativa encontrada"
-            required
-          />
-
-          <Group justify="flex-end">
-            <Button
-              variant="subtle"
-              onClick={() => setIsPayModalOpen(false)}
-              disabled={isPayingBill}
-            >
-              Cancelar
-            </Button>
-            <Button
-              color="teal"
-              leftSection={<IconCheck size={16} />}
-              loading={isPayingBill}
-              disabled={paymentAccountId === emptySelectValue}
-              onClick={() => void payBill()}
-            >
-              Confirmar pagamento
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
       <Modal
         opened={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}

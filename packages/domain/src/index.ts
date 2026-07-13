@@ -8,6 +8,5 @@ export * from "./financial-classification.js";
 export * from "./money.js";
 export * from "./monthly-overview.js";
 export * from "./transactions.js";
-export * from "./reconciliation.js";
 export * from "./recurrences.js";
 export * from "./transfers.js";

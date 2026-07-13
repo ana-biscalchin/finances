@@ -30,6 +30,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
+import { TransferDialog } from "./TransferDialog";
 
 type Account = {
   id: string;
@@ -112,6 +113,7 @@ export function AccountsPage() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [includeInactiveCards, setIncludeInactiveCards] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
@@ -508,6 +510,9 @@ export function AccountsPage() {
             </Text>
           </div>
           <Group gap="xs">
+            <Button variant="light" onClick={() => setIsTransferOpen(true)} disabled={accounts.filter((account) => account.isActive).length < 2}>
+              Transferir
+            </Button>
             <Checkbox
               checked={includeInactive}
               label="Mostrar arquivadas"
@@ -760,6 +765,8 @@ export function AccountsPage() {
           </Table.ScrollContainer>
         )}
       </Paper>
+
+      <TransferDialog opened={isTransferOpen} accounts={accounts} onClose={() => setIsTransferOpen(false)} onCreated={() => void loadAccounts()} />
 
       <Modal
         opened={isModalOpen}

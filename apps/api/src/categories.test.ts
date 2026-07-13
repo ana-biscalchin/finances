@@ -106,7 +106,7 @@ describe("categories API", () => {
 
     await app.inject({
       method: "PUT",
-      url: "/budgets",
+      url: "/monthly-budgets",
       payload: {
         budgetMonth: "2026-06",
         subcategoryId: sourceSubcategory.id,
@@ -116,7 +116,7 @@ describe("categories API", () => {
 
     await app.inject({
       method: "PUT",
-      url: "/budgets",
+      url: "/monthly-budgets",
       payload: {
         budgetMonth: "2026-06",
         subcategoryId: targetSubcategory.id,
@@ -135,18 +135,18 @@ describe("categories API", () => {
 
     const budgetsRes = await app.inject({
       method: "GET",
-      url: "/budgets?month=2026-06"
+      url: "/monthly-overview?month=2026-06"
     });
     expect(budgetsRes.statusCode).toBe(200);
-    const rows = budgetsRes.json();
+    const rows = budgetsRes.json().items;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       subcategoryId: targetSubcategory.id,
-      amountCents: 80000
+      plannedCents: 80000
     });
   });
 
-  it("should keep budgets with different accounts separate when merging subcategories", async () => {
+  it("should consolidate canonical monthly budgets regardless of account", async () => {
     const categoryRes = await app.inject({
       method: "POST",
       url: "/categories",
@@ -191,7 +191,6 @@ describe("categories API", () => {
       }
     });
     expect(accountARes.statusCode).toBe(201);
-    const accountA = accountARes.json();
 
     const accountBRes = await app.inject({
       method: "POST",
@@ -202,26 +201,23 @@ describe("categories API", () => {
       }
     });
     expect(accountBRes.statusCode).toBe(201);
-    const accountB = accountBRes.json();
 
     await app.inject({
       method: "PUT",
-      url: "/budgets",
+      url: "/monthly-budgets",
       payload: {
         budgetMonth: "2026-06",
         subcategoryId: sourceSubcategory.id,
-        accountId: accountA.id,
         amountCents: 30000
       }
     });
 
     await app.inject({
       method: "PUT",
-      url: "/budgets",
+      url: "/monthly-budgets",
       payload: {
         budgetMonth: "2026-06",
         subcategoryId: targetSubcategory.id,
-        accountId: accountB.id,
         amountCents: 50000
       }
     });
@@ -237,22 +233,11 @@ describe("categories API", () => {
 
     const budgetsRes = await app.inject({
       method: "GET",
-      url: "/budgets?month=2026-06"
+      url: "/monthly-overview?month=2026-06"
     });
     expect(budgetsRes.statusCode).toBe(200);
-    expect(budgetsRes.json()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          subcategoryId: targetSubcategory.id,
-          accountId: accountA.id,
-          amountCents: 30000
-        }),
-        expect.objectContaining({
-          subcategoryId: targetSubcategory.id,
-          accountId: accountB.id,
-          amountCents: 50000
-        })
-      ])
-    );
+    expect(budgetsRes.json().items).toEqual([
+      expect.objectContaining({ subcategoryId: targetSubcategory.id, plannedCents: 80000 })
+    ]);
   });
 });

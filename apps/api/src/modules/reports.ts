@@ -225,7 +225,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         status: transactions.status,
         creditCardId: transactions.creditCardId,
         creditCardBillId: transactions.creditCardBillId,
-        linkedTransactionId: transactions.linkedTransactionId
+        transferId: transactions.transferId
       })
       .from(transactions)
       .where(and(...txFilters))
@@ -375,7 +375,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         accountId: transactions.accountId,
         creditCardId: transactions.creditCardId,
         creditCardBillId: transactions.creditCardBillId,
-        linkedTransactionId: transactions.linkedTransactionId
+        transferId: transactions.transferId
       })
       .from(transactions)
       .where(and(...txFilters))
@@ -494,7 +494,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         status: transactions.status,
         creditCardId: transactions.creditCardId,
         creditCardBillId: transactions.creditCardBillId,
-        linkedTransactionId: transactions.linkedTransactionId
+        transferId: transactions.transferId
       })
       .from(transactions)
       .where(and(...txFilters))
@@ -580,7 +580,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
           status: transactions.status,
           creditCardId: transactions.creditCardId,
           creditCardBillId: transactions.creditCardBillId,
-          linkedTransactionId: transactions.linkedTransactionId
+          transferId: transactions.transferId
         })
         .from(transactions)
         .where(and(...txFilters))
@@ -645,7 +645,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
           status: transactions.status,
           creditCardId: transactions.creditCardId,
           creditCardBillId: transactions.creditCardBillId,
-          linkedTransactionId: transactions.linkedTransactionId
+          transferId: transactions.transferId
         })
         .from(transactions)
         .where(and(...txFilters))
@@ -743,7 +743,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         status: transactions.status,
         creditCardId: transactions.creditCardId,
         creditCardBillId: transactions.creditCardBillId,
-        linkedTransactionId: transactions.linkedTransactionId
+        transferId: transactions.transferId
       })
       .from(transactions)
       .where(and(...txFilters))

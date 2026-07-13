@@ -651,7 +651,7 @@ export function SettingsPage() {
                   <Box>
                     <Title order={3}>Arquivos de Backup na Nuvem</Title>
                     <Text size="sm" c="dimmed">
-                      Backups armazenados na pasta "Finanças Pessoais" no seu Google Drive.
+                      Backups armazenados na pasta "Carteira da Ana" no seu Google Drive.
                     </Text>
                   </Box>
                   <Button

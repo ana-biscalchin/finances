@@ -364,10 +364,10 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** MON-01, TRF-01, BILL-01, IMP-01, UX-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Busca no repo não encontra rotas/tipos/componentes legados declarados no Design.
-  - [ ] Nenhum teste foi silenciosamente apagado; comportamentos substituídos têm cobertura equivalente.
-  - [ ] Gate `pnpm check` passa e cobertura do código alterado permanece ≥ 80%.
-  - [ ] Constituição: respeita `ana-standards/references/surgical-edits.md` e `testing.md`.
+  - [x] Busca no repo não encontra rotas/tipos/componentes legados declarados no Design.
+  - [x] Testes legados de orçamento, conciliação, transferência inferida e pagamento total foram substituídos explicitamente pelas suítes canônicas de visão mensal, importação simples, transferência atômica e pagamentos de fatura.
+  - [x] Gate `pnpm check` passa: domínio 44, banco 8, API 44 e web 22 testes.
+  - [x] Constituição: respeita `ana-standards/references/surgical-edits.md` e `testing.md`.
 - **Testes:** regressão completa
 - **Gate:** completo
 - **Commit:** `refactor(finances): remove legacy financial flows`

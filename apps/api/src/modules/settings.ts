@@ -69,7 +69,7 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
 
   // Helper to find or create the Google Drive backup folder
   async function getOrCreateFolder(accessToken: string): Promise<string> {
-    const query = encodeURIComponent("name = 'Finanças Pessoais' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
+    const query = encodeURIComponent("name = 'Carteira da Ana' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
     const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)`, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -90,13 +90,13 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        name: "Finanças Pessoais",
+        name: "Carteira da Ana",
         mimeType: "application/vnd.google-apps.folder"
       })
     });
 
     if (!createRes.ok) {
-      throw new Error("Falha ao criar pasta 'Finanças Pessoais' no Google Drive.");
+      throw new Error("Falha ao criar pasta 'Carteira da Ana' no Google Drive.");
     }
 
     const createData = (await createRes.json()) as { id: string };

@@ -6,6 +6,7 @@ import {
   Box,
   Button,
   Collapse,
+  Checkbox,
   Drawer,
   Group,
   Loader,
@@ -20,10 +21,7 @@ import {
   Text,
   TextInput,
   Tooltip,
-  Title,
-  Modal,
-  Checkbox,
-  FileInput
+  Title
 } from "@mantine/core";
 import { formatMoney, moneyFromCents, parseMoneyToCents, transactionTypes } from "@finances/domain";
 import {
@@ -35,14 +33,10 @@ import {
   IconPlus,
   IconDownload,
   IconUpload,
-  IconAlertTriangle,
-  IconCheck,
   IconSearch,
-  IconCopy,
   IconChevronDown,
   IconChevronUp
 } from "@tabler/icons-react";
-import { useClipboard } from "@mantine/hooks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -50,16 +44,14 @@ import {
   getLastDayOfMonth,
   getTodayBusinessDate
 } from "../date-format";
-import { ReconciliationWizard } from "./ReconciliationWizard";
 import { BusinessDateInput } from "../shared/BusinessDateInput";
-import { parseCsvHeaderLine } from "../shared/csv-utils";
-import { formatCategoryPromptGroups, getAmountColor } from "../shared/transaction-ui";
+import { getAmountColor } from "../shared/transaction-ui";
 import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
 import { CategoryMultiSelect, CategorySelect, QuickCategoryEdit } from "../shared/CategorySelect";
 import { MonthSelector } from "../shared/MonthSelector";
 import { QuickAmountEdit, QuickDateEdit, QuickTextEdit } from "../shared/QuickEditFields";
-import { applyImportPreviewBulkEdits } from "./import-preview";
 import { SortableTableHeader } from "../shared/SortableTableHeader";
+import { SimpleCsvImportDialog } from "./SimpleCsvImportDialog";
 
 type Transaction = {
   id: string;
@@ -74,7 +66,7 @@ type Transaction = {
   creditCardId: string | null;
   status: string;
   notes: string | null;
-  linkedTransactionId?: string | null;
+  transferId?: string | null;
 };
 
 type Account = {
@@ -110,27 +102,6 @@ type Category = {
     id: string;
     name: string;
   }>;
-};
-
-type ImportPreviewItem = {
-  tempId: string;
-  eventDate: string;
-  description: string;
-  amountCents: number;
-  type: "income" | "expense";
-  accountId: string | null;
-  paymentMethodId: string | null;
-  creditCardId?: string | null;
-  budgetMonth?: string | null;
-  subcategoryId: string | null;
-  isDuplicate: boolean;
-  duplicateOf?: {
-    id: string;
-    description: string;
-    eventDate: string;
-    amountCents: number;
-    accountName: string | null;
-  } | null;
 };
 
 type SortDirection = "asc" | "desc";
@@ -224,55 +195,7 @@ export function TransactionsPage() {
   const [isBulkSaving, setIsBulkSaving] = useState(false);
   const descriptionInputRef = useRef<HTMLInputElement>(null);
 
-  // Import/Export CSV state
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importStep, setImportStep] = useState<1 | 2 | 3>(1);
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [csvTextContent, setCsvTextContent] = useState("");
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [mappings, setMappings] = useState({
-    eventDate: "",
-    description: "",
-    amount: "",
-    type: "",
-    subcategoryId: ""
-  });
-  const [importDateFormat, setImportDateFormat] = useState<"DMY" | "MDY" | "YMD">("DMY");
-  const [importAccountId, setImportAccountId] = useState<string>(emptySelectValue);
-  const [previewTransactions, setPreviewTransactions] = useState<ImportPreviewItem[]>([]);
-  const [selectedImportTempIds, setSelectedImportTempIds] = useState<Set<string>>(new Set());
-  const [bulkImportType, setBulkImportType] = useState<string>(emptySelectValue);
-  const [bulkImportAccountId, setBulkImportAccountId] = useState<string>(emptySelectValue);
-  const [bulkImportPaymentMethodId, setBulkImportPaymentMethodId] =
-    useState<string>(emptySelectValue);
-  const [bulkImportSubcategoryId, setBulkImportSubcategoryId] = useState<string>(emptySelectValue);
-  const [isImportPreviewLoading, setIsImportPreviewLoading] = useState(false);
-  const [isImportConfirming, setIsImportConfirming] = useState(false);
-  const [importModalError, setImportModalError] = useState<string | null>(null);
-  const [isReconciliationModalOpen, setIsReconciliationModalOpen] = useState(false);
-
-  const clipboard = useClipboard({ timeout: 2000 });
-
-  const statementPromptText = useMemo(() => {
-    return `Por favor, formate o seguinte extrato bancário em um arquivo CSV estruturado para importação.
-Use como separador o ponto e vírgula (;). O cabeçalho deve ser exatamente: Data;Descricao;Valor;Tipo;Categoria
-
-Siga rigorosamente estas regras:
-1. Data: Converta todas as datas para o formato DD/MM/AAAA.
-2. Descrição: Simplifique e limpe a descrição do lançamento (remova códigos, IDs de transação longos, etc., mantendo o nome do estabelecimento ou do remetente/destinatário de forma clara).
-3. Valor: Escreva no formato decimal brasileiro (usando vírgula para centavos, ex: 150,50 ou -32,00). Não use pontos para milhares. Despesas/saídas devem começar com sinal de menos (-) e receitas/entradas devem ser positivas. IMPORTANTE: Sempre envolva o valor com aspas duplas (ex: "150,50" ou "-32,00") para que a vírgula do centavo não quebre o alinhamento das colunas.
-4. Tipo: Preencha com 'Receita' para entradas ou 'Despesa' para saídas.
-5. Categoria: Preencha com o nome da subcategoria mais adequada. Use a categoria pai abaixo apenas como contexto:
-Receitas:
-${formatCategoryPromptGroups(categories, ["income"])}
-Despesas:
-${formatCategoryPromptGroups(categories, ["expense"])}
-Movimentações Internas (Transferências):
-${formatCategoryPromptGroups(categories, ["transfer"])}
-
-Extrato a ser convertido:
-[Cole seu extrato aqui]`;
-  }, [categories]);
 
   const accountOptions = useMemo(
     () => accounts.map((account) => ({ value: account.id, label: account.name })),
@@ -411,220 +334,6 @@ Extrato a ser convertido:
     window.open(`${apiBaseUrl}/transactions/export?${params.toString()}`, "_blank");
   }
 
-  function handleFileChange(file: File | null) {
-    setImportFile(file);
-    setImportModalError(null);
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      setCsvTextContent(text);
-
-      const firstLine = text.replace(/^\uFEFF/, "").split(/\r?\n/)[0] ?? "";
-      const headers = parseCsvHeaderLine(firstLine).filter(Boolean);
-      setCsvHeaders(headers);
-
-      const nextMappings = {
-        eventDate: "",
-        description: "",
-        amount: "",
-        type: "",
-        subcategoryId: ""
-      };
-      for (const h of headers) {
-        const lower = h.toLowerCase();
-        if (lower.includes("data") || lower.includes("date")) {
-          nextMappings.eventDate = h;
-        } else if (
-          lower.includes("desc") ||
-          lower.includes("hist") ||
-          lower.includes("memo") ||
-          lower.includes("detalhe")
-        ) {
-          nextMappings.description = h;
-        } else if (
-          lower.includes("valor") ||
-          lower.includes("val") ||
-          lower.includes("quant") ||
-          lower.includes("amount") ||
-          lower.includes("cents")
-        ) {
-          nextMappings.amount = h;
-        } else if (lower.includes("tipo") || lower.includes("type") || lower.includes("natureza")) {
-          nextMappings.type = h;
-          nextMappings.subcategoryId = h;
-        } else if (
-          lower.includes("categoria") ||
-          lower.includes("category") ||
-          lower.includes("subcategoria")
-        ) {
-          nextMappings.subcategoryId = h;
-        }
-      }
-      setMappings(nextMappings);
-    };
-    reader.readAsText(file);
-  }
-
-  async function generateImportPreview() {
-    if (!mappings.eventDate || !mappings.description || !mappings.amount) {
-      setImportModalError("Por favor, preencha o mapeamento para Data, Descrição e Valor.");
-      return;
-    }
-
-    setIsImportPreviewLoading(true);
-    setImportModalError(null);
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/transactions/import-preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          csvContent: csvTextContent,
-          mappings,
-          dateFormat: importDateFormat,
-          defaultAccountId: importAccountId !== emptySelectValue ? importAccountId : null
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(await getResponseError(response, "Erro ao gerar prévia da importação."));
-      }
-
-      const items = (await response.json()) as ImportPreviewItem[];
-      setPreviewTransactions(items);
-
-      // Select all that are not duplicates by default
-      const initialSelected = new Set<string>();
-      for (const item of items) {
-        if (!item.isDuplicate) {
-          initialSelected.add(item.tempId);
-        }
-      }
-      setSelectedImportTempIds(initialSelected);
-      setImportStep(3);
-    } catch (err) {
-      reportClientError("transactions.importPreview", err);
-      setImportModalError(getErrorMessage(err));
-    } finally {
-      setIsImportPreviewLoading(false);
-    }
-  }
-
-  async function confirmImport() {
-    const toImport = previewTransactions.filter((item) => selectedImportTempIds.has(item.tempId));
-    if (toImport.length === 0) {
-      setImportModalError("Nenhuma transação selecionada para importação.");
-      return;
-    }
-
-    setIsImportConfirming(true);
-    setImportModalError(null);
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/transactions/import-confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transactions: toImport.map((t) => ({
-            eventDate: t.eventDate,
-            description: t.description,
-            amountCents: t.amountCents,
-            type: t.type,
-            accountId: t.accountId,
-            paymentMethodId: t.paymentMethodId,
-            creditCardId: t.creditCardId,
-            subcategoryId: t.subcategoryId,
-            status: "confirmed"
-          }))
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(await getResponseError(response, "Erro ao confirmar importação."));
-      }
-
-      // Success!
-      setIsImportModalOpen(false);
-      resetImportState();
-      await loadTransactions();
-    } catch (err) {
-      reportClientError("transactions.importConfirm", err);
-      setImportModalError(getErrorMessage(err));
-    } finally {
-      setIsImportConfirming(false);
-    }
-  }
-
-  function resetImportState() {
-    setImportStep(1);
-    setImportFile(null);
-    setCsvTextContent("");
-    setCsvHeaders([]);
-    setMappings({ eventDate: "", description: "", amount: "", type: "", subcategoryId: "" });
-    setImportDateFormat("DMY");
-    setImportAccountId(emptySelectValue);
-    setPreviewTransactions([]);
-    setSelectedImportTempIds(new Set());
-    setBulkImportType(emptySelectValue);
-    setBulkImportAccountId(emptySelectValue);
-    setBulkImportPaymentMethodId(emptySelectValue);
-    setBulkImportSubcategoryId(emptySelectValue);
-    setImportModalError(null);
-  }
-
-  function toggleSelectImport(tempId: string) {
-    setSelectedImportTempIds((current) => {
-      const next = new Set(current);
-      if (next.has(tempId)) {
-        next.delete(tempId);
-      } else {
-        next.add(tempId);
-      }
-      return next;
-    });
-  }
-
-  function toggleSelectAllImport() {
-    setSelectedImportTempIds((current) => {
-      if (current.size === previewTransactions.length) {
-        return new Set();
-      } else {
-        return new Set(previewTransactions.map((t) => t.tempId));
-      }
-    });
-  }
-
-  function updateImportItemSubcategory(tempId: string, subcategoryId: string | null) {
-    setPreviewTransactions((current) =>
-      current.map((item) => (item.tempId === tempId ? { ...item, subcategoryId } : item))
-    );
-  }
-
-  function applyBulkImportEdits() {
-    if (selectedImportTempIds.size === 0) {
-      setImportModalError("Selecione pelo menos um lançamento para editar em lote.");
-      return;
-    }
-
-    setPreviewTransactions((current) =>
-      applyImportPreviewBulkEdits(
-        current,
-        selectedImportTempIds,
-        {
-          type: bulkImportType,
-          accountId: bulkImportAccountId,
-          paymentMethodId: bulkImportPaymentMethodId,
-          subcategoryId: bulkImportSubcategoryId
-        },
-        accounts,
-        emptySelectValue
-      )
-    );
-    setImportModalError(null);
-  }
-
   useEffect(() => {
     void loadReferences().catch((loadError) => {
       reportClientError("transactions.loadReferences", loadError);
@@ -719,13 +428,7 @@ Extrato a ser convertido:
       setDrawerError(null);
 
       const isCardTransaction = Boolean(transaction.creditCardId);
-      let destinationAccountId = emptySelectValue;
-      if (transaction.linkedTransactionId) {
-        const linked = transactions.find((t) => t.id === transaction.linkedTransactionId);
-        if (linked) {
-          destinationAccountId = linked.accountId ?? emptySelectValue;
-        }
-      }
+      const destinationAccountId = emptySelectValue;
 
       setForm({
         type: transaction.type,
@@ -1145,7 +848,7 @@ Extrato a ser convertido:
               placeholder="Descrição"
               onSave={(description) => updateTransactionInline(transaction, { description })}
             />
-            {transaction.linkedTransactionId && (
+            {transaction.transferId && (
               <Badge variant="light" color="blue" size="xs">
                 Transferência
               </Badge>
@@ -1423,21 +1126,11 @@ Extrato a ser convertido:
               variant="light"
               leftSection={<IconUpload size={18} />}
               onClick={() => {
-                resetImportState();
+                
                 setIsImportModalOpen(true);
               }}
             >
               Importar CSV
-            </Button>
-            <Button
-              variant="light"
-              color="teal"
-              leftSection={<IconCheck size={18} />}
-              onClick={() => {
-                setIsReconciliationModalOpen(true);
-              }}
-            >
-              Conciliar Extrato
             </Button>
             <Button leftSection={<IconPlus size={18} />} onClick={openCreateDrawer}>
               Novo lançamento
@@ -1775,13 +1468,6 @@ Extrato a ser convertido:
             </Alert>
           ) : null}
 
-          {editingTransaction && isTransferCategory && !editingTransaction.linkedTransactionId ? (
-            <Alert color="teal" variant="light">
-              Ao salvar, este lançamento será convertido em transferência e o lançamento vinculado
-              será criado automaticamente na conta de destino.
-            </Alert>
-          ) : null}
-
           <Stack gap={6}>
             <Text size="sm" fw={500}>
               Tipo
@@ -2042,448 +1728,8 @@ Extrato a ser convertido:
         </Affix>
       ) : null}
 
-      <Modal
-        opened={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        title={
-          <Group gap="xs">
-            <IconUpload size={22} color="var(--mantine-color-blue-filled)" />
-            <Text fw={700} size="lg">
-              Importação de Transações CSV
-            </Text>
-          </Group>
-        }
-        size="xl"
-        radius="md"
-        padding="xl"
-      >
-        <Stack gap="md">
-          {/* Step indicator header */}
-          <Group justify="space-between" mb="xs">
-            <Badge
-              color={importStep >= 1 ? "blue" : "gray"}
-              variant={importStep === 1 ? "filled" : "light"}
-            >
-              1. Arquivo & Conta
-            </Badge>
-            <Badge
-              color={importStep >= 2 ? "blue" : "gray"}
-              variant={importStep === 2 ? "filled" : "light"}
-            >
-              2. Mapear Colunas
-            </Badge>
-            <Badge
-              color={importStep >= 3 ? "blue" : "gray"}
-              variant={importStep === 3 ? "filled" : "light"}
-            >
-              3. Pré-visualização
-            </Badge>
-          </Group>
+      <SimpleCsvImportDialog opened={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onImported={() => { setIsImportModalOpen(false); void loadTransactions(); }} />
 
-          {importModalError && (
-            <Alert color="red" title="Erro" icon={<IconAlertTriangle size={18} />} variant="light">
-              {importModalError}
-            </Alert>
-          )}
-
-          {/* STEP 1: UPLOAD FILE & DEFAULT ACCOUNT */}
-          {importStep === 1 && (
-            <Stack gap="md">
-              <Text size="sm" c="dimmed">
-                Faça o upload do seu arquivo de extrato bancário ou planilha no formato CSV para
-                importar suas transações.
-              </Text>
-
-              <Paper
-                withBorder
-                p="md"
-                radius="md"
-                style={{
-                  background:
-                    "linear-gradient(135deg, rgba(224, 242, 254, 0.35) 0%, rgba(238, 242, 255, 0.35) 100%)",
-                  borderColor: "var(--mantine-color-blue-light-color)",
-                  borderLeft: "4px solid var(--mantine-color-blue-filled)"
-                }}
-              >
-                <Group justify="space-between" align="center" wrap="nowrap">
-                  <Box style={{ flex: 1 }}>
-                    <Text size="sm" fw={700} c="blue.8">
-                      Dica: Converta extratos com IA
-                    </Text>
-                    <Text size="xs" c="dimmed" mt={2}>
-                      Copie o prompt estruturado e envie para uma IA (como ChatGPT, Gemini ou
-                      Claude) para formatar seu extrato PDF ou texto em um CSV pronto para
-                      importação.
-                    </Text>
-                  </Box>
-                  <Button
-                    size="xs"
-                    variant={clipboard.copied ? "filled" : "light"}
-                    color={clipboard.copied ? "teal" : "blue"}
-                    leftSection={
-                      clipboard.copied ? <IconCheck size={14} /> : <IconCopy size={14} />
-                    }
-                    onClick={() => clipboard.copy(statementPromptText)}
-                    style={{ flexShrink: 0 }}
-                  >
-                    {clipboard.copied ? "Copiado!" : "Copiar prompt IA"}
-                  </Button>
-                </Group>
-              </Paper>
-
-              <FileInput
-                label="Selecione o arquivo CSV"
-                placeholder="Clique para escolher o arquivo"
-                accept=".csv"
-                value={importFile}
-                onChange={handleFileChange}
-                required
-                clearable
-              />
-
-              <Select
-                label="Associar à Conta (opcional)"
-                description="Opcional. Se não for especificado no arquivo CSV, todas as transações importadas pertencerão a esta conta."
-                data={[
-                  { value: emptySelectValue, label: "Nenhuma (deixar sem conta)" },
-                  ...accountOptions
-                ]}
-                value={importAccountId}
-                onChange={(value) => setImportAccountId(value ?? emptySelectValue)}
-              />
-
-              <Group justify="flex-end" mt="md">
-                <Button onClick={() => setImportStep(2)} disabled={!importFile || !csvTextContent}>
-                  Continuar
-                </Button>
-              </Group>
-            </Stack>
-          )}
-
-          {/* STEP 2: COLUMN MAPPING */}
-          {importStep === 2 && (
-            <Stack gap="md">
-              <Text size="sm" c="dimmed">
-                Selecione qual coluna do seu arquivo CSV corresponde a cada um dos campos abaixo. O
-                sistema tentou adivinhar os mapeamentos automaticamente.
-              </Text>
-
-              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                <Select
-                  label="Coluna de Data (Obrigatório)"
-                  placeholder="Selecione a coluna"
-                  data={csvHeaders}
-                  value={mappings.eventDate}
-                  onChange={(val) => setMappings((m) => ({ ...m, eventDate: val ?? "" }))}
-                  required
-                />
-
-                <Select
-                  label="Formato da Data"
-                  data={[
-                    { value: "DMY", label: "DD/MM/AAAA" },
-                    { value: "MDY", label: "MM/DD/AAAA" },
-                    { value: "YMD", label: "AAAA-MM-DD" }
-                  ]}
-                  value={importDateFormat}
-                  onChange={(val) => setImportDateFormat((val as "DMY" | "MDY" | "YMD") ?? "DMY")}
-                  required
-                />
-
-                <Select
-                  label="Coluna de Descrição (Obrigatório)"
-                  placeholder="Selecione a coluna"
-                  data={csvHeaders}
-                  value={mappings.description}
-                  onChange={(val) => setMappings((m) => ({ ...m, description: val ?? "" }))}
-                  required
-                />
-
-                <Select
-                  label="Coluna de Valor (Obrigatório)"
-                  placeholder="Selecione a coluna"
-                  data={csvHeaders}
-                  value={mappings.amount}
-                  onChange={(val) => setMappings((m) => ({ ...m, amount: val ?? "" }))}
-                  required
-                />
-
-                <Select
-                  label="Coluna de Tipo/Natureza (Opcional)"
-                  description="Receita/Despesa. Se vazio, o sinal do valor define o tipo."
-                  placeholder="Selecione a coluna"
-                  data={[
-                    { value: "", label: "Auto-detectar pelo sinal do valor" },
-                    ...csvHeaders.map((h) => ({ value: h, label: h }))
-                  ]}
-                  value={mappings.type}
-                  onChange={(val) => setMappings((m) => ({ ...m, type: val ?? "" }))}
-                />
-
-                <Select
-                  label="Coluna de Categoria (Opcional)"
-                  description="Pode ser uma coluna com nomes como Farmácia, Delivery ou textos como (-) Farmácia."
-                  placeholder="Selecione a coluna"
-                  data={[
-                    { value: "", label: "Definir na pré-visualização" },
-                    ...csvHeaders.map((h) => ({ value: h, label: h }))
-                  ]}
-                  value={mappings.subcategoryId}
-                  onChange={(val) => setMappings((m) => ({ ...m, subcategoryId: val ?? "" }))}
-                />
-              </SimpleGrid>
-
-              <Group justify="space-between" mt="md">
-                <Button variant="subtle" onClick={() => setImportStep(1)}>
-                  Voltar
-                </Button>
-                <Button
-                  onClick={generateImportPreview}
-                  loading={isImportPreviewLoading}
-                  disabled={!mappings.eventDate || !mappings.description || !mappings.amount}
-                >
-                  Ver Prévia
-                </Button>
-              </Group>
-            </Stack>
-          )}
-
-          {/* STEP 3: RECONCILIATION & CONFIRMATION */}
-          {importStep === 3 && (
-            <Stack gap="md">
-              <Group justify="space-between">
-                <Text size="sm" fw={600}>
-                  {previewTransactions.length} transações encontradas no arquivo.
-                </Text>
-                <Button variant="subtle" size="xs" onClick={toggleSelectAllImport}>
-                  {selectedImportTempIds.size === previewTransactions.length
-                    ? "Desmarcar Todos"
-                    : "Selecionar Todos"}
-                </Button>
-              </Group>
-
-              <Text size="xs" c="dimmed">
-                As transações marcadas com aviso de duplicidade foram desmarcadas automaticamente
-                para evitar duplicatas, mas você pode ativá-las manualmente. Você também pode
-                ajustar os lançamentos selecionados em lote antes de importar.
-              </Text>
-
-              <Paper withBorder p="sm" radius="sm">
-                <Stack gap="sm">
-                  <Group justify="space-between" align="center">
-                    <Text size="sm" fw={700}>
-                      Edição em lote
-                    </Text>
-                    <Badge variant="light" color="teal">
-                      {selectedImportTempIds.size} selecionados
-                    </Badge>
-                  </Group>
-                  <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="sm">
-                    <Select
-                      label="Lançamento"
-                      placeholder="Manter"
-                      data={[
-                        { value: emptySelectValue, label: "Manter tipo atual" },
-                        { value: "income", label: "Receita" },
-                        { value: "expense", label: "Despesa" }
-                      ]}
-                      value={bulkImportType}
-                      onChange={(value) => setBulkImportType(value ?? emptySelectValue)}
-                    />
-                    <Select
-                      label="Conta"
-                      placeholder="Manter"
-                      data={[
-                        { value: emptySelectValue, label: "Manter conta atual" },
-                        { value: "__clear__", label: "Sem conta" },
-                        ...accountOptions
-                      ]}
-                      value={bulkImportAccountId}
-                      onChange={(value) => setBulkImportAccountId(value ?? emptySelectValue)}
-                      searchable
-                    />
-                    <Select
-                      label="Forma de pagamento"
-                      placeholder="Manter"
-                      data={[
-                        { value: emptySelectValue, label: "Manter forma atual" },
-                        { value: "__clear__", label: "Sem meio de pagamento" },
-                        ...paymentMethodOptions.filter(
-                          (option) => option.value !== emptySelectValue
-                        )
-                      ]}
-                      value={bulkImportPaymentMethodId}
-                      onChange={(value) => setBulkImportPaymentMethodId(value ?? emptySelectValue)}
-                      searchable
-                    />
-                    <CategorySelect
-                      label="Categoria"
-                      categories={categories}
-                      value={bulkImportSubcategoryId}
-                      onChange={(value) => setBulkImportSubcategoryId(value)}
-                      emptyOptionLabel="Manter categoria atual"
-                      placeholder="Manter"
-                    />
-                  </SimpleGrid>
-                  <Group justify="flex-end">
-                    <Button variant="light" size="xs" onClick={applyBulkImportEdits}>
-                      Aplicar aos selecionados
-                    </Button>
-                  </Group>
-                </Stack>
-              </Paper>
-
-              <Box
-                style={{
-                  maxHeight: 350,
-                  border: "1px solid var(--mantine-color-gray-3)",
-                  borderRadius: "var(--mantine-radius-md)"
-                }}
-              >
-                <Table.ScrollContainer minWidth={1080} maxHeight={350}>
-                  <Table verticalSpacing="xs" fz="sm" striped highlightOnHover>
-                    <Table.Thead
-                      style={{
-                        position: "sticky",
-                        top: 0,
-                        background: "var(--mantine-color-body)",
-                        zIndex: 1
-                      }}
-                    >
-                      <Table.Tr>
-                        <Table.Th style={{ width: 44 }} />
-                        <Table.Th style={{ minWidth: 260 }}>Data/Desc</Table.Th>
-                        <Table.Th style={{ width: 115 }}>Tipo</Table.Th>
-                        <Table.Th style={{ minWidth: 170 }}>Conta</Table.Th>
-                        <Table.Th style={{ minWidth: 190 }}>Forma</Table.Th>
-                        <Table.Th style={{ width: 120, textAlign: "right" }}>Valor</Table.Th>
-                        <Table.Th style={{ minWidth: 220 }}>Subcategoria</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {previewTransactions.map((item) => {
-                        const isSelected = selectedImportTempIds.has(item.tempId);
-                        return (
-                          <Table.Tr key={item.tempId} style={{ opacity: isSelected ? 1 : 0.6 }}>
-                            <Table.Td style={{ verticalAlign: "middle" }}>
-                              <Checkbox
-                                checked={isSelected}
-                                onChange={() => toggleSelectImport(item.tempId)}
-                              />
-                            </Table.Td>
-                            <Table.Td>
-                              <Stack gap={2}>
-                                <Group gap="xs" wrap="nowrap">
-                                  <Text size="xs" c="dimmed">
-                                    {formatBusinessDateForDisplay(item.eventDate)}
-                                  </Text>
-                                  {item.isDuplicate && (
-                                    <Badge
-                                      color="yellow"
-                                      size="xs"
-                                      leftSection={<IconAlertTriangle size={10} />}
-                                      style={{ textTransform: "none" }}
-                                    >
-                                      Duplicada
-                                    </Badge>
-                                  )}
-                                </Group>
-                                <Text size="sm" fw={600}>
-                                  {item.description}
-                                </Text>
-                                {item.isDuplicate && item.duplicateOf && (
-                                  <Text size="10px" c="yellow.8" style={{ lineHeight: 1.2 }}>
-                                    Match com: {item.duplicateOf.description} (
-                                    {formatBusinessDateForDisplay(item.duplicateOf.eventDate)})
-                                  </Text>
-                                )}
-                              </Stack>
-                            </Table.Td>
-                            <Table.Td style={{ verticalAlign: "middle" }}>
-                              <Badge
-                                variant="light"
-                                color={getAmountColor(item.type)}
-                                style={{ textTransform: "none" }}
-                              >
-                                {getTransactionTypeLabel(item.type)}
-                              </Badge>
-                            </Table.Td>
-                            <Table.Td style={{ verticalAlign: "middle" }}>
-                              <Text size="xs" truncate="end">
-                                {item.creditCardId
-                                  ? creditCards.find((c) => c.id === item.creditCardId)?.name ||
-                                    "Cartão"
-                                  : getAccountLabel(item.accountId, accounts)}
-                              </Text>
-                            </Table.Td>
-                            <Table.Td style={{ verticalAlign: "middle" }}>
-                              <Text size="xs" truncate="end">
-                                {item.creditCardId
-                                  ? "Cartão de Crédito"
-                                  : getPaymentMethodLabel(item.paymentMethodId, paymentMethods)}
-                              </Text>
-                            </Table.Td>
-                            <Table.Td style={{ textAlign: "right", verticalAlign: "middle" }}>
-                              <Text fw={700} size="sm" c={getAmountColor(item.type)}>
-                                {item.type === "expense" ? "-" : "+"}{" "}
-                                {formatMoney(moneyFromCents(item.amountCents))}
-                              </Text>
-                            </Table.Td>
-                            <Table.Td style={{ verticalAlign: "middle" }}>
-                              <CategorySelect
-                                size="xs"
-                                categories={categories}
-                                value={item.subcategoryId ?? emptySelectValue}
-                                onChange={(val) =>
-                                  updateImportItemSubcategory(
-                                    item.tempId,
-                                    val === emptySelectValue ? null : val
-                                  )
-                                }
-                                emptyOptionLabel="Sem categoria"
-                                placeholder="Categoria"
-                                label=""
-                              />
-                            </Table.Td>
-                          </Table.Tr>
-                        );
-                      })}
-                    </Table.Tbody>
-                  </Table>
-                </Table.ScrollContainer>
-              </Box>
-
-              <Group justify="space-between" mt="md">
-                <Button variant="subtle" onClick={() => setImportStep(2)}>
-                  Voltar Mapeamento
-                </Button>
-                <Group gap="sm">
-                  <Text size="xs" c="dimmed">
-                    {selectedImportTempIds.size} selecionadas
-                  </Text>
-                  <Button
-                    onClick={confirmImport}
-                    loading={isImportConfirming}
-                    color="teal"
-                    leftSection={<IconCheck size={18} />}
-                  >
-                    Confirmar Importação
-                  </Button>
-                </Group>
-              </Group>
-            </Stack>
-          )}
-        </Stack>
-      </Modal>
-
-      <ReconciliationWizard
-        isOpen={isReconciliationModalOpen}
-        onClose={() => setIsReconciliationModalOpen(false)}
-        onSuccess={loadTransactions}
-        accounts={accounts}
-        creditCards={creditCards}
-        categories={categories}
-      />
     </Stack>
   );
 }

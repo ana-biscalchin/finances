@@ -263,10 +263,7 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
       for (const sourceBudget of sourceBudgets) {
         const existingTargetBudget = targetBudgets.find(
-          (targetBudget) =>
-            targetBudget.budgetMonth === sourceBudget.budgetMonth &&
-            targetBudget.accountId === sourceBudget.accountId &&
-            targetBudget.paymentMethodId === sourceBudget.paymentMethodId
+          (targetBudget) => targetBudget.budgetMonth === sourceBudget.budgetMonth
         );
 
         if (existingTargetBudget) {
