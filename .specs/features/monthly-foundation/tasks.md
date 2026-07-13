@@ -235,10 +235,10 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** MON-01, CASH-01, TRF-01, BILL-01, REC-01, IMP-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Resposta inválida falha explicitamente e nunca vira zero/lista vazia.
-  - [ ] GET tem timeout e retry transitório limitado; mutações não repetem automaticamente.
-  - [ ] Teste: cliente cobre sucesso, payload inválido, timeout, retry GET e ausência de retry POST; gate web passa com cobertura ≥ 80% do código novo.
-  - [ ] Constituição: respeita `ana-standards/references/error-handling.md`.
+  - [x] Resposta inválida falha explicitamente e nunca vira zero/lista vazia.
+  - [x] GET tem timeout e retry transitório limitado; mutações não repetem automaticamente.
+  - [x] Teste: cliente cobre sucesso, payload inválido, timeout, retry GET e ausência de retry POST; gate web passa com cobertura ≥ 80% do código novo.
+  - [x] Constituição: respeita `ana-standards/references/error-handling.md`.
 - **Testes:** unit
 - **Gate:** rápido
 - **Commit:** `refactor(web): centralize API contracts`
