@@ -19,6 +19,8 @@
     "db:generate": "pnpm --filter @finances/database db:generate",
     "db:migrate": "pnpm --filter @finances/database db:migrate",
     "db:seed": "pnpm --filter @finances/database db:seed",
+    "db:seed:demo": "pnpm --filter @finances/database db:seed:demo",
+    "db:reset:dev": "pnpm --filter @finances/database db:reset:dev",
     "db:setup": "pnpm db:migrate && pnpm db:seed",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

@@ -3,6 +3,7 @@ import {
   categories as dbCategories,
   creditCards,
   creditCardBills,
+  creditCardBillPayments,
   installmentPurchases,
   subcategories,
   paymentMethods,
@@ -32,6 +33,7 @@ import {
   ValidationError,
   parseOptionalInteger
 } from "../http.js";
+import { validateActiveAccountPaymentMethod } from "./accounts/payment-method-associations.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 type ParsedTransactionPayload = ReturnType<typeof parseTransactionPayload>;
@@ -53,7 +55,6 @@ type TransactionPayload = {
   status?: unknown;
   notes?: unknown;
   destinationAccountId?: unknown;
-  linkedTransactionId?: unknown;
   installmentCount?: unknown;
 };
 
@@ -82,22 +83,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply.code(404).send({ message: "Lançamento não encontrado." });
     }
 
-    if (transaction.linkedTransactionId) {
-      const linked = db
-        .select()
-        .from(transactions)
-        .where(eq(transactions.id, transaction.linkedTransactionId))
-        .get();
-      return {
-        ...transaction,
-        destinationAccountId: linked?.accountId ?? null
-      };
-    }
-
-    return {
-      ...transaction,
-      destinationAccountId: null
-    };
+    return transaction;
   });
 
   app.post("/transactions", async (request, reply) => {
@@ -154,30 +140,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply.code(201).send(created);
     }
 
-    // ── Transfer (linked transactions) ─────────────────────────────────
-    if (destinationAccountId) {
-      const linkedId = crypto.randomUUID();
-
-      const primaryTransaction = {
-        id: transactionId,
-        ...rawTransactionData,
-        linkedTransactionId: linkedId
-      };
-
-      const linkedType = rawTransactionData.type === "expense" ? "income" : "expense";
-      const linkedTransaction = {
-        id: linkedId,
-        ...rawTransactionData,
-        type: linkedType,
-        accountId: destinationAccountId,
-        linkedTransactionId: transactionId
-      };
-
-      db.insert(transactions).values(primaryTransaction).run();
-      db.insert(transactions).values(linkedTransaction).run();
-
-      return reply.code(201).send(primaryTransaction);
-    }
+    if (destinationAccountId) return reply.code(400).send({ message: "Use o endpoint /transfers para transferências." });
 
     // ── Single transaction ─────────────────────────────────────────────
     const transactionData = normalizeTransactionForStorage(connection, rawTransactionData);
@@ -194,7 +157,6 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     const transaction = {
       id: transactionId,
       ...transactionData,
-      linkedTransactionId: null
     };
 
     db.insert(transactions).values(transaction).run();
@@ -209,6 +171,12 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply.code(404).send({ message: "Lançamento não encontrado." });
     }
 
+    if (current.creditCardBillId && isBillFinanciallyLocked(db, current.creditCardBillId)) {
+      return reply.code(409).send({
+        message: "A fatura possui pagamento ou está fechada; altere apenas os metadados da compra."
+      });
+    }
+
     const payload = parseTransactionPayloadOrReply(request.body, reply);
 
     if (!payload) {
@@ -219,7 +187,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply;
     }
 
-    const transferValidation = validateTransferPayload(connection, payload, current);
+    const transferValidation = validateTransferPayload(connection, payload);
     if (transferValidation) {
       return reply.code(400).send({ message: transferValidation });
     }
@@ -274,79 +242,38 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
     const transactionData = normalizeTransactionForStorage(connection, rawTransactionData);
 
-    if (current.linkedTransactionId && transactionData.creditCardId) {
-      return reply
-        .code(400)
-        .send({ message: "Transferência não pode ser convertida em compra de cartão." });
-    }
-
-    if (!current.linkedTransactionId && destinationAccountId) {
-      const linkedId = crypto.randomUUID();
-      const linkedType = transactionData.type === "expense" ? "income" : "expense";
-
-      db.transaction((tx) => {
-        tx.update(transactions)
-          .set({
-            ...transactionData,
-            linkedTransactionId: linkedId,
-            updatedAt: new Date().toISOString()
-          })
-          .where(eq(transactions.id, id))
-          .run();
-
-        tx.insert(transactions)
-          .values({
-            id: linkedId,
-            ...transactionData,
-            type: linkedType,
-            accountId: destinationAccountId,
-            linkedTransactionId: id
-          })
-          .run();
-      });
-
-      return db.select().from(transactions).where(eq(transactions.id, id)).get();
-    }
-
-    // Update main transaction
+    if (destinationAccountId) return reply.code(400).send({ message: "Use o endpoint /transfers para transferências." });
     db.update(transactions)
       .set({
         ...transactionData,
-        linkedTransactionId: current.linkedTransactionId,
         updatedAt: new Date().toISOString()
       })
       .where(eq(transactions.id, id))
       .run();
 
-    // If there is a linked transaction, update it too
-    if (current.linkedTransactionId) {
-      const linked = db
-        .select()
-        .from(transactions)
-        .where(eq(transactions.id, current.linkedTransactionId))
-        .get();
-      if (linked) {
-        // Linked transaction changes type (if main is expense, linked is income, and vice versa)
-        const linkedType = transactionData.type === "expense" ? "income" : "expense";
-        db.update(transactions)
-          .set({
-            description: transactionData.description,
-            amountCents: transactionData.amountCents,
-            eventDate: transactionData.eventDate,
-            budgetMonth: transactionData.budgetMonth,
-            paymentMethodId: transactionData.paymentMethodId,
-            subcategoryId: transactionData.subcategoryId,
-            status: transactionData.status,
-            notes: transactionData.notes,
-            type: linkedType,
-            accountId: destinationAccountId ?? linked.accountId,
-            updatedAt: new Date().toISOString()
-          })
-          .where(eq(transactions.id, current.linkedTransactionId))
-          .run();
-      }
-    }
+    return db.select().from(transactions).where(eq(transactions.id, id)).get();
+  });
 
+  app.patch("/transactions/:id/metadata", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const current = db.select().from(transactions).where(eq(transactions.id, id)).get();
+    if (!current) return reply.code(404).send({ message: "Lançamento não encontrado." });
+    const body = isRecord(request.body) ? request.body : {};
+    let description: string;
+    let subcategoryId: string | null;
+    let notes: string | null;
+    try {
+      description = parseRequiredString(body.description, "description");
+      subcategoryId = parseOptionalString(body.subcategoryId, "subcategoryId");
+      notes = parseOptionalString(body.notes, "notes");
+    } catch (error) {
+      return sendPayloadError(error, reply, "Metadados inválidos.");
+    }
+    if (subcategoryId && !db.select().from(subcategories).where(eq(subcategories.id, subcategoryId)).get()) {
+      return reply.code(400).send({ message: "Subcategoria não encontrada." });
+    }
+    db.update(transactions).set({ description, subcategoryId, notes, updatedAt: new Date().toISOString() })
+      .where(eq(transactions.id, id)).run();
     return db.select().from(transactions).where(eq(transactions.id, id)).get();
   });
 
@@ -361,22 +288,14 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     if (
       current.creditCardId &&
       current.creditCardBillId &&
-      isBillPaid(db, current.creditCardBillId)
+      isBillFinanciallyLocked(db, current.creditCardBillId)
     ) {
       return reply
-        .code(400)
-        .send({ message: "Não é possível excluir lançamentos de uma fatura paga." });
+        .code(409)
+        .send({ message: "Não é possível excluir lançamentos de uma fatura fechada ou com pagamento." });
     }
 
     db.transaction((tx) => {
-      // If it is linked, delete the other one as well (and its potential installments)
-      if (current.linkedTransactionId) {
-        tx.delete(installments)
-          .where(eq(installments.purchaseTransactionId, current.linkedTransactionId))
-          .run();
-        tx.delete(transactions).where(eq(transactions.id, current.linkedTransactionId)).run();
-      }
-
       tx.delete(installments).where(eq(installments.purchaseTransactionId, id)).run();
       tx.delete(transactions).where(eq(transactions.id, id)).run();
     });
@@ -743,6 +662,17 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       for (const t of body.transactions!) {
         const id = crypto.randomUUID();
         const eventDate = assertBusinessDate(t.eventDate);
+        ensureOptionalAccountExists(connection, t.creditCardId ? null : t.accountId ?? null);
+        ensureOptionalPaymentMethodExists(connection, t.creditCardId ? null : t.paymentMethodId ?? null);
+        ensureOptionalSubcategoryExists(connection, t.subcategoryId ?? null);
+        ensureOptionalCreditCardExists(connection, t.creditCardId ?? null);
+        ensurePaymentSource(connection, {
+          type: t.type,
+          accountId: t.creditCardId ? null : t.accountId ?? null,
+          paymentMethodId: t.creditCardId ? null : t.paymentMethodId ?? null,
+          creditCardId: t.creditCardId ?? null,
+          subcategoryId: t.subcategoryId ?? null
+        });
         let budgetMonth = t.budgetMonth
           ? assertYearMonth(t.budgetMonth)
           : yearMonthFromDate(eventDate);
@@ -818,7 +748,9 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
           creditCardBillId,
           status: assertTransactionStatus(t.status || "confirmed"),
           notes: t.notes || null,
-          linkedTransactionId: null,
+          transferId: null,
+          recurrenceRuleId: null,
+          recurrenceMonth: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -939,31 +871,21 @@ function parseTransactionPayload(body: unknown) {
         : assertTransactionStatus(parseRequiredString(payload.status, "status")),
     notes: parseOptionalString(payload.notes, "notes"),
     destinationAccountId,
-    linkedTransactionId: parseOptionalString(payload.linkedTransactionId, "linkedTransactionId"),
     installmentCount
   };
 }
 
 function validateTransferPayload(
   connection: DatabaseConnection,
-  payload: ParsedTransactionPayload,
-  current?: typeof transactions.$inferSelect
+  payload: ParsedTransactionPayload
 ) {
   const isTransferSubcategory = isTransferSubcategoryId(connection, payload.subcategoryId);
   const hasDestination = Boolean(payload.destinationAccountId);
-  const isExistingTransfer = Boolean(current?.linkedTransactionId);
-
-  if (payload.creditCardId && (isTransferSubcategory || hasDestination || isExistingTransfer)) {
+  if (payload.creditCardId && (isTransferSubcategory || hasDestination)) {
     return "Compra no cartão não pode ser transferência entre contas.";
   }
 
-  if ((isTransferSubcategory || hasDestination) && !payload.accountId) {
-    return "Transferência precisa de uma conta de origem.";
-  }
-
-  if (isTransferSubcategory && !hasDestination && !isExistingTransfer) {
-    return "Transferência precisa de uma conta de destino.";
-  }
+  if (isTransferSubcategory || hasDestination) return "Use o endpoint /transfers para transferências entre contas.";
 
   if (payload.destinationAccountId && payload.accountId === payload.destinationAccountId) {
     return "Conta de origem e conta de destino devem ser diferentes.";
@@ -1039,7 +961,6 @@ export function buildCreditCardInstallmentTransactions(
       accountId: null,
       paymentMethodId: null,
       creditCardBillId: bill.id,
-      linkedTransactionId: null
     };
   });
 }
@@ -1088,6 +1009,8 @@ function getOrCreateCreditCardBill(
     dueDate,
     status: "open",
     paidAt: null,
+    minimumDueCents: null,
+    closedAt: null,
     createdAt: now,
     updatedAt: now
   };
@@ -1105,6 +1028,15 @@ export function isBillPaid(db: DatabaseConnection["db"], billId: string | null):
     .where(eq(creditCardBills.id, billId))
     .get();
   return bill?.status === "paid";
+}
+
+export function isBillFinanciallyLocked(db: DatabaseConnection["db"], billId: string): boolean {
+  const bill = db.select({ closedAt: creditCardBills.closedAt }).from(creditCardBills)
+    .where(eq(creditCardBills.id, billId)).get();
+  if (bill?.closedAt) return true;
+  return db.select({ id: creditCardBillPayments.id }).from(creditCardBillPayments)
+    .where(and(eq(creditCardBillPayments.billId, billId), isNull(creditCardBillPayments.reversedAt)))
+    .get() !== undefined;
 }
 
 function parseTransactionPayloadOrReply(body: unknown, reply: FastifyReply) {
@@ -1125,11 +1057,25 @@ function ensureReferencesOrReply(
     ensureOptionalPaymentMethodExists(connection, payload.paymentMethodId);
     ensureOptionalSubcategoryExists(connection, payload.subcategoryId);
     ensureOptionalCreditCardExists(connection, payload.creditCardId);
+    ensurePaymentSource(connection, payload);
     return true;
   } catch (error) {
     sendPayloadError(error, reply, "Referências do lançamento inválidas.");
     return false;
   }
+}
+
+function ensurePaymentSource(
+  connection: DatabaseConnection,
+  payload: Pick<ParsedTransactionPayload, "type" | "accountId" | "paymentMethodId" | "creditCardId" | "subcategoryId">
+) {
+  if (payload.creditCardId) return;
+  const isConsumption = payload.type === "expense" && Boolean(payload.subcategoryId);
+  if (!isConsumption) return;
+  if (!payload.accountId || !payload.paymentMethodId) {
+    throw new ValidationError("Despesa em conta exige conta e forma de pagamento.");
+  }
+  validateActiveAccountPaymentMethod(connection, payload.accountId, payload.paymentMethodId);
 }
 
 function ensureOptionalAccountExists(connection: DatabaseConnection, accountId: string | null) {

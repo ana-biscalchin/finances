@@ -10,9 +10,14 @@
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
-    "test": "vitest run src/ --passWithNoTests"
+    "test": "vitest run src/ --passWithNoTests",
+    "test:coverage": "vitest run src/ --coverage"
   },
   "devDependencies": {
-    "@types/node": "^24.10.2"
+    "@types/node": "^24.10.2",
+    "@vitest/coverage-v8": "^4.1.8"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
   }
 }

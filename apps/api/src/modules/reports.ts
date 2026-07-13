@@ -18,7 +18,7 @@ import {
   isConsumptionExpense,
   isReportableIncome
 } from "@finances/domain";
-import { and, eq, gt, gte, inArray, isNotNull, lt, ne, or } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, lt, ne, or, type SQL } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
@@ -43,11 +43,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const monthAfterNextStart = `${advanceMonth(nextMonth, 1)}-01`;
 
     // Get active credit cards
-    const activeCards = db
-      .select()
-      .from(creditCards)
-      .where(eq(creditCards.isActive, true))
-      .all();
+    const activeCards = db.select().from(creditCards).where(eq(creditCards.isActive, true)).all();
 
     const cardMap = new Map(activeCards.map((c) => [c.id, c]));
     const cardIds = activeCards.map((c) => c.id);
@@ -122,7 +118,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         )
         .all();
 
-      const futureCommittedCents = futureInstallments.reduce((sum, item) => sum + item.amountCents, 0);
+      const futureCommittedCents = futureInstallments.reduce(
+        (sum, item) => sum + item.amountCents,
+        0
+      );
       const futureMonths = [...new Set(futureInstallments.map((item) => item.dueMonth))].sort();
 
       summaryList.push({
@@ -148,13 +147,20 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const query = request.query as Record<string, unknown>;
     const monthStr = typeof query.month === "string" ? query.month : undefined;
     const yearStr = typeof query.year === "string" ? query.year : undefined;
-    const accountId = typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
-    const paymentMethodId = typeof query.paymentMethodId === "string" && query.paymentMethodId ? query.paymentMethodId : undefined;
-    const categoryId = typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
+    const accountId =
+      typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
+    const paymentMethodId =
+      typeof query.paymentMethodId === "string" && query.paymentMethodId
+        ? query.paymentMethodId
+        : undefined;
+    const categoryId =
+      typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
     const view = typeof query.view === "string" && query.view === "cash" ? "cash" : "competence";
 
     if (!monthStr && !yearStr) {
-      return reply.code(400).send({ message: "Defina o mês (month) ou o ano (year) para consulta." });
+      return reply
+        .code(400)
+        .send({ message: "Defina o mês (month) ou o ano (year) para consulta." });
     }
 
     const txFilters = [eq(transactions.type, "expense"), ne(transactions.status, "canceled")];
@@ -164,7 +170,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         const month = assertYearMonth(monthStr);
         txFilters.push(
           view === "cash"
-            ? and(gte(transactions.eventDate, `${month}-01`), lt(transactions.eventDate, `${advanceMonth(month, 1)}-01`))!
+            ? and(
+                gte(transactions.eventDate, `${month}-01`),
+                lt(transactions.eventDate, `${advanceMonth(month, 1)}-01`)
+              )!
             : eq(transactions.budgetMonth, month)
         );
       } catch {
@@ -177,8 +186,14 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       const yearRange = getYearRange(yearStr);
       txFilters.push(
         view === "cash"
-          ? and(gte(transactions.eventDate, yearRange.startDate), lt(transactions.eventDate, yearRange.endDate))!
-          : and(gte(transactions.budgetMonth, yearRange.startMonth), lt(transactions.budgetMonth, yearRange.endMonth))!
+          ? and(
+              gte(transactions.eventDate, yearRange.startDate),
+              lt(transactions.eventDate, yearRange.endDate)
+            )!
+          : and(
+              gte(transactions.budgetMonth, yearRange.startMonth),
+              lt(transactions.budgetMonth, yearRange.endMonth)
+            )!
       );
     }
 
@@ -186,11 +201,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       txFilters.push(eq(transactions.accountId, accountId));
     }
     if (paymentMethodId) {
-      txFilters.push(
-        paymentMethodId === "pm-credit-card" && view === "competence"
-          ? isNotNull(transactions.creditCardId)
-          : eq(transactions.paymentMethodId, paymentMethodId)
-      );
+      txFilters.push(reportPaymentSourceFilter(paymentMethodId));
     }
 
     const subcategoryRows = db
@@ -225,19 +236,23 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         status: transactions.status,
         creditCardId: transactions.creditCardId,
         creditCardBillId: transactions.creditCardBillId,
-        linkedTransactionId: transactions.linkedTransactionId
+        transferId: transactions.transferId
       })
       .from(transactions)
       .where(and(...txFilters))
       .all();
 
     const paymentMethodMap = getPaymentMethodMap(db);
-    const groups = new Map<string, {
-      categoryId: string;
-      categoryName: string;
-      amountCents: number;
-      paymentBreakdown: Map<string, number>;
-    }>();
+    const creditCardMap = getCreditCardMap(db);
+    const groups = new Map<
+      string,
+      {
+        categoryId: string;
+        categoryName: string;
+        amountCents: number;
+        paymentBreakdown: Map<string, number>;
+      }
+    >();
 
     for (const tx of expenses) {
       const isExpense = view === "cash" ? isCashExpense(tx) : isConsumptionExpense(tx);
@@ -272,7 +287,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         paymentBreakdown: Array.from(group.paymentBreakdown.entries())
           .map(([id, amountCents]) => ({
             paymentMethodId: id === "null" ? "" : id,
-            paymentMethodName: getPaymentMethodName(paymentMethodMap, id),
+            paymentMethodName: getPaymentMethodName(paymentMethodMap, creditCardMap, id),
             amountCents
           }))
           .sort((a, b) => b.amountCents - a.amountCents)
@@ -284,10 +299,18 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
   app.get("/reports/daily-evolution", async (request, reply) => {
     const query = request.query as Record<string, unknown>;
     const monthStr = typeof query.month === "string" ? query.month : "";
-    const accountId = typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
-    const paymentMethodId = typeof query.paymentMethodId === "string" && query.paymentMethodId ? query.paymentMethodId : undefined;
-    const categoryId = typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
-    const subcategoryId = typeof query.subcategoryId === "string" && query.subcategoryId ? query.subcategoryId : undefined;
+    const accountId =
+      typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
+    const paymentMethodId =
+      typeof query.paymentMethodId === "string" && query.paymentMethodId
+        ? query.paymentMethodId
+        : undefined;
+    const categoryId =
+      typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
+    const subcategoryId =
+      typeof query.subcategoryId === "string" && query.subcategoryId
+        ? query.subcategoryId
+        : undefined;
     const view = typeof query.view === "string" && query.view === "cash" ? "cash" : "competence";
 
     let month: string;
@@ -335,7 +358,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const nextMonthStart = `${advanceMonth(month, 1)}-01`;
     const txFilters = [
       view === "cash"
-        ? and(gte(transactions.eventDate, `${month}-01`), lt(transactions.eventDate, nextMonthStart))
+        ? and(
+            gte(transactions.eventDate, `${month}-01`),
+            lt(transactions.eventDate, nextMonthStart)
+          )
         : eq(transactions.budgetMonth, month),
       ne(transactions.status, "canceled")
     ];
@@ -344,11 +370,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       txFilters.push(eq(transactions.accountId, accountId));
     }
     if (paymentMethodId) {
-      txFilters.push(
-        paymentMethodId === "pm-credit-card" && view === "competence"
-          ? isNotNull(transactions.creditCardId)
-          : eq(transactions.paymentMethodId, paymentMethodId)
-      );
+      txFilters.push(reportPaymentSourceFilter(paymentMethodId));
     }
     if (subcategoryId) {
       txFilters.push(eq(transactions.subcategoryId, subcategoryId));
@@ -375,7 +397,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         accountId: transactions.accountId,
         creditCardId: transactions.creditCardId,
         creditCardBillId: transactions.creditCardBillId,
-        linkedTransactionId: transactions.linkedTransactionId
+        transferId: transactions.transferId
       })
       .from(transactions)
       .where(and(...txFilters))
@@ -441,10 +463,18 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
   app.get("/reports/annual-summary", async (request, reply) => {
     const query = request.query as Record<string, unknown>;
     const yearStr = typeof query.year === "string" ? query.year : "";
-    const accountId = typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
-    const paymentMethodId = typeof query.paymentMethodId === "string" && query.paymentMethodId ? query.paymentMethodId : undefined;
-    const categoryId = typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
-    const subcategoryId = typeof query.subcategoryId === "string" && query.subcategoryId ? query.subcategoryId : undefined;
+    const accountId =
+      typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
+    const paymentMethodId =
+      typeof query.paymentMethodId === "string" && query.paymentMethodId
+        ? query.paymentMethodId
+        : undefined;
+    const categoryId =
+      typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
+    const subcategoryId =
+      typeof query.subcategoryId === "string" && query.subcategoryId
+        ? query.subcategoryId
+        : undefined;
     const view = typeof query.view === "string" && query.view === "cash" ? "cash" : "competence";
 
     if (!/^\d{4}$/.test(yearStr)) {
@@ -454,8 +484,14 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const yearRange = getYearRange(yearStr);
     const txFilters = [
       view === "cash"
-        ? and(gte(transactions.eventDate, yearRange.startDate), lt(transactions.eventDate, yearRange.endDate))
-        : and(gte(transactions.budgetMonth, yearRange.startMonth), lt(transactions.budgetMonth, yearRange.endMonth)),
+        ? and(
+            gte(transactions.eventDate, yearRange.startDate),
+            lt(transactions.eventDate, yearRange.endDate)
+          )
+        : and(
+            gte(transactions.budgetMonth, yearRange.startMonth),
+            lt(transactions.budgetMonth, yearRange.endMonth)
+          ),
       ne(transactions.status, "canceled")
     ];
 
@@ -463,11 +499,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       txFilters.push(eq(transactions.accountId, accountId));
     }
     if (paymentMethodId) {
-      txFilters.push(
-        paymentMethodId === "pm-credit-card" && view === "competence"
-          ? isNotNull(transactions.creditCardId)
-          : eq(transactions.paymentMethodId, paymentMethodId)
-      );
+      txFilters.push(reportPaymentSourceFilter(paymentMethodId));
     }
     if (subcategoryId) {
       txFilters.push(eq(transactions.subcategoryId, subcategoryId));
@@ -494,7 +526,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         status: transactions.status,
         creditCardId: transactions.creditCardId,
         creditCardBillId: transactions.creditCardBillId,
-        linkedTransactionId: transactions.linkedTransactionId
+        transferId: transactions.transferId
       })
       .from(transactions)
       .where(and(...txFilters))
@@ -541,9 +573,14 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
   app.get("/reports/annual-categories", async (request, reply) => {
     const query = request.query as Record<string, unknown>;
     const yearStr = typeof query.year === "string" ? query.year : "";
-    const accountId = typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
-    const paymentMethodId = typeof query.paymentMethodId === "string" && query.paymentMethodId ? query.paymentMethodId : undefined;
-    const categoryId = typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
+    const accountId =
+      typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
+    const paymentMethodId =
+      typeof query.paymentMethodId === "string" && query.paymentMethodId
+        ? query.paymentMethodId
+        : undefined;
+    const categoryId =
+      typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
     const view = typeof query.view === "string" && query.view === "cash" ? "cash" : "competence";
 
     if (!/^\d{4}$/.test(yearStr)) {
@@ -553,8 +590,14 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const yearRange = getYearRange(yearStr);
     const txFilters = [
       view === "cash"
-        ? and(gte(transactions.eventDate, yearRange.startDate), lt(transactions.eventDate, yearRange.endDate))
-        : and(gte(transactions.budgetMonth, yearRange.startMonth), lt(transactions.budgetMonth, yearRange.endMonth)),
+        ? and(
+            gte(transactions.eventDate, yearRange.startDate),
+            lt(transactions.eventDate, yearRange.endDate)
+          )
+        : and(
+            gte(transactions.budgetMonth, yearRange.startMonth),
+            lt(transactions.budgetMonth, yearRange.endMonth)
+          ),
       eq(transactions.type, "expense"),
       ne(transactions.status, "canceled")
     ];
@@ -563,11 +606,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       txFilters.push(eq(transactions.accountId, accountId));
     }
     if (paymentMethodId) {
-      txFilters.push(
-        paymentMethodId === "pm-credit-card" && view === "competence"
-          ? isNotNull(transactions.creditCardId)
-          : eq(transactions.paymentMethodId, paymentMethodId)
-      );
+      txFilters.push(reportPaymentSourceFilter(paymentMethodId));
     }
 
     // If categoryId is NOT defined, we return sums grouped by Category (Macro)
@@ -580,7 +619,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
           status: transactions.status,
           creditCardId: transactions.creditCardId,
           creditCardBillId: transactions.creditCardBillId,
-          linkedTransactionId: transactions.linkedTransactionId
+          transferId: transactions.transferId
         })
         .from(transactions)
         .where(and(...txFilters))
@@ -596,7 +635,9 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         .leftJoin(dbCategories, eq(subcategories.categoryId, dbCategories.id))
         .all();
 
-      const subToCatMap = new Map(allSubs.map((s) => [s.id, { catId: s.categoryId, catName: s.categoryName ?? "Outros" }]));
+      const subToCatMap = new Map(
+        allSubs.map((s) => [s.id, { catId: s.categoryId, catName: s.categoryName ?? "Outros" }])
+      );
 
       const categorySums = new Map<string, { name: string; sum: number }>();
 
@@ -645,7 +686,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
           status: transactions.status,
           creditCardId: transactions.creditCardId,
           creditCardBillId: transactions.creditCardBillId,
-          linkedTransactionId: transactions.linkedTransactionId
+          transferId: transactions.transferId
         })
         .from(transactions)
         .where(and(...txFilters))
@@ -678,19 +719,23 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const query = request.query as Record<string, unknown>;
     const monthStr = typeof query.month === "string" ? query.month : undefined;
     const yearStr = typeof query.year === "string" ? query.year : undefined;
-    const accountId = typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
-    const categoryId = typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
-    const subcategoryId = typeof query.subcategoryId === "string" && query.subcategoryId ? query.subcategoryId : undefined;
+    const accountId =
+      typeof query.accountId === "string" && query.accountId ? query.accountId : undefined;
+    const categoryId =
+      typeof query.categoryId === "string" && query.categoryId ? query.categoryId : undefined;
+    const subcategoryId =
+      typeof query.subcategoryId === "string" && query.subcategoryId
+        ? query.subcategoryId
+        : undefined;
     const view = typeof query.view === "string" && query.view === "cash" ? "cash" : "competence";
 
     if (!monthStr && !yearStr) {
-      return reply.code(400).send({ message: "Defina o mês (month) ou o ano (year) para consulta." });
+      return reply
+        .code(400)
+        .send({ message: "Defina o mês (month) ou o ano (year) para consulta." });
     }
 
-    const txFilters = [
-      eq(transactions.type, "expense"),
-      ne(transactions.status, "canceled")
-    ];
+    const txFilters = [eq(transactions.type, "expense"), ne(transactions.status, "canceled")];
 
     if (monthStr) {
       try {
@@ -698,7 +743,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         const nextMonth = advanceMonth(month, 1);
         txFilters.push(
           view === "cash"
-            ? and(gte(transactions.eventDate, `${month}-01`), lt(transactions.eventDate, `${nextMonth}-01`))!
+            ? and(
+                gte(transactions.eventDate, `${month}-01`),
+                lt(transactions.eventDate, `${nextMonth}-01`)
+              )!
             : eq(transactions.budgetMonth, month)
         );
       } catch {
@@ -711,8 +759,14 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       const yearRange = getYearRange(yearStr);
       txFilters.push(
         view === "cash"
-          ? and(gte(transactions.eventDate, yearRange.startDate), lt(transactions.eventDate, yearRange.endDate))!
-          : and(gte(transactions.budgetMonth, yearRange.startMonth), lt(transactions.budgetMonth, yearRange.endMonth))!
+          ? and(
+              gte(transactions.eventDate, yearRange.startDate),
+              lt(transactions.eventDate, yearRange.endDate)
+            )!
+          : and(
+              gte(transactions.budgetMonth, yearRange.startMonth),
+              lt(transactions.budgetMonth, yearRange.endMonth)
+            )!
       );
     }
 
@@ -743,29 +797,28 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         status: transactions.status,
         creditCardId: transactions.creditCardId,
         creditCardBillId: transactions.creditCardBillId,
-        linkedTransactionId: transactions.linkedTransactionId
+        transferId: transactions.transferId
       })
       .from(transactions)
       .where(and(...txFilters))
       .all();
 
-    const allPms = db.select().from(paymentMethods).all();
-    const pmMap = new Map(allPms.map((p) => [p.id, p]));
+    const pmMap = getPaymentMethodMap(db);
+    const creditCardMap = getCreditCardMap(db);
 
     const pmSums = new Map<string, number>();
 
     for (const tx of expenses) {
       const isExpense = view === "cash" ? isCashExpense(tx) : isConsumptionExpense(tx);
       if (!isExpense) continue;
-      const pmId = tx.creditCardId ? "pm-credit-card" : (tx.paymentMethodId || "null");
+      const pmId = resolveReportPaymentMethodId(tx);
       pmSums.set(pmId, (pmSums.get(pmId) ?? 0) + tx.amountCents);
     }
 
     const result = Array.from(pmSums.entries()).map(([id, sum]) => {
-      const pm = id !== "null" ? pmMap.get(id) : null;
       return {
         paymentMethodId: id !== "null" ? id : "",
-        paymentMethodName: pm ? pm.name : "Geral / Sem Meio Específico",
+        paymentMethodName: getPaymentMethodName(pmMap, creditCardMap, id),
         amountCents: sum
       };
     });
@@ -789,18 +842,43 @@ function getPaymentMethodMap(db: DatabaseConnection["db"]) {
   return new Map(allPaymentMethods.map((paymentMethod) => [paymentMethod.id, paymentMethod]));
 }
 
+function getCreditCardMap(db: DatabaseConnection["db"]) {
+  return new Map(
+    db
+      .select()
+      .from(creditCards)
+      .all()
+      .map((card) => [card.id, card])
+  );
+}
+
 function resolveReportPaymentMethodId(transaction: {
   creditCardId?: string | null;
   paymentMethodId?: string | null;
 }) {
-  return transaction.creditCardId ? "pm-credit-card" : (transaction.paymentMethodId || "null");
+  return transaction.creditCardId
+    ? `credit-card:${transaction.creditCardId}`
+    : transaction.paymentMethodId || "null";
+}
+
+function reportPaymentSourceFilter(paymentSourceId: string): SQL {
+  return paymentSourceId.startsWith("credit-card:")
+    ? eq(transactions.creditCardId, paymentSourceId.slice("credit-card:".length))
+    : eq(transactions.paymentMethodId, paymentSourceId);
 }
 
 function getPaymentMethodName(
   paymentMethodMap: ReturnType<typeof getPaymentMethodMap>,
+  creditCardMap: ReturnType<typeof getCreditCardMap>,
   paymentMethodId: string
 ) {
   if (paymentMethodId === "null") return "Geral / Sem Meio Específico";
+  if (paymentMethodId.startsWith("credit-card:")) {
+    return (
+      creditCardMap.get(paymentMethodId.slice("credit-card:".length))?.name ??
+      "Cartão não identificado"
+    );
+  }
   return paymentMethodMap.get(paymentMethodId)?.name ?? "Meio não identificado";
 }
 

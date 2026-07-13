@@ -1,0 +1,21 @@
+import { Alert } from "@mantine/core";
+import type { MonthlyOverview } from "../shared/api-contracts.js";
+export function MonthlyHealthSummary({ data }: { data: MonthlyOverview }) {
+  if (data.items.length === 0)
+    return (
+      <Alert title="Comece o planejamento do mês">
+        Defina valores por categoria para acompanhar quanto ainda pode gastar.
+      </Alert>
+    );
+  if (data.summary.abovePlannedCents > 0)
+    return (
+      <Alert color="red" title="Há categorias acima do planejado">
+        Revise os gastos ou ajuste o planejamento conscientemente.
+      </Alert>
+    );
+  return (
+    <Alert color="teal" title="Mês dentro do planejado">
+      O disponível mostra quanto ainda pode ser gasto.
+    </Alert>
+  );
+}

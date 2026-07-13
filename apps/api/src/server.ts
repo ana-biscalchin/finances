@@ -8,11 +8,14 @@ import { registerCategoryRoutes } from "./modules/categories.js";
 import { registerCreditCardRoutes } from "./modules/credit-cards.js";
 import { registerPaymentMethodRoutes } from "./modules/payment-methods.js";
 import { registerTransactionRoutes } from "./modules/transactions.js";
-import { registerBudgetRoutes } from "./modules/budgets.js";
 import { registerReportRoutes } from "./modules/reports.js";
-import { registerReconciliationRoutes } from "./modules/reconciliation.js";
 import { registerBackupRoutes } from "./modules/backups.js";
 import { registerSettingsRoutes } from "./modules/settings.js";
+import { registerTransferRoutes } from "./modules/transfers.js";
+import { registerRecurrenceRoutes } from "./modules/recurrences.js";
+import { registerMonthlyOverviewRoutes } from "./modules/monthly-overview.js";
+import { registerSimpleImportRoutes } from "./modules/simple-import.js";
+import { registerPlannedExpenseRoutes } from "./modules/planned-expenses.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -70,7 +73,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   }));
 
   app.get("/meta", async () => ({
-    name: "Financas Pessoais",
+    name: "Carteira da Ana",
     version: "0.1.0",
     storage: "local-sqlite"
   }));
@@ -80,11 +83,14 @@ export function buildServer(options: BuildServerOptions = {}) {
   registerPaymentMethodRoutes(app, connection);
   registerTransactionRoutes(app, connection);
   registerCreditCardRoutes(app, connection);
-  registerBudgetRoutes(app, connection);
   registerReportRoutes(app, connection);
-  registerReconciliationRoutes(app, connection);
   registerBackupRoutes(app, connection);
   registerSettingsRoutes(app, connection);
+  registerTransferRoutes(app, connection);
+  registerRecurrenceRoutes(app, connection);
+  registerMonthlyOverviewRoutes(app, connection);
+  registerPlannedExpenseRoutes(app, connection);
+  registerSimpleImportRoutes(app, connection);
 
   return app;
 }

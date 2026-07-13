@@ -2,11 +2,23 @@ export const paymentMethodSeeds = [
   { id: "pm-pix", name: "Pix", kind: "instant_transfer" },
   { id: "pm-cash", name: "Dinheiro", kind: "cash" },
   { id: "pm-debit-card", name: "Cartão de débito", kind: "debit_card" },
-  { id: "pm-credit-card", name: "Cartão de crédito", kind: "credit_card" },
   { id: "pm-prepaid-card", name: "Cartão pré-pago", kind: "prepaid_card" },
   { id: "pm-bank-slip", name: "Boleto", kind: "bank_slip" },
   { id: "pm-auto-debit", name: "Débito automático", kind: "auto_debit" },
   { id: "pm-bank-transfer", name: "Transferência bancária/TED", kind: "bank_transfer" }
+] as const;
+
+export const accountSeeds = [
+  { id: "account-checking-main", name: "Conta principal", type: "checking", sortOrder: 0, isPrimary: true },
+  { id: "account-flash-food", name: "Flash Alimentação", type: "benefit", institution: "Flash", sortOrder: 1, isPrimary: false },
+  { id: "account-flash-convenience", name: "Flash Conveniência", type: "benefit", institution: "Flash", sortOrder: 2, isPrimary: false }
+] as const;
+
+export const accountPaymentMethodSeeds = [
+  { id: "account-method-checking-pix", accountId: "account-checking-main", paymentMethodId: "pm-pix", isDefault: true },
+  { id: "account-method-checking-debit", accountId: "account-checking-main", paymentMethodId: "pm-debit-card", isDefault: false },
+  { id: "account-method-flash-food", accountId: "account-flash-food", paymentMethodId: "pm-prepaid-card", isDefault: true },
+  { id: "account-method-flash-convenience", accountId: "account-flash-convenience", paymentMethodId: "pm-prepaid-card", isDefault: true }
 ] as const;
 
 export const categorySeeds = [
@@ -44,19 +56,6 @@ export const categorySeeds = [
       { name: "Estorno", behavior: "extra" },
       { name: "Cashback", behavior: "variable" },
       { name: "Saldo anterior", behavior: "extra" }
-    ]
-  },
-
-  // ==========================================
-  // TRANSFERÊNCIAS (CASH NEUTRAL)
-  // ==========================================
-  {
-    id: "cat-transferencias",
-    nature: "transfer",
-    name: "Movimentações Internas",
-    subcategories: [
-      { name: "Entre minhas contas", behavior: "variable" },
-      { name: "Pagamento de fatura", behavior: "fixed" }
     ]
   },
 

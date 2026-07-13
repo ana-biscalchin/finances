@@ -29,47 +29,12 @@ import {
   IconStarFilled
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
+import { z } from "zod";
+import { accountSchema, accountsSchema, creditCardSchema, creditCardsSchema, paymentMethodSchema, type Account, type CreditCard, type PaymentMethod } from "../shared/api-contracts";
 import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
-
-type Account = {
-  id: string;
-  name: string;
-  type: string;
-  institution: string | null;
-  initialBalanceCents: number;
-  currentBalanceCents?: number;
-  sortOrder: number;
-  isPrimary: boolean;
-  defaultPaymentMethodId: string | null;
-  isActive: boolean;
-};
-
-type PaymentMethod = {
-  id: string;
-  name: string;
-};
-
-type CreditCard = {
-  id: string;
-  name: string;
-  institution: string | null;
-  closingDay: number;
-  dueDay: number;
-  paymentAccountId: string | null;
-  limitCents: number | null;
-  isDefault: boolean;
-  isActive: boolean;
-};
-
-type AccountFormState = {
-  name: string;
-  type: string;
-  institution: string;
-  initialBalanceReais: number | string;
-  sortOrder: number | string;
-  isPrimary: boolean;
-  defaultPaymentMethodId: string;
-};
+import { emptySelectValue } from "../shared/payment-source-options";
+import { buildAccountPayload, createAccountForm, setDefaultPaymentMethod, suggestPaymentMethods, togglePaymentMethod, type AccountFormState } from "./account-form-state";
+import { TransferDialog } from "./TransferDialog";
 
 type CardFormState = {
   name: string;
@@ -81,17 +46,7 @@ type CardFormState = {
 };
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-const emptySelectValue = "__none__";
-
-const emptyForm: AccountFormState = {
-  name: "",
-  type: "checking",
-  institution: "",
-  initialBalanceReais: "",
-  sortOrder: 0,
-  isPrimary: false,
-  defaultPaymentMethodId: emptySelectValue
-};
+const emptyForm = createAccountForm({ methods: [] });
 
 const emptyCardForm: CardFormState = {
   name: "",
@@ -112,6 +67,7 @@ export function AccountsPage() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [includeInactiveCards, setIncludeInactiveCards] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
@@ -120,16 +76,6 @@ export function AccountsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isCardSaving, setIsCardSaving] = useState(false);
 
-  const paymentMethodOptions = useMemo(
-    () => [
-      { value: emptySelectValue, label: "Sem meio padrão" },
-      ...paymentMethods.map((paymentMethod) => ({
-        value: paymentMethod.id,
-        label: paymentMethod.name
-      }))
-    ],
-    [paymentMethods]
-  );
   const accountOptions = useMemo(
     () => [
       { value: emptySelectValue, label: "Sem conta vinculada" },
@@ -155,7 +101,7 @@ export function AccountsPage() {
       throw new Error("Não foi possível carregar os meios de pagamento.");
     }
 
-    setPaymentMethods(await response.json());
+    setPaymentMethods(z.array(paymentMethodSchema).parse(await response.json()));
   }
 
   async function loadAccounts() {
@@ -169,7 +115,7 @@ export function AccountsPage() {
         throw new Error("Não foi possível carregar as contas.");
       }
 
-      setAccounts(await response.json());
+      setAccounts(accountsSchema.parse(await response.json()));
     } catch (loadError) {
       reportClientError("accounts.loadAccounts", loadError);
       setError(getErrorMessage(loadError));
@@ -189,7 +135,7 @@ export function AccountsPage() {
         throw new Error("Não foi possível carregar os cartões.");
       }
 
-      setCards(await response.json());
+      setCards(creditCardsSchema.parse(await response.json()));
     } catch (loadError) {
       reportClientError("accounts.loadCards", loadError);
       setError(getErrorMessage(loadError));
@@ -215,10 +161,7 @@ export function AccountsPage() {
 
   function openCreateModal() {
     setEditingAccount(null);
-    setForm({
-      ...emptyForm,
-      sortOrder: accounts.length
-    });
+    setForm(createAccountForm({ sortOrder: accounts.length, methods: paymentMethods }));
     setIsModalOpen(true);
   }
 
@@ -232,7 +175,7 @@ export function AccountsPage() {
         account.initialBalanceCents === 0 ? "" : account.initialBalanceCents / 100,
       sortOrder: account.sortOrder,
       isPrimary: account.isPrimary,
-      defaultPaymentMethodId: account.defaultPaymentMethodId ?? emptySelectValue
+      paymentMethods: account.paymentMethods.filter((item) => item.isActive).map((item) => ({ paymentMethodId: item.paymentMethodId, isDefault: item.isDefault }))
     });
     setIsModalOpen(true);
   }
@@ -265,15 +208,7 @@ export function AccountsPage() {
     setError(null);
 
     try {
-      const payload = {
-        name: form.name,
-        type: form.type,
-        institution: form.institution,
-        initialBalanceCents: parseInitialBalanceToCents(form.initialBalanceReais),
-        sortOrder: parseSortOrder(form.sortOrder),
-        isPrimary: form.isPrimary,
-        defaultPaymentMethodId: toNullableSelectValue(form.defaultPaymentMethodId)
-      };
+      const payload = buildAccountPayload(form);
       const response = await fetch(
         editingAccount ? `${apiBaseUrl}/accounts/${editingAccount.id}` : `${apiBaseUrl}/accounts`,
         {
@@ -288,6 +223,8 @@ export function AccountsPage() {
       if (!response.ok) {
         throw new Error(await getResponseError(response, "Não foi possível salvar a conta."));
       }
+
+      accountSchema.parse(await response.json());
 
       setIsModalOpen(false);
       await loadAccounts();
@@ -342,7 +279,7 @@ export function AccountsPage() {
         throw new Error(await getResponseError(response, "Não foi possível salvar o cartão."));
       }
 
-      const savedCard = (await response.json().catch(() => null)) as CreditCard | null;
+      const savedCard = creditCardSchema.parse(await response.json());
       const shouldSetAsDefault = !editingCard && activeCards.length === 0 && savedCard?.id;
 
       if (shouldSetAsDefault) {
@@ -508,6 +445,9 @@ export function AccountsPage() {
             </Text>
           </div>
           <Group gap="xs">
+            <Button variant="light" onClick={() => setIsTransferOpen(true)} disabled={accounts.filter((account) => account.isActive).length < 2}>
+              Transferir
+            </Button>
             <Checkbox
               checked={includeInactive}
               label="Mostrar arquivadas"
@@ -576,7 +516,7 @@ export function AccountsPage() {
                           </Badge>
                         ) : null}
                         <Text size="sm" c="dimmed">
-                          {getPaymentMethodLabel(account.defaultPaymentMethodId, paymentMethods)}
+                          {account.paymentMethods.filter((item) => item.isActive).map((item) => item.method.name).join(", ") || "Sem formas associadas"}
                         </Text>
                       </Stack>
                     </Table.Td>
@@ -761,6 +701,8 @@ export function AccountsPage() {
         )}
       </Paper>
 
+      <TransferDialog opened={isTransferOpen} accounts={accounts} onClose={() => setIsTransferOpen(false)} onCreated={() => void loadAccounts()} />
+
       <Modal
         opened={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -781,7 +723,10 @@ export function AccountsPage() {
             label="Tipo"
             data={accountTypes}
             value={form.type}
-            onChange={(value) => setForm((current) => ({ ...current, type: value ?? "checking" }))}
+            onChange={(value) => {
+              const type = value ?? "checking";
+              setForm((current) => ({ ...current, type, paymentMethods: suggestPaymentMethods(type, paymentMethods) }));
+            }}
             required
           />
           <TextInput
@@ -820,18 +765,15 @@ export function AccountsPage() {
               setForm((current) => ({ ...current, isPrimary: checked }));
             }}
           />
-          <Select
-            label="Meio de pagamento principal"
-            description="Novos lançamentos desta conta começam por este meio."
-            data={paymentMethodOptions}
-            value={form.defaultPaymentMethodId}
-            onChange={(value) =>
-              setForm((current) => ({
-                ...current,
-                defaultPaymentMethodId: value ?? emptySelectValue
-              }))
-            }
-          />
+          <Stack gap="xs">
+            <Text fw={500} size="sm">Formas permitidas</Text>
+            <Text size="xs" c="dimmed">Escolha as formas aceitas nesta conta e marque uma como padrão.</Text>
+            {paymentMethods.filter((method) => method.isActive).map((method) => {
+              const selected = form.paymentMethods.some((item) => item.paymentMethodId === method.id);
+              const isDefault = form.paymentMethods.some((item) => item.paymentMethodId === method.id && item.isDefault);
+              return <Group key={method.id} justify="space-between"><Checkbox label={method.name} checked={selected} onChange={(event) => setForm((current) => ({ ...current, paymentMethods: togglePaymentMethod(current.paymentMethods, method.id, event.currentTarget.checked) }))}/><Button size="compact-xs" variant={isDefault ? "filled" : "subtle"} disabled={!selected} onClick={() => setForm((current) => ({ ...current, paymentMethods: setDefaultPaymentMethod(current.paymentMethods, method.id) }))}>{isDefault ? "Padrão" : "Tornar padrão"}</Button></Group>;
+            })}
+          </Stack>
           <Group justify="flex-end">
             <Button variant="subtle" onClick={() => setIsModalOpen(false)}>
               Cancelar
@@ -937,44 +879,12 @@ function getAccountTypeLabel(type: string) {
   return accountTypes.find((accountType) => accountType.value === type)?.label ?? type;
 }
 
-function getPaymentMethodLabel(paymentMethodId: string | null, paymentMethods: PaymentMethod[]) {
-  return paymentMethods.find((paymentMethod) => paymentMethod.id === paymentMethodId)?.name ?? "-";
-}
-
 function getAccountLabel(accountId: string | null, accounts: Account[]) {
   return accounts.find((account) => account.id === accountId)?.name ?? "-";
 }
 
 function toNullableSelectValue(value: string) {
   return value === emptySelectValue ? null : value;
-}
-
-function parseInitialBalanceToCents(value: number | string) {
-  if (typeof value === "number") {
-    return moneyFromCents(Math.round(value * 100));
-  }
-
-  if (!value.trim()) {
-    return 0;
-  }
-
-  return parseMoneyToCents(value);
-}
-
-function parseSortOrder(value: number | string) {
-  if (typeof value === "number" && Number.isInteger(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-
-    if (Number.isInteger(parsed)) {
-      return parsed;
-    }
-  }
-
-  throw new Error("Ordem inválida.");
 }
 
 function parseOptionalMoneyToCents(value: number | string) {

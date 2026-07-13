@@ -50,7 +50,7 @@ describe("transactions domain", () => {
         type: "expense",
         status: "confirmed",
         amountCents: 10000,
-        linkedTransactionId: "tx-linked"
+        transferId: "transfer-1"
       })
     ).toBe("internal_transfer");
   });
@@ -81,7 +81,7 @@ describe("transactions domain", () => {
         status: "confirmed",
         amountCents: 10000,
         accountId: "acc-1",
-        linkedTransactionId: "tx-linked"
+        transferId: "transfer-1"
       })
     ).toBe(false);
   });
@@ -125,7 +125,7 @@ describe("transactions domain", () => {
         status: "confirmed",
         amountCents: 10000,
         accountId: "acc-1",
-        linkedTransactionId: "tx-linked"
+        transferId: "transfer-1"
       })
     ).toBe(false);
   });

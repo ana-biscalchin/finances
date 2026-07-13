@@ -1,0 +1,2 @@
+import { describe, expect, it } from "vitest"; import { pages } from "./App.js";
+describe("product navigation", () => { it("uses task-oriented monthly views and an explicit future patrimony", () => { expect(pages.map((page) => page.label)).toEqual(expect.arrayContaining(["Visão do mês", "Dinheiro nas contas", "Patrimônio · futuro"])); expect(pages.find((page) => page.key === "patrimony")?.description).toContain("futuro"); }); });

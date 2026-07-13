@@ -1,0 +1,52 @@
+import { Alert, Loader, Stack, Title } from "@mantine/core";
+import { useCallback, useEffect, useState } from "react";
+import { apiClient } from "../shared/api-client.js";
+import { cashPositionSchema, type CashPosition } from "../shared/api-contracts.js";
+import { MonthSelector } from "../shared/MonthSelector.js";
+import { AccountBalanceTable } from "./AccountBalanceTable.js";
+import { CashPositionSummary } from "./CashPositionSummary.js";
+import { UpcomingCashCommitments } from "./UpcomingCashCommitments.js";
+export function AccountsCashView({
+  selectedMonth,
+  setSelectedMonth
+}: {
+  selectedMonth: string;
+  setSelectedMonth: (month: string) => void;
+}) {
+  const [positions, setPositions] = useState<CashPosition | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      setPositions(
+        await apiClient.get(`/cash-position?month=${selectedMonth}`, cashPositionSchema)
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Falha ao carregar contas.");
+    }
+  }, [selectedMonth]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  return (
+    <Stack>
+      <Title order={2}>Dinheiro nas contas</Title>
+      <MonthSelector selectedMonth={selectedMonth} onChange={setSelectedMonth} />
+      {error ? (
+        <Alert color="red">{error}</Alert>
+      ) : positions ? (
+        positions.length ? (
+          <>
+            <CashPositionSummary positions={positions} />
+            <AccountBalanceTable positions={positions} />
+            <UpcomingCashCommitments positions={positions} />
+          </>
+        ) : (
+          <Alert>Nenhuma conta ativa encontrada.</Alert>
+        )
+      ) : (
+        <Loader />
+      )}
+    </Stack>
+  );
+}

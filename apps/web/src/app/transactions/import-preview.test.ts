@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { Account } from "../shared/api-contracts";
 import { applyImportPreviewBulkEdits, type ImportPreviewBulkItem } from "./import-preview";
 
 const emptySelectValue = "__empty__";
@@ -16,6 +17,15 @@ function item(overrides: Partial<ImportPreviewBulkItem> = {}): ImportPreviewBulk
 }
 
 describe("applyImportPreviewBulkEdits", () => {
+  const accounts: Account[] = [{
+    id: "acc-new", name: "Conta", type: "checking", institution: null,
+    initialBalanceCents: 0, sortOrder: 0, isPrimary: false, isActive: true,
+    paymentMethods: [
+      { id: "association-pix", accountId: "acc-new", paymentMethodId: "pm-pix", isDefault: false, isActive: true, archivedAt: null, method: { id: "pm-pix", name: "Pix", kind: "pix", sortOrder: 0, isDefault: false, isActive: true } },
+      { id: "association-debit", accountId: "acc-new", paymentMethodId: "pm-debit-card", isDefault: true, isActive: true, archivedAt: null, method: { id: "pm-debit-card", name: "Débito", kind: "debit", sortOrder: 1, isDefault: false, isActive: true } }
+    ]
+  }];
+
   it("applies the selected payment method to selected import preview items", () => {
     const [updated, untouched] = applyImportPreviewBulkEdits(
       [item(), item({ tempId: "temp-2", paymentMethodId: "pm-untouched" })],
@@ -26,7 +36,7 @@ describe("applyImportPreviewBulkEdits", () => {
         paymentMethodId: "pm-pix",
         subcategoryId: emptySelectValue
       },
-      [],
+      accounts,
       emptySelectValue
     );
 
@@ -44,7 +54,7 @@ describe("applyImportPreviewBulkEdits", () => {
         paymentMethodId: "__clear__",
         subcategoryId: emptySelectValue
       },
-      [],
+      accounts,
       emptySelectValue
     );
 
@@ -61,7 +71,7 @@ describe("applyImportPreviewBulkEdits", () => {
         paymentMethodId: emptySelectValue,
         subcategoryId: emptySelectValue
       },
-      [],
+      accounts,
       emptySelectValue
     );
 
@@ -79,11 +89,24 @@ describe("applyImportPreviewBulkEdits", () => {
         paymentMethodId: emptySelectValue,
         subcategoryId: emptySelectValue
       },
-      [{ id: "acc-new", defaultPaymentMethodId: "pm-debit-card" }],
+      accounts,
       emptySelectValue
     );
 
     expect(updated.accountId).toBe("acc-new");
     expect(updated.paymentMethodId).toBe("pm-debit-card");
+  });
+
+  it("preserves a compatible method and replaces an incompatible method in bulk", () => {
+    const [compatible, incompatible] = applyImportPreviewBulkEdits(
+      [item({ tempId: "temp-1", paymentMethodId: "pm-pix" }), item({ tempId: "temp-2", paymentMethodId: "pm-old" })],
+      new Set(["temp-1", "temp-2"]),
+      { type: emptySelectValue, accountId: "acc-new", paymentMethodId: emptySelectValue, subcategoryId: emptySelectValue },
+      accounts,
+      emptySelectValue
+    );
+
+    expect(compatible.paymentMethodId).toBe("pm-pix");
+    expect(incompatible.paymentMethodId).toBe("pm-debit-card");
   });
 });

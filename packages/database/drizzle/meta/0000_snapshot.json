@@ -1,9 +1,257 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "22e8cf24-5315-4a8c-b9fe-04d7910da4da",
+  "id": "633abb2a-4068-4e0d-b2ca-a2cabbd5589e",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
+    "account_payment_methods": {
+      "name": "account_payment_methods",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payment_method_id": {
+          "name": "payment_method_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "account_payment_methods_account_method_unique": {
+          "name": "account_payment_methods_account_method_unique",
+          "columns": [
+            "account_id",
+            "payment_method_id"
+          ],
+          "isUnique": true
+        },
+        "account_payment_methods_account_active_idx": {
+          "name": "account_payment_methods_account_active_idx",
+          "columns": [
+            "account_id",
+            "is_active"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "account_payment_methods_account_id_accounts_id_fk": {
+          "name": "account_payment_methods_account_id_accounts_id_fk",
+          "tableFrom": "account_payment_methods",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "account_payment_methods_payment_method_id_payment_methods_id_fk": {
+          "name": "account_payment_methods_payment_method_id_payment_methods_id_fk",
+          "tableFrom": "account_payment_methods",
+          "tableTo": "payment_methods",
+          "columnsFrom": [
+            "payment_method_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "account_transfers": {
+      "name": "account_transfers",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_account_id": {
+          "name": "source_account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "destination_account_id": {
+          "name": "destination_account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event_date": {
+          "name": "event_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "account_transfers_source_idx": {
+          "name": "account_transfers_source_idx",
+          "columns": [
+            "source_account_id"
+          ],
+          "isUnique": false
+        },
+        "account_transfers_destination_idx": {
+          "name": "account_transfers_destination_idx",
+          "columns": [
+            "destination_account_id"
+          ],
+          "isUnique": false
+        },
+        "account_transfers_event_date_idx": {
+          "name": "account_transfers_event_date_idx",
+          "columns": [
+            "event_date"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "account_transfers_source_account_id_accounts_id_fk": {
+          "name": "account_transfers_source_account_id_accounts_id_fk",
+          "tableFrom": "account_transfers",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "source_account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "account_transfers_destination_account_id_accounts_id_fk": {
+          "name": "account_transfers_destination_account_id_accounts_id_fk",
+          "tableFrom": "account_transfers",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "destination_account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "account_transfers_positive_amount": {
+          "name": "account_transfers_positive_amount",
+          "value": "\"account_transfers\".\"amount_cents\" > 0"
+        },
+        "account_transfers_distinct_accounts": {
+          "name": "account_transfers_distinct_accounts",
+          "value": "\"account_transfers\".\"source_account_id\" <> \"account_transfers\".\"destination_account_id\""
+        }
+      }
+    },
     "accounts": {
       "name": "accounts",
       "columns": {
@@ -59,13 +307,6 @@
           "autoincrement": false,
           "default": false
         },
-        "default_payment_method_id": {
-          "name": "default_payment_method_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "is_active": {
           "name": "is_active",
           "type": "integer",
@@ -92,27 +333,13 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {
-        "accounts_default_payment_method_id_payment_methods_id_fk": {
-          "name": "accounts_default_payment_method_id_payment_methods_id_fk",
-          "tableFrom": "accounts",
-          "tableTo": "payment_methods",
-          "columnsFrom": [
-            "default_payment_method_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "budgets": {
-      "name": "budgets",
+    "budget_allocations": {
+      "name": "budget_allocations",
       "columns": {
         "id": {
           "name": "id",
@@ -121,29 +348,22 @@
           "notNull": true,
           "autoincrement": false
         },
-        "budget_month": {
-          "name": "budget_month",
+        "budget_id": {
+          "name": "budget_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "category_id": {
-          "name": "category_id",
+        "account_id": {
+          "name": "account_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "subcategory_id": {
-          "name": "subcategory_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "payment_method_id": {
-          "name": "payment_method_id",
+        "credit_card_id": {
+          "name": "credit_card_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -174,12 +394,147 @@
         }
       },
       "indexes": {
-        "budgets_month_idx": {
-          "name": "budgets_month_idx",
+        "budget_allocations_budget_account_unique": {
+          "name": "budget_allocations_budget_account_unique",
           "columns": [
-            "budget_month"
+            "budget_id",
+            "account_id"
+          ],
+          "isUnique": true
+        },
+        "budget_allocations_budget_card_unique": {
+          "name": "budget_allocations_budget_card_unique",
+          "columns": [
+            "budget_id",
+            "credit_card_id"
+          ],
+          "isUnique": true
+        },
+        "budget_allocations_account_idx": {
+          "name": "budget_allocations_account_idx",
+          "columns": [
+            "account_id"
           ],
           "isUnique": false
+        },
+        "budget_allocations_card_idx": {
+          "name": "budget_allocations_card_idx",
+          "columns": [
+            "credit_card_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "budget_allocations_budget_id_budgets_id_fk": {
+          "name": "budget_allocations_budget_id_budgets_id_fk",
+          "tableFrom": "budget_allocations",
+          "tableTo": "budgets",
+          "columnsFrom": [
+            "budget_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "budget_allocations_account_id_accounts_id_fk": {
+          "name": "budget_allocations_account_id_accounts_id_fk",
+          "tableFrom": "budget_allocations",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "budget_allocations_credit_card_id_credit_cards_id_fk": {
+          "name": "budget_allocations_credit_card_id_credit_cards_id_fk",
+          "tableFrom": "budget_allocations",
+          "tableTo": "credit_cards",
+          "columnsFrom": [
+            "credit_card_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "budget_allocations_positive_amount": {
+          "name": "budget_allocations_positive_amount",
+          "value": "\"budget_allocations\".\"amount_cents\" > 0"
+        },
+        "budget_allocations_single_source": {
+          "name": "budget_allocations_single_source",
+          "value": "(\"budget_allocations\".\"account_id\" IS NOT NULL) <> (\"budget_allocations\".\"credit_card_id\" IS NOT NULL)"
+        }
+      }
+    },
+    "budgets": {
+      "name": "budgets",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "budget_month": {
+          "name": "budget_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subcategory_id": {
+          "name": "subcategory_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "budgets_month_subcategory_unique": {
+          "name": "budgets_month_subcategory_unique",
+          "columns": [
+            "budget_month",
+            "subcategory_id"
+          ],
+          "isUnique": true
         },
         "budgets_subcategory_idx": {
           "name": "budgets_subcategory_idx",
@@ -190,19 +545,6 @@
         }
       },
       "foreignKeys": {
-        "budgets_category_id_categories_id_fk": {
-          "name": "budgets_category_id_categories_id_fk",
-          "tableFrom": "budgets",
-          "tableTo": "categories",
-          "columnsFrom": [
-            "category_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
         "budgets_subcategory_id_subcategories_id_fk": {
           "name": "budgets_subcategory_id_subcategories_id_fk",
           "tableFrom": "budgets",
@@ -215,24 +557,16 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "budgets_payment_method_id_payment_methods_id_fk": {
-          "name": "budgets_payment_method_id_payment_methods_id_fk",
-          "tableFrom": "budgets",
-          "tableTo": "payment_methods",
-          "columnsFrom": [
-            "payment_method_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "budgets_positive_amount": {
+          "name": "budgets_positive_amount",
+          "value": "\"budgets\".\"amount_cents\" > 0"
+        }
+      }
     },
     "categories": {
       "name": "categories",
@@ -320,6 +654,197 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "credit_card_bill_payments": {
+      "name": "credit_card_bill_payments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bill_id": {
+          "name": "bill_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payment_transaction_id": {
+          "name": "payment_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payment_date": {
+          "name": "payment_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "principal_cents": {
+          "name": "principal_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "interest_cents": {
+          "name": "interest_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "penalty_cents": {
+          "name": "penalty_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reversed_at": {
+          "name": "reversed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "credit_card_bill_payments_idempotency_unique": {
+          "name": "credit_card_bill_payments_idempotency_unique",
+          "columns": [
+            "idempotency_key"
+          ],
+          "isUnique": true
+        },
+        "credit_card_bill_payments_transaction_unique": {
+          "name": "credit_card_bill_payments_transaction_unique",
+          "columns": [
+            "payment_transaction_id"
+          ],
+          "isUnique": true
+        },
+        "credit_card_bill_payments_bill_idx": {
+          "name": "credit_card_bill_payments_bill_idx",
+          "columns": [
+            "bill_id"
+          ],
+          "isUnique": false
+        },
+        "credit_card_bill_payments_account_idx": {
+          "name": "credit_card_bill_payments_account_idx",
+          "columns": [
+            "account_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "credit_card_bill_payments_bill_id_credit_card_bills_id_fk": {
+          "name": "credit_card_bill_payments_bill_id_credit_card_bills_id_fk",
+          "tableFrom": "credit_card_bill_payments",
+          "tableTo": "credit_card_bills",
+          "columnsFrom": [
+            "bill_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "credit_card_bill_payments_account_id_accounts_id_fk": {
+          "name": "credit_card_bill_payments_account_id_accounts_id_fk",
+          "tableFrom": "credit_card_bill_payments",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "credit_card_bill_payments_payment_transaction_id_transactions_id_fk": {
+          "name": "credit_card_bill_payments_payment_transaction_id_transactions_id_fk",
+          "tableFrom": "credit_card_bill_payments",
+          "tableTo": "transactions",
+          "columnsFrom": [
+            "payment_transaction_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "credit_card_bill_payments_positive_total": {
+          "name": "credit_card_bill_payments_positive_total",
+          "value": "\"credit_card_bill_payments\".\"principal_cents\" + \"credit_card_bill_payments\".\"interest_cents\" + \"credit_card_bill_payments\".\"penalty_cents\" > 0"
+        },
+        "credit_card_bill_payments_nonnegative_principal": {
+          "name": "credit_card_bill_payments_nonnegative_principal",
+          "value": "\"credit_card_bill_payments\".\"principal_cents\" >= 0"
+        },
+        "credit_card_bill_payments_nonnegative_interest": {
+          "name": "credit_card_bill_payments_nonnegative_interest",
+          "value": "\"credit_card_bill_payments\".\"interest_cents\" >= 0"
+        },
+        "credit_card_bill_payments_nonnegative_penalty": {
+          "name": "credit_card_bill_payments_nonnegative_penalty",
+          "value": "\"credit_card_bill_payments\".\"penalty_cents\" >= 0"
+        }
+      }
+    },
     "credit_card_bills": {
       "name": "credit_card_bills",
       "columns": {
@@ -368,6 +893,20 @@
         },
         "paid_at": {
           "name": "paid_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "minimum_due_cents": {
+          "name": "minimum_due_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "closed_at": {
+          "name": "closed_at",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -478,6 +1017,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "is_default": {
+          "name": "is_default",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
         "is_active": {
           "name": "is_active",
           "type": "integer",
@@ -523,6 +1070,128 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "installment_purchases": {
+      "name": "installment_purchases",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "credit_card_id": {
+          "name": "credit_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "original_description": {
+          "name": "original_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "normalized_description": {
+          "name": "normalized_description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "original_event_date": {
+          "name": "original_event_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "installment_count": {
+          "name": "installment_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "total_amount_cents": {
+          "name": "total_amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'manual'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "installment_purchases_card_idx": {
+          "name": "installment_purchases_card_idx",
+          "columns": [
+            "credit_card_id"
+          ],
+          "isUnique": false
+        },
+        "installment_purchases_lookup_idx": {
+          "name": "installment_purchases_lookup_idx",
+          "columns": [
+            "credit_card_id",
+            "normalized_description",
+            "installment_count"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "installment_purchases_credit_card_id_credit_cards_id_fk": {
+          "name": "installment_purchases_credit_card_id_credit_cards_id_fk",
+          "tableFrom": "installment_purchases",
+          "tableTo": "credit_cards",
+          "columnsFrom": [
+            "credit_card_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "installments": {
       "name": "installments",
       "columns": {
@@ -531,6 +1200,13 @@
           "type": "text",
           "primaryKey": true,
           "notNull": true,
+          "autoincrement": false
+        },
+        "installment_purchase_id": {
+          "name": "installment_purchase_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "purchase_transaction_id": {
@@ -593,6 +1269,14 @@
         }
       },
       "indexes": {
+        "installments_purchase_group_number_unique": {
+          "name": "installments_purchase_group_number_unique",
+          "columns": [
+            "installment_purchase_id",
+            "installment_number"
+          ],
+          "isUnique": true
+        },
         "installments_purchase_number_unique": {
           "name": "installments_purchase_number_unique",
           "columns": [
@@ -610,6 +1294,19 @@
         }
       },
       "foreignKeys": {
+        "installments_installment_purchase_id_installment_purchases_id_fk": {
+          "name": "installments_installment_purchase_id_installment_purchases_id_fk",
+          "tableFrom": "installments",
+          "tableTo": "installment_purchases",
+          "columnsFrom": [
+            "installment_purchase_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "installments_purchase_transaction_id_transactions_id_fk": {
           "name": "installments_purchase_transaction_id_transactions_id_fk",
           "tableFrom": "installments",
@@ -719,6 +1416,392 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
+    },
+    "planned_expenses": {
+      "name": "planned_expenses",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "budget_month": {
+          "name": "budget_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subcategory_id": {
+          "name": "subcategory_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "credit_card_id": {
+          "name": "credit_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "recurrence_rule_id": {
+          "name": "recurrence_rule_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "planned_expenses_month_subcategory_idx": {
+          "name": "planned_expenses_month_subcategory_idx",
+          "columns": [
+            "budget_month",
+            "subcategory_id"
+          ],
+          "isUnique": false
+        },
+        "planned_expenses_account_idx": {
+          "name": "planned_expenses_account_idx",
+          "columns": [
+            "account_id"
+          ],
+          "isUnique": false
+        },
+        "planned_expenses_card_idx": {
+          "name": "planned_expenses_card_idx",
+          "columns": [
+            "credit_card_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "planned_expenses_subcategory_id_subcategories_id_fk": {
+          "name": "planned_expenses_subcategory_id_subcategories_id_fk",
+          "tableFrom": "planned_expenses",
+          "tableTo": "subcategories",
+          "columnsFrom": [
+            "subcategory_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "planned_expenses_account_id_accounts_id_fk": {
+          "name": "planned_expenses_account_id_accounts_id_fk",
+          "tableFrom": "planned_expenses",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "planned_expenses_credit_card_id_credit_cards_id_fk": {
+          "name": "planned_expenses_credit_card_id_credit_cards_id_fk",
+          "tableFrom": "planned_expenses",
+          "tableTo": "credit_cards",
+          "columnsFrom": [
+            "credit_card_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "planned_expenses_recurrence_rule_id_recurrence_rules_id_fk": {
+          "name": "planned_expenses_recurrence_rule_id_recurrence_rules_id_fk",
+          "tableFrom": "planned_expenses",
+          "tableTo": "recurrence_rules",
+          "columnsFrom": [
+            "recurrence_rule_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "planned_expenses_positive_amount": {
+          "name": "planned_expenses_positive_amount",
+          "value": "\"planned_expenses\".\"amount_cents\" > 0"
+        },
+        "planned_expenses_single_source": {
+          "name": "planned_expenses_single_source",
+          "value": "(\"planned_expenses\".\"account_id\" IS NOT NULL) <> (\"planned_expenses\".\"credit_card_id\" IS NOT NULL)"
+        }
+      }
+    },
+    "recurrence_rules": {
+      "name": "recurrence_rules",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subcategory_id": {
+          "name": "subcategory_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "credit_card_id": {
+          "name": "credit_card_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "payment_method_id": {
+          "name": "payment_method_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "frequency": {
+          "name": "frequency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'monthly'"
+        },
+        "day_of_month": {
+          "name": "day_of_month",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "start_month": {
+          "name": "start_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "end_month": {
+          "name": "end_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "recurrence_rules_account_idx": {
+          "name": "recurrence_rules_account_idx",
+          "columns": [
+            "account_id"
+          ],
+          "isUnique": false
+        },
+        "recurrence_rules_card_idx": {
+          "name": "recurrence_rules_card_idx",
+          "columns": [
+            "credit_card_id"
+          ],
+          "isUnique": false
+        },
+        "recurrence_rules_status_idx": {
+          "name": "recurrence_rules_status_idx",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "recurrence_rules_subcategory_id_subcategories_id_fk": {
+          "name": "recurrence_rules_subcategory_id_subcategories_id_fk",
+          "tableFrom": "recurrence_rules",
+          "tableTo": "subcategories",
+          "columnsFrom": [
+            "subcategory_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "recurrence_rules_account_id_accounts_id_fk": {
+          "name": "recurrence_rules_account_id_accounts_id_fk",
+          "tableFrom": "recurrence_rules",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "recurrence_rules_credit_card_id_credit_cards_id_fk": {
+          "name": "recurrence_rules_credit_card_id_credit_cards_id_fk",
+          "tableFrom": "recurrence_rules",
+          "tableTo": "credit_cards",
+          "columnsFrom": [
+            "credit_card_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "recurrence_rules_payment_method_id_payment_methods_id_fk": {
+          "name": "recurrence_rules_payment_method_id_payment_methods_id_fk",
+          "tableFrom": "recurrence_rules",
+          "tableTo": "payment_methods",
+          "columnsFrom": [
+            "payment_method_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "recurrence_rules_positive_amount": {
+          "name": "recurrence_rules_positive_amount",
+          "value": "\"recurrence_rules\".\"amount_cents\" > 0"
+        },
+        "recurrence_rules_day_range": {
+          "name": "recurrence_rules_day_range",
+          "value": "\"recurrence_rules\".\"day_of_month\" BETWEEN 1 AND 31"
+        },
+        "recurrence_rules_single_target": {
+          "name": "recurrence_rules_single_target",
+          "value": "(\"recurrence_rules\".\"account_id\" IS NOT NULL) <> (\"recurrence_rules\".\"credit_card_id\" IS NOT NULL)"
+        },
+        "recurrence_rules_card_without_payment_method": {
+          "name": "recurrence_rules_card_without_payment_method",
+          "value": "\"recurrence_rules\".\"credit_card_id\" IS NULL OR \"recurrence_rules\".\"payment_method_id\" IS NULL"
+        }
+      }
     },
     "reserve_goals": {
       "name": "reserve_goals",
@@ -896,6 +1979,46 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "settings": {
+      "name": "settings",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -1103,6 +2226,27 @@
           "notNull": false,
           "autoincrement": false
         },
+        "transfer_id": {
+          "name": "transfer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "recurrence_rule_id": {
+          "name": "recurrence_rule_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "recurrence_month": {
+          "name": "recurrence_month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -1128,10 +2272,35 @@
           ],
           "isUnique": false
         },
+        "transactions_budget_month_event_idx": {
+          "name": "transactions_budget_month_event_idx",
+          "columns": [
+            "budget_month",
+            "event_date",
+            "description"
+          ],
+          "isUnique": false
+        },
+        "transactions_budget_month_status_idx": {
+          "name": "transactions_budget_month_status_idx",
+          "columns": [
+            "budget_month",
+            "status"
+          ],
+          "isUnique": false
+        },
         "transactions_event_date_idx": {
           "name": "transactions_event_date_idx",
           "columns": [
             "event_date"
+          ],
+          "isUnique": false
+        },
+        "transactions_event_date_status_idx": {
+          "name": "transactions_event_date_status_idx",
+          "columns": [
+            "event_date",
+            "status"
           ],
           "isUnique": false
         },
@@ -1141,6 +2310,50 @@
             "subcategory_id"
           ],
           "isUnique": false
+        },
+        "transactions_account_idx": {
+          "name": "transactions_account_idx",
+          "columns": [
+            "account_id"
+          ],
+          "isUnique": false
+        },
+        "transactions_credit_card_idx": {
+          "name": "transactions_credit_card_idx",
+          "columns": [
+            "credit_card_id"
+          ],
+          "isUnique": false
+        },
+        "transactions_credit_card_month_idx": {
+          "name": "transactions_credit_card_month_idx",
+          "columns": [
+            "credit_card_id",
+            "budget_month"
+          ],
+          "isUnique": false
+        },
+        "transactions_credit_card_bill_idx": {
+          "name": "transactions_credit_card_bill_idx",
+          "columns": [
+            "credit_card_bill_id"
+          ],
+          "isUnique": false
+        },
+        "transactions_transfer_idx": {
+          "name": "transactions_transfer_idx",
+          "columns": [
+            "transfer_id"
+          ],
+          "isUnique": false
+        },
+        "transactions_recurrence_month_unique": {
+          "name": "transactions_recurrence_month_unique",
+          "columns": [
+            "recurrence_rule_id",
+            "recurrence_month"
+          ],
+          "isUnique": true
         }
       },
       "foreignKeys": {
@@ -1208,119 +2421,13 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "transfers": {
-      "name": "transfers",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
         },
-        "from_account_id": {
-          "name": "from_account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "to_account_id": {
-          "name": "to_account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "amount_cents": {
-          "name": "amount_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "transfer_date": {
-          "name": "transfer_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "payment_method_id": {
-          "name": "payment_method_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'planned'"
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "CURRENT_TIMESTAMP"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "CURRENT_TIMESTAMP"
-        }
-      },
-      "indexes": {
-        "transfers_from_account_idx": {
-          "name": "transfers_from_account_idx",
-          "columns": [
-            "from_account_id"
-          ],
-          "isUnique": false
-        },
-        "transfers_to_account_idx": {
-          "name": "transfers_to_account_idx",
-          "columns": [
-            "to_account_id"
-          ],
-          "isUnique": false
-        },
-        "transfers_date_idx": {
-          "name": "transfers_date_idx",
-          "columns": [
-            "transfer_date"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "transfers_from_account_id_accounts_id_fk": {
-          "name": "transfers_from_account_id_accounts_id_fk",
-          "tableFrom": "transfers",
-          "tableTo": "accounts",
+        "transactions_transfer_id_account_transfers_id_fk": {
+          "name": "transactions_transfer_id_account_transfers_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "account_transfers",
           "columnsFrom": [
-            "from_account_id"
+            "transfer_id"
           ],
           "columnsTo": [
             "id"
@@ -1328,25 +2435,12 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "transfers_to_account_id_accounts_id_fk": {
-          "name": "transfers_to_account_id_accounts_id_fk",
-          "tableFrom": "transfers",
-          "tableTo": "accounts",
+        "transactions_recurrence_rule_id_recurrence_rules_id_fk": {
+          "name": "transactions_recurrence_rule_id_recurrence_rules_id_fk",
+          "tableFrom": "transactions",
+          "tableTo": "recurrence_rules",
           "columnsFrom": [
-            "to_account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "transfers_payment_method_id_payment_methods_id_fk": {
-          "name": "transfers_payment_method_id_payment_methods_id_fk",
-          "tableFrom": "transfers",
-          "tableTo": "payment_methods",
-          "columnsFrom": [
-            "payment_method_id"
+            "recurrence_rule_id"
           ],
           "columnsTo": [
             "id"
@@ -1357,7 +2451,12 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "transactions_positive_amount": {
+          "name": "transactions_positive_amount",
+          "value": "\"transactions\".\"amount_cents\" > 0"
+        }
+      }
     }
   },
   "views": {},

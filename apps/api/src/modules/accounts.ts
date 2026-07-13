@@ -1,29 +1,15 @@
-import { accounts, paymentMethods, transactions, type createDatabaseConnection } from "@finances/database";
-import { assertAccountType } from "@finances/domain";
+import { accounts, transactions, type createDatabaseConnection } from "@finances/database";
+import { accountInputSchema } from "@finances/domain";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 
 import {
   getBooleanQueryValue,
-  isRecord,
-  parseOptionalInteger,
-  parseOptionalString,
-  parseRequiredString,
-  sendPayloadError,
   ValidationError
 } from "../http.js";
+import { listAccountPaymentMethods, replaceAccountPaymentMethods, validateAccountPaymentMethods } from "./accounts/payment-method-associations.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
-
-type AccountPayload = {
-  name?: unknown;
-  type?: unknown;
-  institution?: unknown;
-  initialBalanceCents?: unknown;
-  sortOrder?: unknown;
-  isPrimary?: unknown;
-  defaultPaymentMethodId?: unknown;
-};
 
 export function registerAccountRoutes(app: FastifyInstance, connection: DatabaseConnection) {
   const { db } = connection;
@@ -46,7 +32,8 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
       const delta = balancesMap.get(account.id) ?? 0;
       return {
         ...account,
-        currentBalanceCents: account.initialBalanceCents + delta
+        currentBalanceCents: account.initialBalanceCents + delta,
+        paymentMethods: listAccountPaymentMethods(connection, account.id, includeInactive)
       };
     });
   });
@@ -76,31 +63,34 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
 
     return {
       ...account,
-      currentBalanceCents: account.initialBalanceCents + delta
+      currentBalanceCents: account.initialBalanceCents + delta,
+      paymentMethods: listAccountPaymentMethods(connection, account.id, true)
     };
   });
 
   app.post("/accounts", async (request, reply) => {
-    const payload = parseAccountPayloadOrReply(connection, request.body, reply);
-
-    if (!payload) {
-      return reply;
-    }
+    const payload = parseAccountPayload(request.body);
+    validateAccountPaymentMethods(connection, payload.paymentMethods);
+    const { paymentMethods: associations, ...accountPayload } = payload;
 
     const account = {
       id: crypto.randomUUID(),
-      ...payload,
+      ...accountPayload,
       sortOrder: payload.sortOrder ?? getNextAccountSortOrder(connection),
       isActive: true
     };
 
-    if (payload.isPrimary) {
-      clearPrimaryAccounts(connection);
-    }
+    const now = new Date().toISOString();
+    db.transaction((tx) => {
+      if (payload.isPrimary) clearPrimaryAccounts(tx);
+      tx.insert(accounts).values(account).run();
+      replaceAccountPaymentMethods(tx, account.id, associations, now);
+    });
 
-    db.insert(accounts).values(account).run();
-
-    return reply.code(201).send(account);
+    return reply.code(201).send({
+      ...account,
+      paymentMethods: listAccountPaymentMethods(connection, account.id)
+    });
   });
 
   app.put("/accounts/:id", async (request, reply) => {
@@ -111,25 +101,20 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
       return reply.code(404).send({ message: "Account not found." });
     }
 
-    const payload = parseAccountPayloadOrReply(connection, request.body, reply);
+    const payload = parseAccountPayload(request.body);
+    validateAccountPaymentMethods(connection, payload.paymentMethods);
+    const { paymentMethods: associations, ...accountPayload } = payload;
+    const now = new Date().toISOString();
+    db.transaction((tx) => {
+      if (payload.isPrimary) clearPrimaryAccounts(tx);
+      tx.update(accounts).set({ ...accountPayload, updatedAt: now }).where(eq(accounts.id, id)).run();
+      replaceAccountPaymentMethods(tx, id, associations, now);
+    });
 
-    if (!payload) {
-      return reply;
-    }
-
-    if (payload.isPrimary) {
-      clearPrimaryAccounts(connection);
-    }
-
-    db.update(accounts)
-      .set({
-        ...payload,
-        updatedAt: new Date().toISOString()
-      })
-      .where(eq(accounts.id, id))
-      .run();
-
-    return db.select().from(accounts).where(eq(accounts.id, id)).get();
+    return {
+      ...db.select().from(accounts).where(eq(accounts.id, id)).get(),
+      paymentMethods: listAccountPaymentMethods(connection, id)
+    };
   });
 
   app.patch("/accounts/:id/archive", async (request, reply) => {
@@ -198,91 +183,23 @@ function getAccountBalancesMap(connection: DatabaseConnection): Map<string, numb
 }
 
 function parseAccountPayload(body: unknown) {
-  if (!isRecord(body)) {
-    throw new ValidationError("Payload da conta deve ser um objeto.");
+  const result = accountInputSchema.safeParse(body);
+  if (!result.success) {
+    throw new ValidationError(result.error.issues[0]?.message ?? "Payload da conta inválido.");
   }
-
-  const payload = body as AccountPayload;
-  const name = parseRequiredString(payload.name, "name");
-  const type = assertAccountType(parseRequiredString(payload.type, "type"));
-  const institution = parseOptionalString(payload.institution, "institution");
-  const initialBalanceCents = parseInitialBalance(payload.initialBalanceCents);
-  const sortOrder = parseOptionalInteger(payload.sortOrder, "sortOrder");
-  const isPrimary = parseOptionalBoolean(payload.isPrimary);
-  const defaultPaymentMethodId = parseOptionalString(
-    payload.defaultPaymentMethodId,
-    "defaultPaymentMethodId"
-  );
-
-  return {
-    name,
-    type,
-    institution,
-    initialBalanceCents,
-    sortOrder,
-    isPrimary,
-    defaultPaymentMethodId
-  };
+  return result.data;
 }
 
-function parseAccountPayloadOrReply(
-  connection: DatabaseConnection,
-  body: unknown,
-  reply: FastifyReply
-) {
-  try {
-    const payload = parseAccountPayload(body);
+type AccountDatabase = Parameters<Parameters<DatabaseConnection["db"]["transaction"]>[0]>[0];
 
-    if (payload.defaultPaymentMethodId) {
-      const paymentMethod = connection.db
-        .select()
-        .from(paymentMethods)
-        .where(eq(paymentMethods.id, payload.defaultPaymentMethodId))
-        .get();
-
-      if (!paymentMethod) {
-        throw new ValidationError("Meio de pagamento padrão não encontrado.");
-      }
-    }
-
-    return payload;
-  } catch (error) {
-    return sendPayloadError(error, reply, "Payload da conta inválido.");
-  }
-}
-
-function clearPrimaryAccounts(connection: DatabaseConnection) {
-  connection.db
+function clearPrimaryAccounts(db: AccountDatabase) {
+  db
     .update(accounts)
     .set({
       isPrimary: false,
       updatedAt: new Date().toISOString()
     })
     .run();
-}
-
-function parseOptionalBoolean(value: unknown) {
-  if (value === null || value === undefined || value === "") {
-    return false;
-  }
-
-  if (typeof value !== "boolean") {
-    throw new ValidationError("isPrimary deve ser booleano.");
-  }
-
-  return value;
-}
-
-function parseInitialBalance(value: unknown) {
-  if (value === null || value === undefined || value === "") {
-    return 0;
-  }
-
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new ValidationError("initialBalanceCents deve ser um inteiro.");
-  }
-
-  return value;
 }
 
 function getNextAccountSortOrder(connection: DatabaseConnection) {

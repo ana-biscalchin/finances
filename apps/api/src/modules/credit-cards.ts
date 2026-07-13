@@ -2,7 +2,6 @@ import {
   accounts,
   creditCards,
   creditCardBills,
-  subcategories,
   transactions,
   installments,
   type createDatabaseConnection
@@ -15,7 +14,7 @@ import {
   assertYearMonth,
   getCreditCardBillMonth
 } from "@finances/domain";
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import crypto from "node:crypto";
 
@@ -28,11 +27,13 @@ import {
   sendPayloadError,
   ValidationError
 } from "../http.js";
+import { createBillPaymentService } from "../application/bill-payment-service.js";
 import {
   buildCreditCardInstallmentTransactions,
   createInstallmentMetadataForTransactions,
   type TransactionData,
-  isBillPaid
+  isBillPaid,
+  isBillFinanciallyLocked
 } from "./transactions.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
@@ -48,8 +49,41 @@ type CreditCardPayload = {
 
 export function registerCreditCardRoutes(app: FastifyInstance, connection: DatabaseConnection) {
   const { db } = connection;
+  const billPaymentService = createBillPaymentService(connection);
 
   // ─── Cards ───────────────────────────────────────────────────────────
+
+  app.post("/credit-cards/:id/bills/:billId/payments", async (request, reply) => {
+    const { id, billId } = request.params as { id: string; billId: string };
+    const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
+    if (!bill || bill.creditCardId !== id) return reply.code(404).send({ message: "Fatura não encontrada." });
+    const key = request.headers["idempotency-key"];
+    const idempotencyKey = Array.isArray(key) ? key[0] ?? "" : key ?? "";
+    return reply.code(201).send(billPaymentService.pay(billId, idempotencyKey, request.body));
+  });
+
+  app.post("/credit-cards/:id/bills/:billId/payments/:paymentId/reverse", async (request, reply) => {
+    const { id, billId, paymentId } = request.params as { id: string; billId: string; paymentId: string };
+    const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
+    if (!bill || bill.creditCardId !== id) return reply.code(404).send({ message: "Fatura não encontrada." });
+    return billPaymentService.reverse(billId, paymentId);
+  });
+
+  app.patch("/credit-cards/:id/bills/:billId/minimum", async (request, reply) => {
+    const { id, billId } = request.params as { id: string; billId: string };
+    const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
+    if (!bill || bill.creditCardId !== id) return reply.code(404).send({ message: "Fatura não encontrada." });
+    if (isBillFinanciallyLocked(db, billId)) return reply.code(409).send({ message: "O mínimo não pode mudar após fechamento ou pagamento." });
+    const body = isRecord(request.body) ? request.body : {};
+    try {
+      const minimumDueCents = parseRequiredInteger(body.minimumDueCents, "minimumDueCents");
+      if (minimumDueCents < 0) throw new ValidationError("minimumDueCents não pode ser negativo.");
+      const totalCents = db.select().from(transactions).where(eq(transactions.creditCardBillId, billId)).all().filter((item) => item.creditCardId && ["confirmed", "reconciled"].includes(item.status)).reduce((sum, item) => sum + (item.type === "expense" ? item.amountCents : -item.amountCents), 0);
+      if (minimumDueCents > totalCents) throw new ValidationError("Pagamento mínimo não pode superar o total da fatura.");
+      db.update(creditCardBills).set({ minimumDueCents, updatedAt: new Date().toISOString() }).where(eq(creditCardBills.id, billId)).run();
+      return db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
+    } catch (error) { return sendPayloadError(error, reply, "Mínimo inválido."); }
+  });
 
   app.get("/credit-cards", async (request) => {
     const query = request.query as Record<string, unknown>;
@@ -202,6 +236,8 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         dueDate,
         status: "open",
         paidAt: null,
+        minimumDueCents: null,
+        closedAt: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -275,162 +311,11 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     return {
       bill,
       transactions: transactionsWithInstallments,
-      totalCents
+      totalCents,
+      ...billPaymentService.details(bill.id)
     };
   });
 
-  /**
-   * POST /credit-cards/:id/bills/:billId/pay
-   * Marks a bill as paid and records the account outflow without duplicating card purchases.
-   */
-  app.post("/credit-cards/:id/bills/:billId/pay", async (request, reply) => {
-    const { id, billId } = request.params as { id: string; billId: string };
-    const card = db.select().from(creditCards).where(eq(creditCards.id, id)).get();
-
-    if (!card) {
-      return reply.code(404).send({ message: "Cartão não encontrado." });
-    }
-
-    const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
-
-    if (!bill || bill.creditCardId !== id) {
-      return reply.code(404).send({ message: "Fatura não encontrada." });
-    }
-
-    const body = isRecord(request.body) ? request.body : {};
-    let paymentAccountId: string | null;
-    try {
-      paymentAccountId = parseOptionalString(body.accountId, "accountId") ?? card.paymentAccountId;
-    } catch (error) {
-      return sendPayloadError(error, reply, "Erro ao marcar fatura como paga.");
-    }
-
-    if (!paymentAccountId) {
-      return reply.code(400).send({ message: "Informe a conta usada para pagar a fatura." });
-    }
-
-    const paymentAccount = db
-      .select()
-      .from(accounts)
-      .where(eq(accounts.id, paymentAccountId))
-      .get();
-
-    if (!paymentAccount) {
-      return reply.code(400).send({ message: "Conta de pagamento não encontrada." });
-    }
-
-    const billTransactions = db
-      .select()
-      .from(transactions)
-      .where(and(eq(transactions.creditCardId, id), eq(transactions.budgetMonth, bill.billMonth)))
-      .all();
-
-    const totalBillCents = billTransactions
-      .filter((transaction) => transaction.status !== "canceled")
-      .reduce((sum, transaction) => {
-        if (transaction.type === "expense") return sum + transaction.amountCents;
-        if (transaction.type === "refund" || transaction.type === "chargeback")
-          return sum - transaction.amountCents;
-        return sum;
-      }, 0);
-
-    const pagFaturaSub = db
-      .select()
-      .from(subcategories)
-      .where(eq(subcategories.name, "Pagamento de fatura"))
-      .all()
-      .find((subcategory) => subcategory.categoryId === "cat-transferencias");
-
-    const paidAt = new Date().toISOString();
-    const paymentDate = bill.dueDate;
-    const paymentBudgetMonth = bill.dueDate.slice(0, 7);
-
-    if (totalBillCents > 0) {
-      const existingPayment = db
-        .select()
-        .from(transactions)
-        .where(eq(transactions.creditCardBillId, billId))
-        .all()
-        .find((transaction) => transaction.type === "expense" && !transaction.creditCardId);
-
-      const paymentTransaction = {
-        type: "expense" as const,
-        description: `Pagamento fatura ${card.name} ${bill.billMonth}`,
-        amountCents: totalBillCents,
-        eventDate: paymentDate,
-        budgetMonth: paymentBudgetMonth,
-        accountId: paymentAccountId,
-        paymentMethodId: paymentAccount.defaultPaymentMethodId ?? null,
-        subcategoryId: pagFaturaSub?.id ?? null,
-        creditCardId: null,
-        creditCardBillId: billId,
-        status: "confirmed" as const,
-        notes: `Pagamento da fatura ${card.name} com vencimento em ${bill.dueDate}.`,
-        linkedTransactionId: null,
-        updatedAt: paidAt
-      };
-
-      if (existingPayment) {
-        db.update(transactions)
-          .set(paymentTransaction)
-          .where(eq(transactions.id, existingPayment.id))
-          .run();
-      } else {
-        db.insert(transactions)
-          .values({
-            id: crypto.randomUUID(),
-            ...paymentTransaction,
-            createdAt: paidAt
-          })
-          .run();
-      }
-    }
-
-    db.update(creditCardBills)
-      .set({ status: "paid", paidAt, updatedAt: paidAt })
-      .where(eq(creditCardBills.id, billId))
-      .run();
-
-    return reply.code(204).send();
-  });
-
-  /**
-   * POST /credit-cards/:id/bills/:billId/revert
-   * Reverts a bill payment, deletes the account outflow transaction.
-   */
-  app.post("/credit-cards/:id/bills/:billId/revert", async (request, reply) => {
-    const { id, billId } = request.params as { id: string; billId: string };
-    const card = db.select().from(creditCards).where(eq(creditCards.id, id)).get();
-
-    if (!card) {
-      return reply.code(404).send({ message: "Cartão não encontrado." });
-    }
-
-    const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
-
-    if (!bill || bill.creditCardId !== id) {
-      return reply.code(404).send({ message: "Fatura não encontrada." });
-    }
-
-    if (bill.status !== "paid") {
-      return reply.code(400).send({ message: "A fatura não está paga." });
-    }
-
-    const updatedAt = new Date().toISOString();
-
-    // Delete the payment transaction associated with this bill
-    db.delete(transactions)
-      .where(and(eq(transactions.creditCardBillId, billId), isNull(transactions.creditCardId)))
-      .run();
-
-    // Update the bill status to open
-    db.update(creditCardBills)
-      .set({ status: "open", paidAt: null, updatedAt })
-      .where(eq(creditCardBills.id, billId))
-      .run();
-
-    return reply.code(204).send();
-  });
 
   /**
    * POST /credit-cards/:id/bills/:billId/transactions
@@ -450,8 +335,8 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       return reply.code(404).send({ message: "Fatura não encontrada." });
     }
 
-    if (bill.status === "paid") {
-      return reply.code(400).send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
+    if (isBillFinanciallyLocked(db, billId)) {
+      return reply.code(400).send({ message: "Não é possível alterar financeiramente uma fatura com pagamento ativo." });
     }
 
     const body = request.body;
@@ -508,8 +393,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         creditCardId: id,
         creditCardBillId: targetBill.id,
         status,
-        notes: notes ?? null,
-        linkedTransactionId: null
+        notes: notes ?? null
       };
 
       if (installmentCount > 1) {
@@ -520,8 +404,8 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         );
 
         for (const t of created) {
-          if (t.creditCardBillId && isBillPaid(db, t.creditCardBillId)) {
-            return reply.code(400).send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
+          if (t.creditCardBillId && isBillFinanciallyLocked(db, t.creditCardBillId)) {
+            return reply.code(400).send({ message: "Não é possível alterar financeiramente uma fatura com pagamento ativo." });
           }
         }
 
@@ -545,14 +429,13 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         return reply.code(201).send(created);
       }
 
-      if (targetBill.status === "paid") {
-        return reply.code(400).send({ message: "Não é possível adicionar lançamentos a uma fatura paga." });
+      if (isBillFinanciallyLocked(db, targetBill.id)) {
+        return reply.code(400).send({ message: "Não é possível alterar financeiramente uma fatura com pagamento ativo." });
       }
 
       const transaction = {
         id: crypto.randomUUID(),
         ...transactionData,
-        linkedTransactionId: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -590,6 +473,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     if (!current || !belongsToBill) {
       return reply.code(404).send({ message: "Lançamento não encontrado nesta fatura." });
     }
+    if (isBillFinanciallyLocked(db, billId)) return reply.code(400).send({ message: "Fatura com pagamento ativo permite apenas renomear ou recategorizar." });
 
     const body = request.body;
     if (!isRecord(body)) return reply.code(400).send({ message: "Payload inválido." });
@@ -643,8 +527,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         creditCardId: id,
         creditCardBillId: targetBill.id,
         status,
-        notes: notes ?? null,
-        linkedTransactionId: null
+        notes: notes ?? null
       };
 
       if (installmentCount > 1 && !preserveBillMonth) {
@@ -653,9 +536,11 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           transactionData,
           installmentCount
         );
+        if (created.some((item) => item.creditCardBillId && isBillFinanciallyLocked(db, item.creditCardBillId))) return reply.code(400).send({ message: "Uma das faturas das parcelas está fechada ou possui pagamento ativo." });
 
         const [first, ...rest] = created;
-        db.update(transactions)
+        db.transaction(() => {
+          db.update(transactions)
           .set({
             description: first.description,
             amountCents: first.amountCents,
@@ -671,11 +556,9 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           .where(eq(transactions.id, transactionId))
           .run();
 
-        for (const t of rest) {
-          db.insert(transactions).values(t).run();
-        }
+          for (const t of rest) db.insert(transactions).values(t).run();
 
-        createInstallmentMetadataForTransactions(connection, {
+          createInstallmentMetadataForTransactions(connection, {
           creditCardId: id,
           originalDescription: description,
           originalEventDate: eventDate,
@@ -686,6 +569,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
             transaction: index === 0 ? { ...transaction, id: transactionId } : transaction,
             installmentNumber: index + 1
           }))
+          });
         });
 
         return db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
@@ -724,8 +608,8 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       if (!bill || bill.creditCardId !== id)
         return reply.code(404).send({ message: "Fatura não encontrada." });
 
-      if (bill.status === "paid") {
-        return reply.code(400).send({ message: "Não é possível excluir lançamentos de uma fatura paga." });
+      if (isBillFinanciallyLocked(db, billId)) {
+        return reply.code(400).send({ message: "Não é possível excluir lançamentos de uma fatura com pagamento ativo." });
       }
 
       const current = db

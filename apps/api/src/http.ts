@@ -1,6 +1,6 @@
 import type { FastifyReply } from "fastify";
 
-export class ValidationError extends Error {}
+export class ValidationError extends Error { readonly statusCode = 400; }
 
 export class ConflictError extends Error {}
 
