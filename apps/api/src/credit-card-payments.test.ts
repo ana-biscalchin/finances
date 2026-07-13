@@ -148,4 +148,37 @@ describe("credit card bill payment service", () => {
     });
     expect(result.summary.remainingCents).toBe(88_000);
   });
+
+  it("locks financial fields after payment but keeps metadata editable until reversal", async () => {
+    const app = buildServer({ connection, logger: false });
+    const paid = createBillPaymentService(connection).pay("bill-1", "lock-key", {
+      accountId: "account-1", paymentDate: "2026-07-20", amountCents: 10_000, principalCents: 10_000
+    });
+    const financialPayload = {
+      type: "expense", description: "Compra alterada", amountCents: 90_000,
+      eventDate: "2026-06-16", budgetMonth: "2026-07", creditCardId: "card-1",
+      status: "confirmed"
+    };
+    expect((await app.inject({ method: "PUT", url: "/transactions/purchase-1", payload: financialPayload })).statusCode).toBe(409);
+    const metadata = await app.inject({
+      method: "PATCH", url: "/transactions/purchase-1/metadata",
+      payload: { description: "Nome corrigido", subcategoryId: null, notes: "Conferido" }
+    });
+    expect(metadata.statusCode).toBe(200);
+    expect(metadata.json()).toEqual(expect.objectContaining({ description: "Nome corrigido", notes: "Conferido", amountCents: 100_000 }));
+
+    createBillPaymentService(connection).reverse("bill-1", paid.payment.id, "2026-07-21T10:00:00Z");
+    expect((await app.inject({ method: "PUT", url: "/transactions/purchase-1", payload: financialPayload })).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("locks financial mutation and deletion when the bill is explicitly closed", async () => {
+    connection.db.update(creditCardBills).set({ closedAt: "2026-07-10T10:00:00Z" })
+      .where(eq(creditCardBills.id, "bill-1")).run();
+    const app = buildServer({ connection, logger: false });
+    const payload = { type: "expense", description: "Compra", amountCents: 100_000, eventDate: "2026-06-15", budgetMonth: "2026-07", creditCardId: "card-1", status: "confirmed" };
+    expect((await app.inject({ method: "PUT", url: "/transactions/purchase-1", payload })).statusCode).toBe(409);
+    expect((await app.inject({ method: "DELETE", url: "/transactions/purchase-1" })).statusCode).toBe(409);
+    await app.close();
+  });
 });

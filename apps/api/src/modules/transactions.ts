@@ -3,6 +3,7 @@ import {
   categories as dbCategories,
   creditCards,
   creditCardBills,
+  creditCardBillPayments,
   installmentPurchases,
   subcategories,
   paymentMethods,
@@ -209,6 +210,12 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply.code(404).send({ message: "Lançamento não encontrado." });
     }
 
+    if (current.creditCardBillId && isBillFinanciallyLocked(db, current.creditCardBillId)) {
+      return reply.code(409).send({
+        message: "A fatura possui pagamento ou está fechada; altere apenas os metadados da compra."
+      });
+    }
+
     const payload = parseTransactionPayloadOrReply(request.body, reply);
 
     if (!payload) {
@@ -350,6 +357,29 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     return db.select().from(transactions).where(eq(transactions.id, id)).get();
   });
 
+  app.patch("/transactions/:id/metadata", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const current = db.select().from(transactions).where(eq(transactions.id, id)).get();
+    if (!current) return reply.code(404).send({ message: "Lançamento não encontrado." });
+    const body = isRecord(request.body) ? request.body : {};
+    let description: string;
+    let subcategoryId: string | null;
+    let notes: string | null;
+    try {
+      description = parseRequiredString(body.description, "description");
+      subcategoryId = parseOptionalString(body.subcategoryId, "subcategoryId");
+      notes = parseOptionalString(body.notes, "notes");
+    } catch (error) {
+      return sendPayloadError(error, reply, "Metadados inválidos.");
+    }
+    if (subcategoryId && !db.select().from(subcategories).where(eq(subcategories.id, subcategoryId)).get()) {
+      return reply.code(400).send({ message: "Subcategoria não encontrada." });
+    }
+    db.update(transactions).set({ description, subcategoryId, notes, updatedAt: new Date().toISOString() })
+      .where(eq(transactions.id, id)).run();
+    return db.select().from(transactions).where(eq(transactions.id, id)).get();
+  });
+
   app.delete("/transactions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const current = db.select().from(transactions).where(eq(transactions.id, id)).get();
@@ -361,11 +391,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     if (
       current.creditCardId &&
       current.creditCardBillId &&
-      isBillPaid(db, current.creditCardBillId)
+      isBillFinanciallyLocked(db, current.creditCardBillId)
     ) {
       return reply
-        .code(400)
-        .send({ message: "Não é possível excluir lançamentos de uma fatura paga." });
+        .code(409)
+        .send({ message: "Não é possível excluir lançamentos de uma fatura fechada ou com pagamento." });
     }
 
     db.transaction((tx) => {
@@ -1105,6 +1135,15 @@ export function isBillPaid(db: DatabaseConnection["db"], billId: string | null):
     .where(eq(creditCardBills.id, billId))
     .get();
   return bill?.status === "paid";
+}
+
+export function isBillFinanciallyLocked(db: DatabaseConnection["db"], billId: string): boolean {
+  const bill = db.select({ closedAt: creditCardBills.closedAt }).from(creditCardBills)
+    .where(eq(creditCardBills.id, billId)).get();
+  if (bill?.closedAt) return true;
+  return db.select({ id: creditCardBillPayments.id }).from(creditCardBillPayments)
+    .where(and(eq(creditCardBillPayments.billId, billId), isNull(creditCardBillPayments.reversedAt)))
+    .get() !== undefined;
 }
 
 function parseTransactionPayloadOrReply(body: unknown, reply: FastifyReply) {

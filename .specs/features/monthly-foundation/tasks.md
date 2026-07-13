@@ -155,11 +155,11 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** BILL-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Descrição, subcategoria e observações continuam editáveis.
-  - [ ] Valor, data, tipo, cartão, fatura, competência e parcela retornam 409.
-  - [ ] Após reversão de todos os pagamentos, correção financeira volta a ser permitida conforme estado da fatura.
-  - [ ] Teste: testes atuais que permitiam alteração financeira são substituídos pelos novos contratos; gate da API passa sem queda na contagem de testes.
-  - [ ] Constituição: respeita `ana-standards/references/surgical-edits.md` e `error-handling.md`.
+  - [x] Descrição, subcategoria e observações continuam editáveis.
+  - [x] Valor, data, tipo, cartão, fatura, competência e parcela retornam 409.
+  - [x] Após reversão de todos os pagamentos, correção financeira volta a ser permitida conforme estado da fatura.
+  - [x] Teste: testes atuais que permitiam alteração financeira são substituídos pelos novos contratos; gate da API passa sem queda na contagem de testes.
+  - [x] Constituição: respeita `ana-standards/references/surgical-edits.md` e `error-handling.md`.
 - **Testes:** integração API
 - **Gate:** completo do pacote
 - **Commit:** `fix(api): lock paid bill financial fields`
