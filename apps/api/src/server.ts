@@ -13,6 +13,7 @@ import { registerReportRoutes } from "./modules/reports.js";
 import { registerReconciliationRoutes } from "./modules/reconciliation.js";
 import { registerBackupRoutes } from "./modules/backups.js";
 import { registerSettingsRoutes } from "./modules/settings.js";
+import { registerTransferRoutes } from "./modules/transfers.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -85,6 +86,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   registerReconciliationRoutes(app, connection);
   registerBackupRoutes(app, connection);
   registerSettingsRoutes(app, connection);
+  registerTransferRoutes(app, connection);
 
   return app;
 }

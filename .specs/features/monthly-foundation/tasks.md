@@ -100,11 +100,11 @@ T12,T13,T14,T15,T16 → T17 → T18 → T19
 - **Requisito:** TRF-01, CASH-01
 - **Ferramentas:** Skill `ana-tdd`
 - **Pronto quando:**
-  - [ ] Falha simulada na segunda perna não persiste agregado nem primeira perna.
-  - [ ] Criar, editar e excluir atualizam os dois saldos sem gerar consumo.
-  - [ ] API retorna 400/404/409 para validação, ausência e conflito; erros inesperados propagam com contexto.
-  - [ ] Teste: `transfers.test.ts` cobre atomicidade, saldos e erros; gate da API passa com cobertura ≥ 80% do código novo.
-  - [ ] Constituição: respeita `ana-standards/references/error-handling.md`.
+  - [x] Falha simulada na segunda perna não persiste agregado nem primeira perna.
+  - [x] Criar, editar e excluir atualizam os dois saldos sem gerar consumo.
+  - [x] API retorna 400/404/409 para validação, ausência e conflito; erros inesperados propagam com contexto.
+  - [x] Teste: `transfers.test.ts` cobre atomicidade, saldos e erros; gate da API passa com cobertura ≥ 80% do código novo.
+  - [x] Constituição: respeita `ana-standards/references/error-handling.md`.
 - **Testes:** integração API + SQLite isolado
 - **Gate:** completo do pacote
 - **Commit:** `feat(api): add atomic account transfers`
