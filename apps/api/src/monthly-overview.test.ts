@@ -213,6 +213,7 @@ describe("canonical monthly views", () => {
       .insert(creditCardBillPayments)
       .values({
         id: "payment",
+        ownerId: TEST_OWNER_ID,
         idempotencyKey: "key",
         billId: "bill",
         accountId: "account",

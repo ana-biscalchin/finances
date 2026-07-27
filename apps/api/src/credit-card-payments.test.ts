@@ -499,4 +499,70 @@ describe("credit card bill payment service", () => {
     expect(connection.db.select().from(creditCardBillPayments).all()).toEqual([]);
     await app.close();
   });
+  it("allows the same idempotency key independently for two owners", () => {
+    connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "test",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
+    connection.db
+      .insert(accounts)
+      .values({ id: "other-account", ownerId: "other-owner", name: "Outra", type: "checking" })
+      .run();
+    connection.db
+      .insert(creditCards)
+      .values({
+        id: "other-card",
+        ownerId: "other-owner",
+        name: "Outro",
+        closingDay: 10,
+        dueDay: 20
+      })
+      .run();
+    connection.db
+      .insert(creditCardBills)
+      .values({
+        id: "other-bill",
+        creditCardId: "other-card",
+        billMonth: "2026-07",
+        dueDate: "2026-07-20"
+      })
+      .run();
+    connection.db
+      .insert(transactions)
+      .values({
+        id: "other-purchase",
+        ownerId: "other-owner",
+        type: "expense",
+        description: "Privada",
+        amountCents: 1000,
+        eventDate: "2026-06-15",
+        budgetMonth: "2026-07",
+        creditCardId: "other-card",
+        creditCardBillId: "other-bill",
+        status: "confirmed"
+      })
+      .run();
+    const input = { paymentDate: "2026-07-20", amountCents: 1000, principalCents: 1000 };
+
+    createBillPaymentService(connection, TEST_OWNER_ID).pay("bill-1", "shared-key", {
+      ...input,
+      accountId: "account-1"
+    });
+    createBillPaymentService(connection, "other-owner").pay("other-bill", "shared-key", {
+      ...input,
+      accountId: "other-account"
+    });
+
+    expect(connection.db.select().from(creditCardBillPayments).all()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ownerId: TEST_OWNER_ID, idempotencyKey: "shared-key" }),
+        expect.objectContaining({ ownerId: "other-owner", idempotencyKey: "shared-key" })
+      ])
+    );
+  });
 });

@@ -18,6 +18,8 @@ const creditCardOwnershipSql = migrationSql("0004_typical_terror.sql");
 const transferOwnershipSql = migrationSql("0005_cuddly_cannonball.sql");
 const ownershipSql = migrationSql("0006_jazzy_patch.sql");
 const planningOwnershipSql = migrationSql("0007_faithful_big_bertha.sql");
+const remainingRootsOwnershipSql = migrationSql("0008_nervous_brother_voodoo.sql");
+const billPaymentOwnershipSql = migrationSql("0009_demonic_starfox.sql");
 
 afterEach(() => {
   for (const directory of directories.splice(0))
@@ -253,6 +255,131 @@ describe("transaction ownership migration", () => {
         )
         .get()
     ).toEqual({ count: 0 });
+    connection.sqlite.close();
+  });
+  it("backfills settings and reserve roots to the configured owner", () => {
+    const connection = legacyDatabase("ana");
+    connection.sqlite
+      .prepare(
+        "INSERT INTO users (id, username, password_hash, password_changed_at) VALUES (?, ?, ?, ?)"
+      )
+      .run("owner-ana", "ana", "test", new Date().toISOString());
+    connection.sqlite.exec(planningOwnershipSql);
+    connection.sqlite
+      .prepare("INSERT INTO accounts (id, owner_id, name, type) VALUES (?, ?, ?, ?)")
+      .run("account", "owner-ana", "Conta", "checking");
+    connection.sqlite
+      .prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
+      .run("theme", "dark");
+    connection.sqlite
+      .prepare("INSERT INTO reserve_goals (id, name, account_id) VALUES (?, ?, ?)")
+      .run("goal", "Reserva", "account");
+
+    connection.sqlite.exec(remainingRootsOwnershipSql);
+
+    expect(
+      connection.sqlite.prepare("SELECT owner_id FROM settings WHERE key = ?").get("theme")
+    ).toEqual({ owner_id: "owner-ana" });
+    expect(
+      connection.sqlite.prepare("SELECT owner_id FROM reserve_goals WHERE id = ?").get("goal")
+    ).toEqual({ owner_id: "owner-ana" });
+    expect(connection.sqlite.pragma("foreign_key_check")).toEqual([]);
+    connection.sqlite.close();
+  });
+
+  it("rolls back settings and reserves when the configured owner is absent", () => {
+    const connection = legacyDatabase("missing");
+    connection.sqlite
+      .prepare(
+        "INSERT INTO users (id, username, password_hash, password_changed_at) VALUES (?, ?, ?, ?)"
+      )
+      .run("owner-other", "other", "test", new Date().toISOString());
+    connection.sqlite.exec(planningOwnershipSql);
+    connection.sqlite
+      .prepare("INSERT INTO accounts (id, owner_id, name, type) VALUES (?, ?, ?, ?)")
+      .run("account", "owner-other", "Conta", "checking");
+    connection.sqlite
+      .prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
+      .run("theme", "dark");
+    connection.sqlite
+      .prepare("INSERT INTO reserve_goals (id, name, account_id) VALUES (?, ?, ?)")
+      .run("goal", "Reserva", "account");
+
+    expect(() =>
+      connection.sqlite.transaction(() => connection.sqlite.exec(remainingRootsOwnershipSql))()
+    ).toThrow();
+    expect(connection.sqlite.prepare("SELECT key FROM settings").all()).toEqual([{ key: "theme" }]);
+    expect(connection.sqlite.prepare("SELECT id FROM reserve_goals").all()).toEqual([
+      { id: "goal" }
+    ]);
+    expect(
+      connection.sqlite
+        .prepare(
+          "SELECT COUNT(*) AS count FROM pragma_table_info('settings') WHERE name = 'owner_id'"
+        )
+        .get()
+    ).toEqual({ count: 0 });
+    expect(
+      connection.sqlite
+        .prepare(
+          "SELECT COUNT(*) AS count FROM pragma_table_info('reserve_goals') WHERE name = 'owner_id'"
+        )
+        .get()
+    ).toEqual({ count: 0 });
+    connection.sqlite.close();
+  });
+  it("derives bill payment ownership from its card root", () => {
+    const connection = legacyDatabase("ana");
+    connection.sqlite
+      .prepare(
+        "INSERT INTO users (id, username, password_hash, password_changed_at) VALUES (?, ?, ?, ?)"
+      )
+      .run("owner-ana", "ana", "test", new Date().toISOString());
+    connection.sqlite.exec(ownershipSql);
+    connection.sqlite.exec(planningOwnershipSql);
+    connection.sqlite.exec(remainingRootsOwnershipSql);
+    connection.sqlite
+      .prepare("INSERT INTO accounts (id, owner_id, name, type) VALUES (?, ?, ?, ?)")
+      .run("account", "owner-ana", "Conta", "checking");
+    connection.sqlite
+      .prepare(
+        "INSERT INTO credit_cards (id, owner_id, name, closing_day, due_day) VALUES (?, ?, ?, ?, ?)"
+      )
+      .run("card", "owner-ana", "Cartão", 10, 20);
+    connection.sqlite
+      .prepare(
+        "INSERT INTO credit_card_bills (id, credit_card_id, bill_month, due_date) VALUES (?, ?, ?, ?)"
+      )
+      .run("bill", "card", "2026-07", "2026-07-20");
+    connection.sqlite
+      .prepare(
+        "INSERT INTO transactions (id, owner_id, type, description, amount_cents, event_date, budget_month, account_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        "cash",
+        "owner-ana",
+        "expense",
+        "Pagamento",
+        1000,
+        "2026-07-20",
+        "2026-07",
+        "account",
+        "confirmed"
+      );
+    connection.sqlite
+      .prepare(
+        "INSERT INTO credit_card_bill_payments (id, idempotency_key, bill_id, account_id, payment_transaction_id, payment_date, principal_cents) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run("payment", "key", "bill", "account", "cash", "2026-07-20", 1000);
+
+    connection.sqlite.exec(billPaymentOwnershipSql);
+
+    expect(
+      connection.sqlite
+        .prepare("SELECT owner_id FROM credit_card_bill_payments WHERE id = ?")
+        .get("payment")
+    ).toEqual({ owner_id: "owner-ana" });
+    expect(connection.sqlite.pragma("foreign_key_check")).toEqual([]);
     connection.sqlite.close();
   });
 });

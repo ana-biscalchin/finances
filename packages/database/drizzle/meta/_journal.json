@@ -57,6 +57,20 @@
       "when": 1785188882642,
       "tag": "0007_faithful_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785189760765,
+      "tag": "0008_nervous_brother_voodoo",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785190018089,
+      "tag": "0009_demonic_starfox",
+      "breakpoints": true
     }
   ]
 }

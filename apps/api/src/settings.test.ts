@@ -1,8 +1,10 @@
 import { buildServer } from "./server.js";
-import { createDatabaseConnection } from "@finances/database";
+import { createDatabaseConnection, settings, users } from "@finances/database";
+import { and, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
+import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 
 const dbPath = resolve(process.cwd(), "data/test-settings.sqlite");
@@ -24,8 +26,9 @@ describe("Settings and Google Drive API", () => {
     migrate(connection.db, {
       migrationsFolder: "../../packages/database/drizzle"
     });
+    seedTestOwner(connection);
 
-    app = buildServer({ connection });
+    app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });
 
   afterAll(async () => {
@@ -106,5 +109,35 @@ describe("Settings and Google Drive API", () => {
 
     const data = getRes.json();
     expect(data.googleConnected).toBe(false);
+  });
+  it("isolates settings with the same key between owners", async () => {
+    connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "test",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
+    connection.db
+      .insert(settings)
+      .values({ ownerId: "other-owner", key: "google_client_id", value: "private-other" })
+      .run();
+
+    const getRes = await app.inject({ method: "GET", url: "/settings" });
+    expect(getRes.json().googleClientId).toBe("client-id-xyz");
+    await app.inject({
+      method: "POST",
+      url: "/settings",
+      payload: { googleClientId: "owner-updated" }
+    });
+    expect(
+      connection.db
+        .select()
+        .from(settings)
+        .where(and(eq(settings.ownerId, "other-owner"), eq(settings.key, "google_client_id")))
+        .get()
+    ).toEqual(expect.objectContaining({ value: "private-other" }));
   });
 });

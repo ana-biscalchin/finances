@@ -114,7 +114,12 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       const totalCents = db
         .select()
         .from(transactions)
-        .where(eq(transactions.creditCardBillId, billId))
+        .where(
+          and(
+            eq(transactions.ownerId, requestContextFrom(request).ownerId),
+            eq(transactions.creditCardBillId, billId)
+          )
+        )
         .all()
         .filter((item) => item.creditCardId && ["confirmed", "reconciled"].includes(item.status))
         .reduce(
@@ -317,7 +322,13 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     const billTransactions = db
       .select()
       .from(transactions)
-      .where(and(eq(transactions.creditCardBillId, bill.id), eq(transactions.creditCardId, id)))
+      .where(
+        and(
+          eq(transactions.ownerId, requestContextFrom(request).ownerId),
+          eq(transactions.creditCardBillId, bill.id),
+          eq(transactions.creditCardId, id)
+        )
+      )
       .orderBy(desc(transactions.eventDate), asc(transactions.description))
       .all();
 
@@ -326,7 +337,13 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     const cardTransactions = db
       .select()
       .from(transactions)
-      .where(and(eq(transactions.creditCardId, id), eq(transactions.budgetMonth, billMonth)))
+      .where(
+        and(
+          eq(transactions.ownerId, requestContextFrom(request).ownerId),
+          eq(transactions.creditCardId, id),
+          eq(transactions.budgetMonth, billMonth)
+        )
+      )
       .orderBy(desc(transactions.eventDate), asc(transactions.description))
       .all();
 
@@ -553,7 +570,16 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     if (!bill || bill.creditCardId !== id)
       return reply.code(404).send({ message: "Fatura não encontrada." });
 
-    const current = db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
+    const current = db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.ownerId, requestContextFrom(request).ownerId),
+          eq(transactions.id, transactionId)
+        )
+      )
+      .get();
     const belongsToBill =
       current?.creditCardBillId === billId ||
       (current?.creditCardId === id && current.budgetMonth === bill.billMonth);
@@ -652,7 +678,12 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
               notes: first.notes,
               updatedAt: new Date().toISOString()
             })
-            .where(eq(transactions.id, transactionId))
+            .where(
+              and(
+                eq(transactions.ownerId, requestContextFrom(request).ownerId),
+                eq(transactions.id, transactionId)
+              )
+            )
             .run();
 
           for (const t of rest)
@@ -674,7 +705,16 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           });
         });
 
-        return db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
+        return db
+          .select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.ownerId, requestContextFrom(request).ownerId),
+              eq(transactions.id, transactionId)
+            )
+          )
+          .get();
       }
 
       db.update(transactions)
@@ -682,10 +722,24 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           ...transactionData,
           updatedAt: new Date().toISOString()
         })
-        .where(eq(transactions.id, transactionId))
+        .where(
+          and(
+            eq(transactions.ownerId, requestContextFrom(request).ownerId),
+            eq(transactions.id, transactionId)
+          )
+        )
         .run();
 
-      return db.select().from(transactions).where(eq(transactions.id, transactionId)).get();
+      return db
+        .select()
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.ownerId, requestContextFrom(request).ownerId),
+            eq(transactions.id, transactionId)
+          )
+        )
+        .get();
     } catch (error) {
       return sendPayloadError(error, reply, "Erro ao atualizar lançamento.");
     }
@@ -724,7 +778,12 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       const current = db
         .select()
         .from(transactions)
-        .where(eq(transactions.id, transactionId))
+        .where(
+          and(
+            eq(transactions.ownerId, requestContextFrom(request).ownerId),
+            eq(transactions.id, transactionId)
+          )
+        )
         .get();
       const belongsToBill =
         current?.creditCardBillId === billId ||
@@ -742,7 +801,14 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
 
       db.transaction((tx) => {
         tx.delete(installments).where(eq(installments.purchaseTransactionId, transactionId)).run();
-        tx.delete(transactions).where(eq(transactions.id, transactionId)).run();
+        tx.delete(transactions)
+          .where(
+            and(
+              eq(transactions.ownerId, requestContextFrom(request).ownerId),
+              eq(transactions.id, transactionId)
+            )
+          )
+          .run();
       });
       return reply.code(204).send();
     }

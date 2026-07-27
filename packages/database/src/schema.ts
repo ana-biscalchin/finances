@@ -1,5 +1,13 @@
 import { relations, sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  check,
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex
+} from "drizzle-orm/sqlite-core";
 
 const timestamps = {
   createdAt: text("created_at")
@@ -311,6 +319,7 @@ export const creditCardBillPayments = sqliteTable(
   "credit_card_bill_payments",
   {
     id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
     idempotencyKey: text("idempotency_key").notNull(),
     billId: text("bill_id")
       .notNull()
@@ -330,8 +339,12 @@ export const creditCardBillPayments = sqliteTable(
     ...timestamps
   },
   (table) => [
-    uniqueIndex("credit_card_bill_payments_idempotency_unique").on(table.idempotencyKey),
+    uniqueIndex("credit_card_bill_payments_owner_idempotency_unique").on(
+      table.ownerId,
+      table.idempotencyKey
+    ),
     uniqueIndex("credit_card_bill_payments_transaction_unique").on(table.paymentTransactionId),
+    index("credit_card_bill_payments_owner_bill_idx").on(table.ownerId, table.billId),
     index("credit_card_bill_payments_bill_idx").on(table.billId),
     index("credit_card_bill_payments_account_idx").on(table.accountId),
     check(
@@ -400,15 +413,20 @@ export const installments = sqliteTable(
   ]
 );
 
-export const reserveGoals = sqliteTable("reserve_goals", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  targetAmountCents: integer("target_amount_cents"),
-  accountId: text("account_id").references(() => accounts.id),
-  targetDate: text("target_date"),
-  status: text("status").notNull().default("active"),
-  ...timestamps
-});
+export const reserveGoals = sqliteTable(
+  "reserve_goals",
+  {
+    id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
+    name: text("name").notNull(),
+    targetAmountCents: integer("target_amount_cents"),
+    accountId: text("account_id").references(() => accounts.id),
+    targetDate: text("target_date"),
+    status: text("status").notNull().default("active"),
+    ...timestamps
+  },
+  (table) => [index("reserve_goals_owner_status_idx").on(table.ownerId, table.status)]
+);
 
 export const reserveMovements = sqliteTable(
   "reserve_movements",
@@ -470,13 +488,18 @@ export const subcategoriesRelations = relations(subcategories, ({ one }) => ({
   })
 }));
 
-export const settings = sqliteTable("settings", {
-  key: text("key").primaryKey(),
-  value: text("value"),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text("updated_at")
-    .notNull()
-    .default(sql`CURRENT_TIMESTAMP`)
-});
+export const settings = sqliteTable(
+  "settings",
+  {
+    ownerId: ownedByUser(),
+    key: text("key").notNull(),
+    value: text("value"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`)
+  },
+  (table) => [primaryKey({ columns: [table.ownerId, table.key] })]
+);

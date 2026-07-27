@@ -51,7 +51,7 @@ export function createBillPaymentService(
     return db
       .select()
       .from(transactions)
-      .where(eq(transactions.creditCardBillId, billId))
+      .where(and(eq(transactions.ownerId, ownerId), eq(transactions.creditCardBillId, billId)))
       .all()
       .filter((row) => row.creditCardId && row.status !== "canceled")
       .reduce(
@@ -70,7 +70,9 @@ export function createBillPaymentService(
     const payments = db
       .select()
       .from(creditCardBillPayments)
-      .where(eq(creditCardBillPayments.billId, billId))
+      .where(
+        and(eq(creditCardBillPayments.ownerId, ownerId), eq(creditCardBillPayments.billId, billId))
+      )
       .all();
     return summarizeBillPayments({
       totalCents: billTotal(billId),
@@ -85,7 +87,9 @@ export function createBillPaymentService(
     const paymentTransaction = db
       .select()
       .from(transactions)
-      .where(eq(transactions.id, payment.paymentTransactionId))
+      .where(
+        and(eq(transactions.ownerId, ownerId), eq(transactions.id, payment.paymentTransactionId))
+      )
       .get();
     if (!paymentTransaction) throw new Error(`Payment ${payment.id} has no cash movement`);
     return { payment, paymentTransaction, summary: summary(payment.billId, asOfDate) };
@@ -93,10 +97,16 @@ export function createBillPaymentService(
 
   return {
     details(billId: string, asOfDate = new Date().toISOString().slice(0, 10)) {
+      ownedBill(billId);
       const payments = db
         .select()
         .from(creditCardBillPayments)
-        .where(eq(creditCardBillPayments.billId, billId))
+        .where(
+          and(
+            eq(creditCardBillPayments.ownerId, ownerId),
+            eq(creditCardBillPayments.billId, billId)
+          )
+        )
         .all();
       return { payments, summary: summary(billId, asOfDate) };
     },
@@ -114,7 +124,12 @@ export function createBillPaymentService(
       const existing = db
         .select()
         .from(creditCardBillPayments)
-        .where(eq(creditCardBillPayments.idempotencyKey, idempotencyKey))
+        .where(
+          and(
+            eq(creditCardBillPayments.ownerId, ownerId),
+            eq(creditCardBillPayments.idempotencyKey, idempotencyKey)
+          )
+        )
         .get();
       if (existing) {
         if (existing.billId !== billId)
@@ -168,6 +183,7 @@ export function createBillPaymentService(
         db.insert(creditCardBillPayments)
           .values({
             id: paymentId,
+            ownerId,
             idempotencyKey,
             billId,
             accountId: parsed.accountId,
@@ -191,7 +207,9 @@ export function createBillPaymentService(
       const payment = db
         .select()
         .from(creditCardBillPayments)
-        .where(eq(creditCardBillPayments.id, paymentId))
+        .where(
+          and(eq(creditCardBillPayments.ownerId, ownerId), eq(creditCardBillPayments.id, paymentId))
+        )
         .get();
       if (!payment) throw new Error(`Payment ${paymentId} was not persisted`);
       return resultFor(payment, parsed.paymentDate);
@@ -203,7 +221,11 @@ export function createBillPaymentService(
         .select()
         .from(creditCardBillPayments)
         .where(
-          and(eq(creditCardBillPayments.id, paymentId), eq(creditCardBillPayments.billId, billId))
+          and(
+            eq(creditCardBillPayments.ownerId, ownerId),
+            eq(creditCardBillPayments.id, paymentId),
+            eq(creditCardBillPayments.billId, billId)
+          )
         )
         .get();
       if (!payment) throw new BillPaymentServiceError("Pagamento não encontrado.", 404);
@@ -211,11 +233,21 @@ export function createBillPaymentService(
       db.transaction(() => {
         db.update(creditCardBillPayments)
           .set({ reversedAt })
-          .where(eq(creditCardBillPayments.id, paymentId))
+          .where(
+            and(
+              eq(creditCardBillPayments.ownerId, ownerId),
+              eq(creditCardBillPayments.id, paymentId)
+            )
+          )
           .run();
         db.update(transactions)
           .set({ status: "canceled" })
-          .where(eq(transactions.id, payment.paymentTransactionId))
+          .where(
+            and(
+              eq(transactions.ownerId, ownerId),
+              eq(transactions.id, payment.paymentTransactionId)
+            )
+          )
           .run();
         const after = summary(billId, reversedAt.slice(0, 10));
         db.update(creditCardBills)
@@ -226,7 +258,9 @@ export function createBillPaymentService(
       const reversed = db
         .select()
         .from(creditCardBillPayments)
-        .where(eq(creditCardBillPayments.id, paymentId))
+        .where(
+          and(eq(creditCardBillPayments.ownerId, ownerId), eq(creditCardBillPayments.id, paymentId))
+        )
         .get();
       if (!reversed) throw new Error(`Payment ${paymentId} disappeared during reversal`);
       return resultFor(reversed, reversedAt.slice(0, 10));

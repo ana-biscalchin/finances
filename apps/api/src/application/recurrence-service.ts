@@ -226,7 +226,11 @@ export function createRecurrenceService(connection: Connection, ownerId: string)
         recurrenceMonth: month
       };
       db.insert(transactions).values(occurrence).run();
-      return db.select().from(transactions).where(eq(transactions.id, occurrence.id)).get()!;
+      return db
+        .select()
+        .from(transactions)
+        .where(and(eq(transactions.ownerId, ownerId), eq(transactions.id, occurrence.id)))
+        .get()!;
     },
     pause(id: string) {
       get(id);

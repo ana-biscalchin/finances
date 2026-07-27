@@ -73,7 +73,11 @@ export function createTransferService(
       .where(and(eq(accountTransfers.ownerId, ownerId), eq(accountTransfers.id, id)))
       .get();
     if (!transfer) throw new TransferServiceError("Transferência não encontrada.", 404);
-    const rows = db.select().from(transactions).where(eq(transactions.transferId, id)).all();
+    const rows = db
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.ownerId, ownerId), eq(transactions.transferId, id)))
+      .all();
     const outgoing = rows.find((row) => row.type === "expense");
     const incoming = rows.find((row) => row.type === "income");
     if (!outgoing || !incoming) {

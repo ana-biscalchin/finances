@@ -37,6 +37,7 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
 
     const balancesMap = getAccountBalancesMap(
       connection,
+      ownerId,
       rows.map((account) => account.id)
     );
 
@@ -66,6 +67,7 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
       .from(transactions)
       .where(
         and(
+          eq(transactions.ownerId, ownerId),
           eq(transactions.accountId, id),
           inArray(transactions.status, ["confirmed", "reconciled"])
         )
@@ -180,6 +182,7 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
 
 function getAccountBalancesMap(
   connection: DatabaseConnection,
+  ownerId: string,
   ownedAccountIds: string[]
 ): Map<string, number> {
   if (ownedAccountIds.length === 0) return new Map();
@@ -191,6 +194,7 @@ function getAccountBalancesMap(
     .from(transactions)
     .where(
       and(
+        eq(transactions.ownerId, ownerId),
         inArray(transactions.status, ["confirmed", "reconciled"]),
         isNotNull(transactions.accountId),
         inArray(transactions.accountId, ownedAccountIds)

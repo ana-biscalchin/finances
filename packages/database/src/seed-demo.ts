@@ -94,10 +94,10 @@ try {
 
     for (const item of seed.billPayments) {
       db.insert(creditCardBillPayments)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: creditCardBillPayments.id,
-          set: { ...item, reversedAt: null, updatedAt: now }
+          set: { ...item, ownerId, reversedAt: null, updatedAt: now }
         })
         .run();
     }
