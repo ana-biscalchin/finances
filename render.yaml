@@ -2,9 +2,9 @@ services:
   - type: web
     name: finances-staging
     runtime: node
+    repo: https://github.com/ana-biscalchin/finances
     plan: free
     region: ohio
-    branch: main
     autoDeployTrigger: checksPass
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm --filter @finances/api start
