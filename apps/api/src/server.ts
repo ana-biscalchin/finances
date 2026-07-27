@@ -1,7 +1,13 @@
 import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import fastifyStatic from "@fastify/static";
 import { createDatabaseConnection } from "@finances/database";
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+
+import { createDatabaseProbe, type DatabaseProbe } from "./config/database-probe.js";
+import { loadConfig, redactConfigError, type ApiConfig } from "./config/environment.js";
 
 import { registerAccountRoutes } from "./modules/accounts.js";
 import { registerCategoryRoutes } from "./modules/categories.js";
@@ -17,13 +23,12 @@ import { registerMonthlyOverviewRoutes } from "./modules/monthly-overview.js";
 import { registerSimpleImportRoutes } from "./modules/simple-import.js";
 import { registerPlannedExpenseRoutes } from "./modules/planned-expenses.js";
 
-const port = Number(process.env.PORT ?? 3000);
-const host = process.env.HOST ?? "0.0.0.0";
-
 type BuildServerOptions = {
   databasePath?: string;
   logger?: boolean;
   connection?: ReturnType<typeof createDatabaseConnection>;
+  config?: ApiConfig;
+  databaseProbe?: DatabaseProbe;
 };
 
 type ApiError = Error & { statusCode?: number };
@@ -33,19 +38,56 @@ function normalizeApiError(error: unknown): ApiError {
 }
 
 export function buildServer(options: BuildServerOptions = {}) {
+  const config = options.config ?? loadConfig();
   const app = Fastify({
-    logger: options.logger ?? true
+    logger:
+      options.logger === false
+        ? false
+        : {
+            level: config.logLevel,
+            redact: {
+              paths: [
+                "req.headers.authorization",
+                "req.headers.cookie",
+                "req.body.password",
+                "req.body.currentPassword",
+                "req.body.newPassword"
+              ],
+              censor: "[REDACTED]"
+            }
+          },
+    bodyLimit: 1_048_576,
+    trustProxy: config.trustProxy,
+    requestIdHeader: "x-request-id"
   });
-  const connection = options.connection ?? createDatabaseConnection(options.databasePath);
+  const connection =
+    options.connection ??
+    createDatabaseConnection(
+      options.databasePath ??
+        (config.database.dialect === "sqlite"
+          ? config.database.path
+          : (process.env.PROOF_DATABASE_PATH ?? "/tmp/finances-proof.sqlite"))
+    );
+  const databaseProbe = options.databaseProbe ?? createDatabaseProbe(config);
 
   app.addHook("onClose", async () => {
+    await databaseProbe.close();
     connection.sqlite.close();
   });
 
   app.register(cors, {
-    origin: true,
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      const allowed = new Set([
+        ...(config.publicUrl ? [config.publicUrl] : []),
+        ...config.corsOrigins
+      ]);
+      callback(null, allowed.has(origin));
+    },
+    credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
   });
+  app.register(helmet, { contentSecurityPolicy: false });
 
   app.setErrorHandler((error, request, reply) => {
     const apiError = normalizeApiError(error);
@@ -67,10 +109,16 @@ export function buildServer(options: BuildServerOptions = {}) {
     reply.code(statusCode).send({ message });
   });
 
-  app.get("/health", async () => ({
-    ok: true,
-    service: "finances-api"
-  }));
+  app.get("/health", async () => ({ status: "OK", service: "finances-api" }));
+  app.get("/health/live", async () => ({ status: "OK" }));
+  app.get("/health/ready", async (_request, reply) => {
+    try {
+      await databaseProbe.check();
+      return { status: "OK" };
+    } catch {
+      return reply.code(503).send({ status: "UNAVAILABLE" });
+    }
+  });
 
   app.get("/meta", async () => ({
     name: "Carteira da Ana",
@@ -78,30 +126,42 @@ export function buildServer(options: BuildServerOptions = {}) {
     storage: "local-sqlite"
   }));
 
-  registerAccountRoutes(app, connection);
-  registerCategoryRoutes(app, connection);
-  registerPaymentMethodRoutes(app, connection);
-  registerTransactionRoutes(app, connection);
-  registerCreditCardRoutes(app, connection);
-  registerReportRoutes(app, connection);
-  registerBackupRoutes(app, connection);
-  registerSettingsRoutes(app, connection);
-  registerTransferRoutes(app, connection);
-  registerRecurrenceRoutes(app, connection);
-  registerMonthlyOverviewRoutes(app, connection);
-  registerPlannedExpenseRoutes(app, connection);
-  registerSimpleImportRoutes(app, connection);
+  const registerBusinessRoutes = async (routesApp: FastifyInstance) => {
+    registerAccountRoutes(routesApp, connection);
+    registerCategoryRoutes(routesApp, connection);
+    registerPaymentMethodRoutes(routesApp, connection);
+    registerTransactionRoutes(routesApp, connection);
+    registerCreditCardRoutes(routesApp, connection);
+    registerReportRoutes(routesApp, connection);
+    registerBackupRoutes(routesApp, connection);
+    if (config.features.googleDrive) registerSettingsRoutes(routesApp, connection);
+    registerTransferRoutes(routesApp, connection);
+    registerRecurrenceRoutes(routesApp, connection);
+    registerMonthlyOverviewRoutes(routesApp, connection);
+    registerPlannedExpenseRoutes(routesApp, connection);
+    registerSimpleImportRoutes(routesApp, connection);
+  };
+  app.register(registerBusinessRoutes, { prefix: "/api" });
+  if (config.environment !== "production") app.register(registerBusinessRoutes);
+  if (config.serveWeb) {
+    app.register(fastifyStatic, { root: resolve(process.cwd(), "apps/web/dist"), wildcard: false });
+    app.setNotFoundHandler((request, reply) =>
+      request.url.startsWith("/api/")
+        ? reply.code(404).send({ message: "Recurso não encontrado." })
+        : reply.sendFile("index.html")
+    );
+  }
 
   return app;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const app = buildServer();
-
   try {
-    await app.listen({ port, host });
+    const config = loadConfig();
+    const app = buildServer({ config });
+    await app.listen({ port: config.port, host: config.host });
   } catch (error) {
-    app.log.error(error);
+    console.error(redactConfigError(error));
     process.exit(1);
   }
 }
