@@ -30,8 +30,8 @@ jobs:
       - run: pnpm format:online
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm test
       - run: pnpm build
+      - run: pnpm test
       - name: Package immutable artifact
         run: tar -czf finances-${GITHUB_SHA}.tar.gz apps/api/dist apps/web/dist packages/*/dist package.json pnpm-lock.yaml pnpm-workspace.yaml
       - uses: actions/upload-artifact@v4
