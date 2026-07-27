@@ -3,11 +3,14 @@ import { accountInputSchema } from "@finances/domain";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
+import { requestContextFrom } from "../application/request-context.js";
+
+import { getBooleanQueryValue, ValidationError } from "../http.js";
 import {
-  getBooleanQueryValue,
-  ValidationError
-} from "../http.js";
-import { listAccountPaymentMethods, replaceAccountPaymentMethods, validateAccountPaymentMethods } from "./accounts/payment-method-associations.js";
+  listAccountPaymentMethods,
+  replaceAccountPaymentMethods,
+  validateAccountPaymentMethods
+} from "./accounts/payment-method-associations.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 
@@ -15,18 +18,27 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
   const { db } = connection;
 
   app.get("/accounts", async (request) => {
+    const { ownerId } = requestContextFrom(request);
     const includeInactive = getBooleanQueryValue(request.query, "includeInactive");
 
     const rows = includeInactive
-      ? db.select().from(accounts).orderBy(asc(accounts.sortOrder), asc(accounts.name)).all()
+      ? db
+          .select()
+          .from(accounts)
+          .where(eq(accounts.ownerId, ownerId))
+          .orderBy(asc(accounts.sortOrder), asc(accounts.name))
+          .all()
       : db
           .select()
           .from(accounts)
-          .where(eq(accounts.isActive, true))
+          .where(and(eq(accounts.ownerId, ownerId), eq(accounts.isActive, true)))
           .orderBy(asc(accounts.sortOrder), asc(accounts.name))
           .all();
 
-    const balancesMap = getAccountBalancesMap(connection);
+    const balancesMap = getAccountBalancesMap(
+      connection,
+      rows.map((account) => account.id)
+    );
 
     return rows.map((account) => {
       const delta = balancesMap.get(account.id) ?? 0;
@@ -39,8 +51,9 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
   });
 
   app.get("/accounts/:id", async (request, reply) => {
+    const { ownerId } = requestContextFrom(request);
     const { id } = request.params as { id: string };
-    const account = db.select().from(accounts).where(eq(accounts.id, id)).get();
+    const account = findOwnedAccount(connection, ownerId, id);
 
     if (!account) {
       return reply.code(404).send({ message: "Account not found." });
@@ -69,20 +82,22 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
   });
 
   app.post("/accounts", async (request, reply) => {
+    const { ownerId } = requestContextFrom(request);
     const payload = parseAccountPayload(request.body);
     validateAccountPaymentMethods(connection, payload.paymentMethods);
     const { paymentMethods: associations, ...accountPayload } = payload;
 
     const account = {
       id: crypto.randomUUID(),
+      ownerId,
       ...accountPayload,
-      sortOrder: payload.sortOrder ?? getNextAccountSortOrder(connection),
+      sortOrder: payload.sortOrder ?? getNextAccountSortOrder(connection, ownerId),
       isActive: true
     };
 
     const now = new Date().toISOString();
     db.transaction((tx) => {
-      if (payload.isPrimary) clearPrimaryAccounts(tx);
+      if (payload.isPrimary) clearPrimaryAccounts(tx, ownerId);
       tx.insert(accounts).values(account).run();
       replaceAccountPaymentMethods(tx, account.id, associations, now);
     });
@@ -94,8 +109,9 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
   });
 
   app.put("/accounts/:id", async (request, reply) => {
+    const { ownerId } = requestContextFrom(request);
     const { id } = request.params as { id: string };
-    const current = db.select().from(accounts).where(eq(accounts.id, id)).get();
+    const current = findOwnedAccount(connection, ownerId, id);
 
     if (!current) {
       return reply.code(404).send({ message: "Account not found." });
@@ -106,20 +122,24 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
     const { paymentMethods: associations, ...accountPayload } = payload;
     const now = new Date().toISOString();
     db.transaction((tx) => {
-      if (payload.isPrimary) clearPrimaryAccounts(tx);
-      tx.update(accounts).set({ ...accountPayload, updatedAt: now }).where(eq(accounts.id, id)).run();
+      if (payload.isPrimary) clearPrimaryAccounts(tx, ownerId);
+      tx.update(accounts)
+        .set({ ...accountPayload, updatedAt: now })
+        .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, id)))
+        .run();
       replaceAccountPaymentMethods(tx, id, associations, now);
     });
 
     return {
-      ...db.select().from(accounts).where(eq(accounts.id, id)).get(),
+      ...findOwnedAccount(connection, ownerId, id),
       paymentMethods: listAccountPaymentMethods(connection, id)
     };
   });
 
   app.patch("/accounts/:id/archive", async (request, reply) => {
+    const { ownerId } = requestContextFrom(request);
     const { id } = request.params as { id: string };
-    const current = db.select().from(accounts).where(eq(accounts.id, id)).get();
+    const current = findOwnedAccount(connection, ownerId, id);
 
     if (!current) {
       return reply.code(404).send({ message: "Account not found." });
@@ -131,15 +151,16 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
         isPrimary: false,
         updatedAt: new Date().toISOString()
       })
-      .where(eq(accounts.id, id))
+      .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, id)))
       .run();
 
     return reply.code(204).send();
   });
 
   app.patch("/accounts/:id/restore", async (request, reply) => {
+    const { ownerId } = requestContextFrom(request);
     const { id } = request.params as { id: string };
-    const current = db.select().from(accounts).where(eq(accounts.id, id)).get();
+    const current = findOwnedAccount(connection, ownerId, id);
 
     if (!current) {
       return reply.code(404).send({ message: "Account not found." });
@@ -150,14 +171,18 @@ export function registerAccountRoutes(app: FastifyInstance, connection: Database
         isActive: true,
         updatedAt: new Date().toISOString()
       })
-      .where(eq(accounts.id, id))
+      .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, id)))
       .run();
 
     return reply.code(204).send();
   });
 }
 
-function getAccountBalancesMap(connection: DatabaseConnection): Map<string, number> {
+function getAccountBalancesMap(
+  connection: DatabaseConnection,
+  ownedAccountIds: string[]
+): Map<string, number> {
+  if (ownedAccountIds.length === 0) return new Map();
   const rows = connection.db
     .select({
       accountId: transactions.accountId,
@@ -167,7 +192,8 @@ function getAccountBalancesMap(connection: DatabaseConnection): Map<string, numb
     .where(
       and(
         inArray(transactions.status, ["confirmed", "reconciled"]),
-        isNotNull(transactions.accountId)
+        isNotNull(transactions.accountId),
+        inArray(transactions.accountId, ownedAccountIds)
       )
     )
     .groupBy(transactions.accountId)
@@ -192,22 +218,30 @@ function parseAccountPayload(body: unknown) {
 
 type AccountDatabase = Parameters<Parameters<DatabaseConnection["db"]["transaction"]>[0]>[0];
 
-function clearPrimaryAccounts(db: AccountDatabase) {
-  db
-    .update(accounts)
+function clearPrimaryAccounts(db: AccountDatabase, ownerId: string) {
+  db.update(accounts)
     .set({
       isPrimary: false,
       updatedAt: new Date().toISOString()
     })
+    .where(eq(accounts.ownerId, ownerId))
     .run();
 }
 
-function getNextAccountSortOrder(connection: DatabaseConnection) {
-  const rows = connection.db.select().from(accounts).all();
+function getNextAccountSortOrder(connection: DatabaseConnection, ownerId: string) {
+  const rows = connection.db.select().from(accounts).where(eq(accounts.ownerId, ownerId)).all();
 
   if (rows.length === 0) {
     return 0;
   }
 
   return Math.max(...rows.map((account) => account.sortOrder)) + 1;
+}
+
+function findOwnedAccount(connection: DatabaseConnection, ownerId: string, id: string) {
+  return connection.db
+    .select()
+    .from(accounts)
+    .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, id)))
+    .get();
 }

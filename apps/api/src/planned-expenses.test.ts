@@ -26,7 +26,7 @@ describe("planned expenses API", () => {
     seedTestOwner(connection);
     connection.db
       .insert(accounts)
-      .values({ id: "checking", name: "Conta", type: "checking" })
+      .values({ id: "checking", ownerId: "test-owner", name: "Conta", type: "checking" })
       .run();
     connection.db
       .insert(categories)

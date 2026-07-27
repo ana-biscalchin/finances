@@ -30,7 +30,13 @@ describe("canonical monthly views", () => {
     seedTestOwner(connection);
     connection.db
       .insert(accounts)
-      .values({ id: "account", name: "Conta", type: "checking", initialBalanceCents: 100_000 })
+      .values({
+        id: "account",
+        ownerId: "test-owner",
+        name: "Conta",
+        type: "checking",
+        initialBalanceCents: 100_000
+      })
       .run();
     connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).run();
     connection.db

@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { seedTestOwner } from "./test-support/owner.js";
+import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
 import { buildServer } from "./server.js";
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
 describe("canonical transactions API", () => {
@@ -27,7 +27,10 @@ describe("canonical transactions API", () => {
     connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
     seedTestOwner(connection);
-    connection.db.insert(accounts).values({ id: "account", name: "Conta", type: "checking" }).run();
+    connection.db
+      .insert(accounts)
+      .values({ id: "account", ownerId: "test-owner", name: "Conta", type: "checking" })
+      .run();
     connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).run();
     connection.db
       .insert(accountPaymentMethods)
@@ -51,7 +54,7 @@ describe("canonical transactions API", () => {
       .insert(creditCards)
       .values({ id: "card", name: "Cartão", closingDay: 10, dueDay: 20 })
       .run();
-    app = buildServer({ connection, logger: false });
+    app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });
   afterEach(async () => {
     await app.close();

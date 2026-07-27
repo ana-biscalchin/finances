@@ -28,7 +28,7 @@ describe("recurrence service", () => {
     seedTestOwner(connection);
     connection.db
       .insert(accounts)
-      .values({ id: "account-1", name: "Conta", type: "checking" })
+      .values({ id: "account-1", ownerId: "test-owner", name: "Conta", type: "checking" })
       .run();
     connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).run();
     connection.db

@@ -1,5 +1,6 @@
 import { createDatabaseConnection } from "./connection.js";
 import { buildDemoSeedData } from "./demo-seed-data.js";
+import { resolveMigrationOwnerId } from "./migration-owner.js";
 import {
   accountTransfers,
   accountPaymentMethods,
@@ -14,14 +15,16 @@ import {
 
 const month = process.env.DEMO_MONTH ?? new Date().toISOString().slice(0, 7);
 const seed = buildDemoSeedData(month);
-const { db, sqlite } = createDatabaseConnection();
+const connection = createDatabaseConnection();
+const { db, sqlite } = connection;
+const ownerId = resolveMigrationOwnerId(connection, process.env.SEED_OWNER_USERNAME);
 const now = new Date().toISOString();
 
 try {
   sqlite.transaction(() => {
     for (const item of seed.accounts) {
       db.insert(accounts)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: accounts.id,
           set: { ...item, isActive: true, updatedAt: now }
@@ -100,10 +103,13 @@ try {
     }
 
     for (const item of seed.plannedExpenses) {
-      db.insert(plannedExpenses).values(item).onConflictDoUpdate({
-        target: plannedExpenses.id,
-        set: { ...item, updatedAt: now }
-      }).run();
+      db.insert(plannedExpenses)
+        .values(item)
+        .onConflictDoUpdate({
+          target: plannedExpenses.id,
+          set: { ...item, updatedAt: now }
+        })
+        .run();
     }
   })();
 

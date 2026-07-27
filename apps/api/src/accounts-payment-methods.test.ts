@@ -2,8 +2,10 @@ import {
   accountPaymentMethods,
   accounts,
   createDatabaseConnection,
-  paymentMethods
+  paymentMethods,
+  users
 } from "@finances/database";
+import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,6 +13,7 @@ import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildServer } from "./server.js";
+import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
 
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
 
@@ -23,11 +26,15 @@ describe("account payment method associations", () => {
     directory = mkdtempSync(resolve(tmpdir(), "finances-account-methods-"));
     connection = createDatabaseConnection(resolve(directory, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
-    connection.db.insert(paymentMethods).values([
-      { id: "pm-pix", name: "Pix", kind: "instant_transfer" },
-      { id: "pm-debit", name: "Débito", kind: "debit_card" }
-    ]).run();
-    app = buildServer({ connection, logger: false });
+    seedTestOwner(connection);
+    connection.db
+      .insert(paymentMethods)
+      .values([
+        { id: "pm-pix", name: "Pix", kind: "instant_transfer" },
+        { id: "pm-debit", name: "Débito", kind: "debit_card" }
+      ])
+      .run();
+    app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });
 
   afterEach(async () => {
@@ -89,5 +96,67 @@ describe("account payment method associations", () => {
       }
     });
     expect(response.statusCode).toBe(400);
+  });
+
+  it("does not enumerate or mutate an account owned by another identity", async () => {
+    connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "argon2id-test-only",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
+    connection.db
+      .insert(accounts)
+      .values({
+        id: "other-account",
+        ownerId: "other-owner",
+        name: "Conta privada",
+        type: "checking",
+        isPrimary: true
+      })
+      .run();
+    connection.db
+      .insert(accountPaymentMethods)
+      .values({
+        id: "other-account-pix",
+        accountId: "other-account",
+        paymentMethodId: "pm-pix",
+        isActive: true,
+        isDefault: true
+      })
+      .run();
+
+    expect((await app.inject({ method: "GET", url: "/accounts" })).json()).toEqual([]);
+    expect((await app.inject({ method: "GET", url: "/accounts/other-account" })).statusCode).toBe(
+      404
+    );
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: "/accounts/other-account",
+          payload: { name: "Invadida", type: "checking", paymentMethods: [] }
+        })
+      ).statusCode
+    ).toBe(404);
+    expect(
+      (await app.inject({ method: "PATCH", url: "/accounts/other-account/archive" })).statusCode
+    ).toBe(404);
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      payload: { name: "Minha conta", type: "checking", isPrimary: true, paymentMethods: [] }
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toEqual(
+      expect.objectContaining({ ownerId: TEST_OWNER_ID, sortOrder: 0 })
+    );
+    expect(
+      connection.db.select().from(accounts).where(eq(accounts.id, "other-account")).get()
+    ).toEqual(expect.objectContaining({ name: "Conta privada", isActive: true, isPrimary: true }));
   });
 });

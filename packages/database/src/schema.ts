@@ -50,17 +50,25 @@ const ownedByUser = () =>
     .notNull()
     .references(() => users.id);
 
-export const accounts = sqliteTable("accounts", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  type: text("type").notNull(),
-  institution: text("institution"),
-  initialBalanceCents: integer("initial_balance_cents").notNull().default(0),
-  sortOrder: integer("sort_order").notNull().default(0),
-  isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
-  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-  ...timestamps
-});
+export const accounts = sqliteTable(
+  "accounts",
+  {
+    id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    institution: text("institution"),
+    initialBalanceCents: integer("initial_balance_cents").notNull().default(0),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    ...timestamps
+  },
+  (table) => [
+    index("accounts_owner_active_idx").on(table.ownerId, table.isActive),
+    index("accounts_owner_sort_idx").on(table.ownerId, table.sortOrder)
+  ]
+);
 
 export const paymentMethods = sqliteTable(
   "payment_methods",

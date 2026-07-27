@@ -53,7 +53,7 @@ db.update(paymentMethods)
 
 for (const account of accountSeeds) {
   db.insert(accounts)
-    .values({ ...account, initialBalanceCents: 0 })
+    .values({ ...account, ownerId, initialBalanceCents: 0 })
     .onConflictDoUpdate({
       target: accounts.id,
       set: { ...account, isActive: true, updatedAt: now }

@@ -12,6 +12,7 @@ import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createTransferService } from "./application/transfer-service.js";
+import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
 import { buildServer } from "./server.js";
 
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
@@ -27,30 +28,37 @@ describe("atomic account transfers", () => {
     databasePath = resolve(tempDir, "test.sqlite");
     connection = createDatabaseConnection(databasePath);
     migrate(connection.db, { migrationsFolder });
-    connection.db.insert(accounts).values([
-      {
-        id: "account-source",
-        name: "Origem",
-        type: "checking",
-        initialBalanceCents: 100_000,
-        isActive: true
-      },
-      {
-        id: "account-destination",
-        name: "Destino",
-        type: "savings",
-        initialBalanceCents: 20_000,
-        isActive: true
-      },
-      {
-        id: "account-inactive",
-        name: "Arquivada",
-        type: "checking",
-        initialBalanceCents: 0,
-        isActive: false
-      }
-    ]).run();
-    app = buildServer({ connection, logger: false });
+    seedTestOwner(connection);
+    connection.db
+      .insert(accounts)
+      .values([
+        {
+          id: "account-source",
+          ownerId: "test-owner",
+          name: "Origem",
+          type: "checking",
+          initialBalanceCents: 100_000,
+          isActive: true
+        },
+        {
+          id: "account-destination",
+          ownerId: "test-owner",
+          name: "Destino",
+          type: "savings",
+          initialBalanceCents: 20_000,
+          isActive: true
+        },
+        {
+          id: "account-inactive",
+          ownerId: "test-owner",
+          name: "Arquivada",
+          type: "checking",
+          initialBalanceCents: 0,
+          isActive: false
+        }
+      ])
+      .run();
+    app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });
 
   afterEach(async () => {
@@ -78,7 +86,10 @@ describe("atomic account transfers", () => {
     expect(connection.db.select().from(transactions).all()).toHaveLength(2);
 
     const sourceAfterCreate = await app.inject({ method: "GET", url: "/accounts/account-source" });
-    const destinationAfterCreate = await app.inject({ method: "GET", url: "/accounts/account-destination" });
+    const destinationAfterCreate = await app.inject({
+      method: "GET",
+      url: "/accounts/account-destination"
+    });
     expect(sourceAfterCreate.json().currentBalanceCents).toBe(75_000);
     expect(destinationAfterCreate.json().currentBalanceCents).toBe(45_000);
 
@@ -136,9 +147,25 @@ describe("atomic account transfers", () => {
   });
 
   it("exposes corrupted transfer legs instead of reconstructing a valid aggregate", async () => {
-    const created = await app.inject({ method: "POST", url: "/transfers", payload: { sourceAccountId: "account-source", destinationAccountId: "account-destination", amountCents: 1000, eventDate: "2026-07-13", description: "Mover" } });
-    connection.db.update(transactions).set({ amountCents: 999 }).where(eq(transactions.id, created.json().legs[0].id)).run();
-    expect(() => createTransferService(connection).get(created.json().transfer.id)).toThrow("equivalent");
+    const created = await app.inject({
+      method: "POST",
+      url: "/transfers",
+      payload: {
+        sourceAccountId: "account-source",
+        destinationAccountId: "account-destination",
+        amountCents: 1000,
+        eventDate: "2026-07-13",
+        description: "Mover"
+      }
+    });
+    connection.db
+      .update(transactions)
+      .set({ amountCents: 999 })
+      .where(eq(transactions.id, created.json().legs[0].id))
+      .run();
+    expect(() => createTransferService(connection).get(created.json().transfer.id)).toThrow(
+      "equivalent"
+    );
   });
 
   it("returns explicit validation, absence, and conflict responses", async () => {
@@ -191,7 +218,11 @@ describe("atomic account transfers", () => {
     service.remove(created.transfer.id);
 
     expect(
-      connection.db.select().from(transactions).where(eq(transactions.transferId, created.transfer.id)).all()
+      connection.db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.transferId, created.transfer.id))
+        .all()
     ).toEqual([]);
   });
 });
