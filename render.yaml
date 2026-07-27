@@ -6,7 +6,7 @@ services:
     plan: free
     region: ohio
     autoDeployTrigger: checksPass
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm --filter @finances/api start
     healthCheckPath: /health/ready
     envVars:
