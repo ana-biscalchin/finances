@@ -15,6 +15,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { seedTestOwner } from "./test-support/owner.js";
 import { buildServer } from "./server.js";
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
 describe("canonical transactions API", () => {
@@ -25,6 +26,7 @@ describe("canonical transactions API", () => {
     dir = mkdtempSync(resolve(tmpdir(), "transactions-test-"));
     connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
+    seedTestOwner(connection);
     connection.db.insert(accounts).values({ id: "account", name: "Conta", type: "checking" }).run();
     connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).run();
     connection.db
@@ -39,7 +41,7 @@ describe("canonical transactions API", () => {
       .run();
     connection.db
       .insert(categories)
-      .values({ id: "category", nature: "expense", name: "Casa" })
+      .values({ ownerId: "test-owner", id: "category", nature: "expense", name: "Casa" })
       .run();
     connection.db
       .insert(subcategories)
@@ -63,10 +65,10 @@ describe("canonical transactions API", () => {
         type: "expense",
         description: "Mercado",
         amountCents: 10_000,
-          eventDate: "2026-07-10",
-          accountId: "account",
-          paymentMethodId: "pm-pix",
-          subcategoryId: "subcategory"
+        eventDate: "2026-07-10",
+        accountId: "account",
+        paymentMethodId: "pm-pix",
+        subcategoryId: "subcategory"
       }
     });
     expect(created.statusCode).toBe(201);
@@ -89,10 +91,31 @@ describe("canonical transactions API", () => {
     expect(connection.db.select().from(transactions).all()).toEqual([]);
   });
   it("requires an active payment method associated with the selected account", async () => {
-    const payload = { type: "expense", description: "Mercado", amountCents: 1000, eventDate: "2026-07-10", accountId: "account", subcategoryId: "subcategory" };
-    expect((await app.inject({ method: "POST", url: "/transactions", payload })).statusCode).toBe(400);
-    connection.db.update(accountPaymentMethods).set({ isActive: false }).where(eq(accountPaymentMethods.id, "account-pix")).run();
-    expect((await app.inject({ method: "POST", url: "/transactions", payload: { ...payload, paymentMethodId: "pm-pix" } })).statusCode).toBe(400);
+    const payload = {
+      type: "expense",
+      description: "Mercado",
+      amountCents: 1000,
+      eventDate: "2026-07-10",
+      accountId: "account",
+      subcategoryId: "subcategory"
+    };
+    expect((await app.inject({ method: "POST", url: "/transactions", payload })).statusCode).toBe(
+      400
+    );
+    connection.db
+      .update(accountPaymentMethods)
+      .set({ isActive: false })
+      .where(eq(accountPaymentMethods.id, "account-pix"))
+      .run();
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/transactions",
+          payload: { ...payload, paymentMethodId: "pm-pix" }
+        })
+      ).statusCode
+    ).toBe(400);
   });
   it("creates card installments in each bill month and rejects transfer fields", async () => {
     const installments = await app.inject({

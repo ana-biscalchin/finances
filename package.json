@@ -18,6 +18,7 @@
     "build": "pnpm -r build",
     "db:generate": "pnpm --filter @finances/database db:generate",
     "db:migrate": "pnpm --filter @finances/database db:migrate",
+    "db:migrate:identity": "pnpm --filter @finances/database db:migrate:identity",
     "db:seed": "pnpm --filter @finances/database db:seed",
     "db:seed:demo": "pnpm --filter @finances/database db:seed:demo",
     "db:reset:dev": "pnpm --filter @finances/database db:reset:dev",

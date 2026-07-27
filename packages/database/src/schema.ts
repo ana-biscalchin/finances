@@ -45,6 +45,11 @@ export const sessions = sqliteTable(
   ]
 );
 
+const ownedByUser = () =>
+  text("owner_id")
+    .notNull()
+    .references(() => users.id);
+
 export const accounts = sqliteTable("accounts", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -99,6 +104,7 @@ export const categories = sqliteTable(
   "categories",
   {
     id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
     nature: text("nature").notNull(),
     name: text("name").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -107,8 +113,8 @@ export const categories = sqliteTable(
     ...timestamps
   },
   (table) => [
-    uniqueIndex("categories_nature_name_unique").on(table.nature, table.name),
-    index("categories_nature_idx").on(table.nature)
+    uniqueIndex("categories_owner_nature_name_unique").on(table.ownerId, table.nature, table.name),
+    index("categories_owner_nature_idx").on(table.ownerId, table.nature)
   ]
 );
 

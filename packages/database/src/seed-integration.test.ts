@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDatabaseConnection } from "./connection.js";
+import { users } from "./schema.js";
 
 describe("database seeds", () => {
   const directories: string[] = [];
@@ -22,10 +23,24 @@ describe("database seeds", () => {
     const databasePath = resolve(directory, "seed.sqlite");
     const connection = createDatabaseConnection(databasePath);
     migrate(connection.db, { migrationsFolder: resolve(process.cwd(), "drizzle") });
+    connection.db
+      .insert(users)
+      .values({
+        id: "seed-owner",
+        username: "seed-owner",
+        passwordHash: "test-only",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
     connection.sqlite.close();
 
     const tsx = resolve(process.cwd(), "node_modules/.bin/tsx");
-    const environment = { ...process.env, DATABASE_PATH: databasePath, DEMO_MONTH: "2026-07" };
+    const environment = {
+      ...process.env,
+      DATABASE_PATH: databasePath,
+      DEMO_MONTH: "2026-07",
+      SEED_OWNER_USERNAME: "seed-owner"
+    };
     for (let execution = 0; execution < 2; execution++) {
       execFileSync(tsx, ["src/seed.ts"], { cwd: process.cwd(), env: environment });
       execFileSync(tsx, ["src/seed-demo.ts"], { cwd: process.cwd(), env: environment });

@@ -6,7 +6,7 @@ import {
   type createDatabaseConnection
 } from "@finances/database";
 import { assertCategoryNature } from "@finances/domain";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -18,8 +18,12 @@ import {
   sendPayloadError,
   ValidationError
 } from "../http.js";
+import { requestContextFrom } from "../application/request-context.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
+
+const ownerIdFromRequest = (request: Parameters<typeof requestContextFrom>[0]) =>
+  requestContextFrom(request).ownerId;
 
 type CategoryPayload = {
   name?: unknown;
@@ -38,32 +42,34 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
   const { db } = connection;
 
   app.get("/categories", async (request) => {
+    const { ownerId } = requestContextFrom(request);
     const includeInactive = getBooleanQueryValue(request.query, "includeInactive");
     const categoryRows = includeInactive
       ? db
           .select()
           .from(categories)
+          .where(eq(categories.ownerId, ownerId))
           .orderBy(asc(categories.sortOrder), asc(categories.name))
           .all()
       : db
           .select()
           .from(categories)
-          .where(eq(categories.isActive, true))
+          .where(and(eq(categories.ownerId, ownerId), eq(categories.isActive, true)))
           .orderBy(asc(categories.sortOrder), asc(categories.name))
           .all();
-          
-    const subcategoryRows = includeInactive
-      ? db
-          .select()
-          .from(subcategories)
-          .orderBy(asc(subcategories.sortOrder), asc(subcategories.name))
-          .all()
-      : db
-          .select()
-          .from(subcategories)
-          .where(eq(subcategories.isActive, true))
-          .orderBy(asc(subcategories.sortOrder), asc(subcategories.name))
-          .all();
+
+    const ownedSubcategories = db
+      .select({ subcategory: subcategories })
+      .from(subcategories)
+      .innerJoin(
+        categories,
+        and(eq(subcategories.categoryId, categories.id), eq(categories.ownerId, ownerId))
+      );
+    const subcategoryRows = (
+      includeInactive
+        ? ownedSubcategories.all()
+        : ownedSubcategories.where(eq(subcategories.isActive, true)).all()
+    ).map((row) => row.subcategory);
 
     const categoryMap = new Map(
       categoryRows.map((category) => [
@@ -80,6 +86,7 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
   });
 
   app.post("/categories", async (request, reply) => {
+    const { ownerId } = requestContextFrom(request);
     const payload = parseCategoryPayloadOrReply(request.body, reply);
 
     if (!payload) {
@@ -88,7 +95,7 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
     if (
       !ensureOrReply(reply, () =>
-        ensureCategoryNameIsAvailable(connection, payload.nature, payload.name)
+        ensureCategoryNameIsAvailable(connection, ownerId, payload.nature, payload.name)
       )
     ) {
       return reply;
@@ -96,8 +103,9 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
     const category = {
       id: crypto.randomUUID(),
+      ownerId,
       ...payload,
-      sortOrder: payload.sortOrder ?? getNextCategorySortOrder(connection),
+      sortOrder: payload.sortOrder ?? getNextCategorySortOrder(connection, ownerId),
       isActive: true,
       archivedAt: null
     };
@@ -108,8 +116,13 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
   });
 
   app.put("/categories/:id", async (request, reply) => {
+    const { ownerId } = requestContextFrom(request);
     const { id } = request.params as { id: string };
-    const current = db.select().from(categories).where(eq(categories.id, id)).get();
+    const current = db
+      .select()
+      .from(categories)
+      .where(and(eq(categories.ownerId, ownerId), eq(categories.id, id)))
+      .get();
 
     if (!current) {
       return reply.code(404).send({ message: "Categoria não encontrada." });
@@ -123,7 +136,7 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
     if (
       !ensureOrReply(reply, () =>
-        ensureCategoryNameIsAvailable(connection, payload.nature, payload.name, id)
+        ensureCategoryNameIsAvailable(connection, ownerId, payload.nature, payload.name, id)
       )
     ) {
       return reply;
@@ -134,20 +147,25 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
         ...payload,
         updatedAt: new Date().toISOString()
       })
-      .where(eq(categories.id, id))
+      .where(and(eq(categories.ownerId, ownerId), eq(categories.id, id)))
       .run();
 
-    return db.select().from(categories).where(eq(categories.id, id)).get();
+    return db
+      .select()
+      .from(categories)
+      .where(and(eq(categories.ownerId, ownerId), eq(categories.id, id)))
+      .get();
   });
 
   app.patch("/categories/:id/archive", async (request, reply) =>
-    archiveCategory(connection, request.params, reply)
+    archiveCategory(connection, ownerIdFromRequest(request), request.params, reply)
   );
   app.patch("/categories/:id/restore", async (request, reply) =>
-    restoreCategory(connection, request.params, reply)
+    restoreCategory(connection, ownerIdFromRequest(request), request.params, reply)
   );
 
   app.post("/subcategories", async (request, reply) => {
+    const { ownerId } = requestContextFrom(request);
     const payload = parseSubcategoryPayloadOrReply(request.body, reply);
 
     if (!payload) {
@@ -156,7 +174,7 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
     if (
       !ensureOrReply(reply, () => {
-        ensureCategoryExists(connection, payload.categoryId);
+        ensureCategoryExists(connection, ownerId, payload.categoryId);
         ensureSubcategoryNameIsAvailable(connection, payload.categoryId, payload.name);
       })
     ) {
@@ -177,8 +195,9 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
   });
 
   app.put("/subcategories/:id", async (request, reply) => {
+    const { ownerId } = requestContextFrom(request);
     const { id } = request.params as { id: string };
-    const current = db.select().from(subcategories).where(eq(subcategories.id, id)).get();
+    const current = findOwnedSubcategory(connection, ownerId, id);
 
     if (!current) {
       return reply.code(404).send({ message: "Subcategoria não encontrada." });
@@ -192,7 +211,7 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 
     if (
       !ensureOrReply(reply, () => {
-        ensureCategoryExists(connection, payload.categoryId);
+        ensureCategoryExists(connection, ownerId, payload.categoryId);
         ensureSubcategoryNameIsAvailable(connection, payload.categoryId, payload.name, id);
       })
     ) {
@@ -211,32 +230,41 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
   });
 
   app.patch("/subcategories/:id/archive", async (request, reply) =>
-    archiveSubcategory(connection, request.params, reply)
+    archiveSubcategory(connection, ownerIdFromRequest(request), request.params, reply)
   );
   app.patch("/subcategories/:id/restore", async (request, reply) =>
-    restoreSubcategory(connection, request.params, reply)
+    restoreSubcategory(connection, ownerIdFromRequest(request), request.params, reply)
   );
 
   app.post("/subcategories/:id/merge", async (request, reply) => {
+    const { ownerId } = requestContextFrom(request);
     const { id } = request.params as { id: string };
     const payload = request.body as { targetSubcategoryId?: string };
 
-    if (!isRecord(payload) || typeof payload.targetSubcategoryId !== "string" || !payload.targetSubcategoryId) {
-      return reply.code(400).send({ message: "Payload inválido. targetSubcategoryId é obrigatório." });
+    if (
+      !isRecord(payload) ||
+      typeof payload.targetSubcategoryId !== "string" ||
+      !payload.targetSubcategoryId
+    ) {
+      return reply
+        .code(400)
+        .send({ message: "Payload inválido. targetSubcategoryId é obrigatório." });
     }
 
     const { targetSubcategoryId } = payload;
 
     if (id === targetSubcategoryId) {
-      return reply.code(400).send({ message: "Não é possível fundir a subcategoria com ela mesma." });
+      return reply
+        .code(400)
+        .send({ message: "Não é possível fundir a subcategoria com ela mesma." });
     }
 
-    const sourceSub = db.select().from(subcategories).where(eq(subcategories.id, id)).get();
+    const sourceSub = findOwnedSubcategory(connection, ownerId, id);
     if (!sourceSub) {
       return reply.code(404).send({ message: "Subcategoria de origem não encontrada." });
     }
 
-    const targetSub = db.select().from(subcategories).where(eq(subcategories.id, targetSubcategoryId)).get();
+    const targetSub = findOwnedSubcategory(connection, ownerId, targetSubcategoryId);
     if (!targetSub) {
       return reply.code(404).send({ message: "Subcategoria de destino não encontrada." });
     }
@@ -250,7 +278,10 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
         .where(eq(transactions.subcategoryId, id))
         .run();
 
-      tx.update(plannedExpenses).set({ subcategoryId: targetSubcategoryId, updatedAt: new Date().toISOString() }).where(eq(plannedExpenses.subcategoryId, id)).run();
+      tx.update(plannedExpenses)
+        .set({ subcategoryId: targetSubcategoryId, updatedAt: new Date().toISOString() })
+        .where(eq(plannedExpenses.subcategoryId, id))
+        .run();
 
       tx.update(subcategories)
         .set({
@@ -321,8 +352,24 @@ function ensureOrReply(reply: FastifyReply, callback: () => void) {
   }
 }
 
-function ensureCategoryExists(connection: DatabaseConnection, id: string) {
-  const category = connection.db.select().from(categories).where(eq(categories.id, id)).get();
+function findOwnedSubcategory(connection: DatabaseConnection, ownerId: string, id: string) {
+  return connection.db
+    .select({ subcategory: subcategories })
+    .from(subcategories)
+    .innerJoin(
+      categories,
+      and(eq(subcategories.categoryId, categories.id), eq(categories.ownerId, ownerId))
+    )
+    .where(eq(subcategories.id, id))
+    .get()?.subcategory;
+}
+
+function ensureCategoryExists(connection: DatabaseConnection, ownerId: string, id: string) {
+  const category = connection.db
+    .select()
+    .from(categories)
+    .where(and(eq(categories.ownerId, ownerId), eq(categories.id, id)))
+    .get();
 
   if (!category) {
     throw new ValidationError("Categoria não encontrada.");
@@ -331,6 +378,7 @@ function ensureCategoryExists(connection: DatabaseConnection, id: string) {
 
 function ensureCategoryNameIsAvailable(
   connection: DatabaseConnection,
+  ownerId: string,
   nature: string,
   name: string,
   ignoreId?: string
@@ -339,9 +387,12 @@ function ensureCategoryNameIsAvailable(
   const existing = connection.db
     .select()
     .from(categories)
-    .where(eq(categories.nature, nature))
+    .where(and(eq(categories.ownerId, ownerId), eq(categories.nature, nature)))
     .all()
-    .find((category) => category.id !== ignoreId && normalizeCategoryName(category.name) === normalizedName);
+    .find(
+      (category) =>
+        category.id !== ignoreId && normalizeCategoryName(category.name) === normalizedName
+    );
 
   if (existing) {
     throw new ConflictError("Já existe uma categoria com essa natureza e nome.");
@@ -377,6 +428,7 @@ function normalizeCategoryName(name: string) {
 
 function archiveCategory(
   connection: DatabaseConnection,
+  ownerId: string,
   params: unknown,
   reply: FastifyReply
 ) {
@@ -384,7 +436,7 @@ function archiveCategory(
   const current = connection.db
     .select()
     .from(categories)
-    .where(eq(categories.id, id))
+    .where(and(eq(categories.ownerId, ownerId), eq(categories.id, id)))
     .get();
 
   if (!current) {
@@ -398,7 +450,7 @@ function archiveCategory(
       archivedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     })
-    .where(eq(categories.id, id))
+    .where(and(eq(categories.ownerId, ownerId), eq(categories.id, id)))
     .run();
 
   return reply.code(204).send();
@@ -406,6 +458,7 @@ function archiveCategory(
 
 function restoreCategory(
   connection: DatabaseConnection,
+  ownerId: string,
   params: unknown,
   reply: FastifyReply
 ) {
@@ -413,7 +466,7 @@ function restoreCategory(
   const current = connection.db
     .select()
     .from(categories)
-    .where(eq(categories.id, id))
+    .where(and(eq(categories.ownerId, ownerId), eq(categories.id, id)))
     .get();
 
   if (!current) {
@@ -423,7 +476,7 @@ function restoreCategory(
   connection.db
     .update(categories)
     .set({ isActive: true, archivedAt: null, updatedAt: new Date().toISOString() })
-    .where(eq(categories.id, id))
+    .where(and(eq(categories.ownerId, ownerId), eq(categories.id, id)))
     .run();
 
   return reply.code(204).send();
@@ -431,15 +484,12 @@ function restoreCategory(
 
 function archiveSubcategory(
   connection: DatabaseConnection,
+  ownerId: string,
   params: unknown,
   reply: FastifyReply
 ) {
   const { id } = params as { id: string };
-  const current = connection.db
-    .select()
-    .from(subcategories)
-    .where(eq(subcategories.id, id))
-    .get();
+  const current = findOwnedSubcategory(connection, ownerId, id);
 
   if (!current) {
     return reply.code(404).send({ message: "Subcategoria não encontrada." });
@@ -460,15 +510,12 @@ function archiveSubcategory(
 
 function restoreSubcategory(
   connection: DatabaseConnection,
+  ownerId: string,
   params: unknown,
   reply: FastifyReply
 ) {
   const { id } = params as { id: string };
-  const current = connection.db
-    .select()
-    .from(subcategories)
-    .where(eq(subcategories.id, id))
-    .get();
+  const current = findOwnedSubcategory(connection, ownerId, id);
 
   if (!current) {
     return reply.code(404).send({ message: "Subcategoria não encontrada." });
@@ -483,8 +530,9 @@ function restoreSubcategory(
   return reply.code(204).send();
 }
 
-function getNextCategorySortOrder(connection: DatabaseConnection) {
-  return connection.db.select().from(categories).all().length;
+function getNextCategorySortOrder(connection: DatabaseConnection, ownerId: string) {
+  return connection.db.select().from(categories).where(eq(categories.ownerId, ownerId)).all()
+    .length;
 }
 
 function getNextSubcategorySortOrder(connection: DatabaseConnection, categoryId: string) {

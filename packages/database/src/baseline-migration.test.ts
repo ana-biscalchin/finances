@@ -10,13 +10,14 @@ describe("canonical database baseline", () => {
   it("applies the baseline and additive migrations and creates an integral schema", () => {
     const migrationsFolder = resolve(process.cwd(), "drizzle");
     const sqlFiles = readdirSync(migrationsFolder).filter((name) => name.endsWith(".sql"));
-    expect(sqlFiles).toHaveLength(2);
+    expect(sqlFiles).toHaveLength(3);
     expect(readFileSync(resolve(migrationsFolder, "0001_last_cerebro.sql"), "utf8")).not.toContain(
       "DROP TABLE"
     );
 
     const directory = mkdtempSync(resolve(tmpdir(), "finances-baseline-"));
     const sqlite = new Database(resolve(directory, "baseline.sqlite"));
+    sqlite.function("migration_owner_username", { deterministic: true }, () => null);
     sqlite.pragma("foreign_keys = ON");
 
     migrate(drizzle(sqlite), { migrationsFolder });

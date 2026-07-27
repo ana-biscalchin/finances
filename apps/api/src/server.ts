@@ -33,6 +33,7 @@ type BuildServerOptions = {
   connection?: ReturnType<typeof createDatabaseConnection>;
   config?: ApiConfig;
   databaseProbe?: DatabaseProbe;
+  testOwnerId?: string;
 };
 
 type ApiError = Error & { statusCode?: number };
@@ -146,6 +147,15 @@ export function buildServer(options: BuildServerOptions = {}) {
   }
 
   const registerBusinessRoutes = async (routesApp: FastifyInstance) => {
+    if (!sessionService && config.environment === "test" && options.testOwnerId) {
+      routesApp.addHook("onRequest", async (request) => {
+        request.requestContext = {
+          ownerId: options.testOwnerId!,
+          userId: options.testOwnerId!,
+          requestId: request.id
+        };
+      });
+    }
     if (sessionService) {
       routesApp.addHook("onRequest", async (request, reply) => {
         if (!isTrustedMutationOrigin(request, config))

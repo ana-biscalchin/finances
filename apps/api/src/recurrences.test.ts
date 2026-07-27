@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { seedTestOwner } from "./test-support/owner.js";
 import { createRecurrenceService } from "./application/recurrence-service.js";
 
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
@@ -24,19 +25,29 @@ describe("recurrence service", () => {
     dir = mkdtempSync(resolve(tmpdir(), "finances-recurrence-test-"));
     connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
+    seedTestOwner(connection);
     connection.db
       .insert(accounts)
       .values({ id: "account-1", name: "Conta", type: "checking" })
       .run();
     connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).run();
-    connection.db.insert(accountPaymentMethods).values({ id: "account-pix", accountId: "account-1", paymentMethodId: "pm-pix", isActive: true, isDefault: true }).run();
+    connection.db
+      .insert(accountPaymentMethods)
+      .values({
+        id: "account-pix",
+        accountId: "account-1",
+        paymentMethodId: "pm-pix",
+        isActive: true,
+        isDefault: true
+      })
+      .run();
     connection.db
       .insert(creditCards)
       .values({ id: "card-1", name: "Cartão", closingDay: 10, dueDay: 20 })
       .run();
     connection.db
       .insert(categories)
-      .values({ id: "category-1", nature: "expense", name: "Casa" })
+      .values({ ownerId: "test-owner", id: "category-1", nature: "expense", name: "Casa" })
       .run();
     connection.db
       .insert(subcategories)

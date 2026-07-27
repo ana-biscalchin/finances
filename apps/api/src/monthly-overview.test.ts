@@ -17,6 +17,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { seedTestOwner } from "./test-support/owner.js";
 import { createMonthlyOverviewService } from "./application/monthly-overview-service.js";
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
 describe("canonical monthly views", () => {
@@ -26,6 +27,7 @@ describe("canonical monthly views", () => {
     dir = mkdtempSync(resolve(tmpdir(), "monthly-overview-"));
     connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
+    seedTestOwner(connection);
     connection.db
       .insert(accounts)
       .values({ id: "account", name: "Conta", type: "checking", initialBalanceCents: 100_000 })
@@ -43,7 +45,7 @@ describe("canonical monthly views", () => {
       .run();
     connection.db
       .insert(categories)
-      .values({ id: "category", nature: "expense", name: "Casa" })
+      .values({ ownerId: "test-owner", id: "category", nature: "expense", name: "Casa" })
       .run();
     connection.db
       .insert(subcategories)
@@ -56,7 +58,19 @@ describe("canonical monthly views", () => {
   });
   it("returns spending without counting transfer and exposes account risk", () => {
     const service = createMonthlyOverviewService(connection);
-    connection.db.insert(plannedExpenses).values({ id: "plan", budgetMonth: "2026-07", subcategoryId: "subcategory", name: "Conta", amountCents: 20_000, accountId: "account", creditCardId: null, sortOrder: 0 }).run();
+    connection.db
+      .insert(plannedExpenses)
+      .values({
+        id: "plan",
+        budgetMonth: "2026-07",
+        subcategoryId: "subcategory",
+        name: "Conta",
+        amountCents: 20_000,
+        accountId: "account",
+        creditCardId: null,
+        sortOrder: 0
+      })
+      .run();
     connection.db
       .insert(transactions)
       .values([

@@ -4,7 +4,7 @@ A T5 introduz login próprio sem cadastro público. Senhas usam Argon2id; tokens
 
 ## Bootstrap local
 
-1. Aplique as migrations com `pnpm db:migrate`.
+1. Em banco local antigo, aplique primeiro `pnpm db:migrate:identity` para criar somente a estrutura de identidade. Em banco vazio, esta etapa também é segura e idempotente.
 2. Defina somente o identificador não secreto: `export BOOTSTRAP_USERNAME=ana`.
 3. Leia a senha sem eco e envie pela entrada padrão:
 
@@ -13,6 +13,9 @@ read -r -s BOOTSTRAP_PASSWORD
 printf '%s' "$BOOTSTRAP_PASSWORD" | pnpm --filter @finances/api auth:bootstrap
 unset BOOTSTRAP_PASSWORD
 ```
+
+4. Execute o backfill com a mesma identidade explícita: `MIGRATION_OWNER_USERNAME=ana pnpm db:migrate`.
+5. Execute os seeds, se necessários, com `SEED_OWNER_USERNAME=ana pnpm db:seed`.
 
 O comando é idempotente: se a usuária já existir, não altera senha ou sessões. A senha nunca deve ser colocada em argumento, arquivo versionado ou log. O bootstrap hospedado será habilitado sobre PostgreSQL na T8; até lá, este comando opera somente no SQLite local configurado por `DATABASE_PATH`.
 

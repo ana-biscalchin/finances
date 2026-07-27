@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildServer } from "./server.js";
+import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
 
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
 
@@ -20,9 +21,14 @@ describe("reports API", () => {
     databasePath = resolve(tempDir, "test.sqlite");
     const connection = createDatabaseConnection(databasePath);
     migrate(connection.db, { migrationsFolder });
-    connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).onConflictDoNothing().run();
+    seedTestOwner(connection);
+    connection.db
+      .insert(paymentMethods)
+      .values({ id: "pm-pix", name: "Pix", kind: "pix" })
+      .onConflictDoNothing()
+      .run();
     connection.sqlite.close();
-    app = buildServer({ databasePath, logger: false });
+    app = buildServer({ databasePath, logger: false, testOwnerId: TEST_OWNER_ID });
   });
 
   afterEach(async () => {
