@@ -26,6 +26,7 @@ describe("environment configuration", () => {
     expect(config.database.dialect).toBe("postgres");
     expect(config.trustProxy).toBe(true);
     expect(config.features.googleDrive).toBe(false);
+    expect(config.auth.enabled).toBe(true);
   });
 
   it.each([
@@ -34,6 +35,7 @@ describe("environment configuration", () => {
     [{ ...production, DATABASE_DIALECT: "sqlite" }, "PostgreSQL"],
     [{ ...production, DATABASE_URL: undefined }, "PostgreSQL"],
     [{ ...production, SESSION_SECRET: "short" }, "SESSION_SECRET"],
+    [{ ...production, AUTH_ENABLED: "false" }, "autenticação"],
     [{ ...production, CORS_ORIGINS: "http://localhost:5173" }, "localhost"],
     [{ ...production, GOOGLE_CLIENT_SECRET: "must-never-appear" }, "Google Drive"]
   ])("fails fast for unsafe production input", (source, message) => {

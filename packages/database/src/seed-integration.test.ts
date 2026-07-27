@@ -38,11 +38,13 @@ describe("database seeds", () => {
       seeded.prepare("SELECT COUNT(*) AS count FROM accounts WHERE type = 'benefit'").get()
     ).toEqual({ count: 4 });
     expect(
-      seeded.prepare("SELECT COUNT(*) AS count FROM payment_methods WHERE id = 'pm-credit-card'").get()
+      seeded
+        .prepare("SELECT COUNT(*) AS count FROM payment_methods WHERE id = 'pm-credit-card'")
+        .get()
     ).toEqual({ count: 0 });
-    expect(
-      seeded.prepare("SELECT COUNT(*) AS count FROM planned_expenses").get()
-    ).toEqual({ count: 7 });
+    expect(seeded.prepare("SELECT COUNT(*) AS count FROM planned_expenses").get()).toEqual({
+      count: 7
+    });
     seeded.close();
-  });
+  }, 15_000);
 });

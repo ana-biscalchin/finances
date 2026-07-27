@@ -1,4 +1,6 @@
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import helmet from "@fastify/helmet";
 import fastifyStatic from "@fastify/static";
 import { createDatabaseConnection } from "@finances/database";
@@ -7,6 +9,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createDatabaseProbe, type DatabaseProbe } from "./config/database-probe.js";
+import { createSessionService } from "./auth/session-service.js";
+import { isTrustedMutationOrigin, registerSessionRoutes } from "./auth/routes.js";
 import { loadConfig, redactConfigError, type ApiConfig } from "./config/environment.js";
 
 import { registerAccountRoutes } from "./modules/accounts.js";
@@ -75,6 +79,8 @@ export function buildServer(options: BuildServerOptions = {}) {
     connection.sqlite.close();
   });
 
+  app.register(cookie);
+  app.register(rateLimit, { global: false });
   app.register(cors, {
     origin(origin, callback) {
       if (!origin) return callback(null, true);
@@ -126,7 +132,29 @@ export function buildServer(options: BuildServerOptions = {}) {
     storage: "local-sqlite"
   }));
 
+  const sessionService = config.auth.enabled
+    ? createSessionService(connection, {
+        secret: config.sessionSecret!,
+        absoluteTtlSeconds: config.auth.absoluteTtlSeconds,
+        idleTtlSeconds: config.auth.idleTtlSeconds
+      })
+    : undefined;
+  if (sessionService) {
+    app.register(async (authApp) => registerSessionRoutes(authApp, sessionService, config), {
+      prefix: "/api"
+    });
+  }
+
   const registerBusinessRoutes = async (routesApp: FastifyInstance) => {
+    if (sessionService) {
+      routesApp.addHook("onRequest", async (request, reply) => {
+        if (!isTrustedMutationOrigin(request, config))
+          return reply.code(403).send({ message: "Origem não permitida." });
+        const user = sessionService.resolve(request.cookies[config.auth.cookieName]);
+        if (!user) return reply.code(401).send({ message: "Autenticação necessária." });
+        request.authenticatedUser = user;
+      });
+    }
     registerAccountRoutes(routesApp, connection);
     registerCategoryRoutes(routesApp, connection);
     registerPaymentMethodRoutes(routesApp, connection);

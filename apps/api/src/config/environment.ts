@@ -12,6 +12,12 @@ export type ApiConfig = {
     | { dialect: "sqlite"; path: string }
     | { dialect: "postgres"; url: string; poolMax: number; connectTimeoutSeconds: number };
   sessionSecret?: string;
+  auth: {
+    enabled: boolean;
+    cookieName: string;
+    absoluteTtlSeconds: number;
+    idleTtlSeconds: number;
+  };
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   trustProxy: boolean;
   serveWeb: boolean;
@@ -40,6 +46,13 @@ const rawSchema = z.object({
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(20).default(5),
   DATABASE_CONNECT_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(60).default(10),
   SESSION_SECRET: z.string().optional(),
+  AUTH_ENABLED: z.string().optional(),
+  SESSION_COOKIE_NAME: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .default("finances_session"),
+  SESSION_ABSOLUTE_TTL_SECONDS: z.coerce.number().int().min(300).max(2_592_000).default(604_800),
+  SESSION_IDLE_TTL_SECONDS: z.coerce.number().int().min(60).max(604_800).default(86_400),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   TRUST_PROXY: z.string().optional(),
   SERVE_WEB: z.string().optional(),
@@ -78,6 +91,13 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): ApiConfig {
   const publicUrl = raw.PUBLIC_URL ? new URL(raw.PUBLIC_URL).origin : undefined;
   const corsOrigins = parseOrigins(raw.CORS_ORIGINS);
   const googleDrive = booleanValue(raw.FEATURE_GOOGLE_DRIVE, !production);
+  const authEnabled = booleanValue(raw.AUTH_ENABLED, production);
+
+  if (authEnabled && (!raw.SESSION_SECRET || raw.SESSION_SECRET.length < 32)) {
+    throw configError(
+      "SESSION_SECRET deve ter pelo menos 32 caracteres quando autenticação está ativa."
+    );
+  }
 
   if (production) {
     if (!publicUrl || localhostPattern.test(publicUrl)) {
@@ -95,8 +115,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): ApiConfig {
     ) {
       throw configError("DATABASE_URL deve usar PostgreSQL.");
     }
-    if (!raw.SESSION_SECRET || raw.SESSION_SECRET.length < 32) {
-      throw configError("SESSION_SECRET deve ter pelo menos 32 caracteres.");
+    if (!authEnabled) {
+      throw configError("autenticação não pode ser desativada em produção.");
     }
     if (googleDrive || forbiddenGoogleKeys.some((key) => Boolean(source[key]))) {
       throw configError("Google Drive não é permitido no release online.");
@@ -122,6 +142,12 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): ApiConfig {
           }
         : { dialect: "sqlite", path: raw.DATABASE_PATH },
     sessionSecret: raw.SESSION_SECRET,
+    auth: {
+      enabled: authEnabled,
+      cookieName: raw.SESSION_COOKIE_NAME,
+      absoluteTtlSeconds: raw.SESSION_ABSOLUTE_TTL_SECONDS,
+      idleTtlSeconds: raw.SESSION_IDLE_TTL_SECONDS
+    },
     logLevel: raw.LOG_LEVEL,
     trustProxy: booleanValue(raw.TRUST_PROXY, production),
     serveWeb: booleanValue(raw.SERVE_WEB, production),

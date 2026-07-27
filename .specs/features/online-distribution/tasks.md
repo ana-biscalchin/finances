@@ -127,6 +127,8 @@ T12,T13,T14 → T15 → T16
 
 ### T5: Implementar usuário, senha e sessão segura
 
+**Execução:** concluída localmente em 2026-07-27. O bootstrap hospedado sobre PostgreSQL será conectado na T8; até lá, produção permanece bloqueada.
+
 - **O quê:** implementar bootstrap privado, login por usuário/senha, Argon2id, sessão opaca, logout, mudança de senha, expiração e resolução da usuária autenticada.
 - **Onde:** `packages/database` para `users`/`sessions`, `apps/api/src/auth/`, `apps/api/src/server.ts`, novas rotas de sessão, `apps/web/src/app/session/` e testes.
 - **Depende de:** T3 e T4.

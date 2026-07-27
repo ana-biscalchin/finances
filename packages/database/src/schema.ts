@@ -10,6 +10,41 @@ const timestamps = {
     .default(sql`CURRENT_TIMESTAMP`)
 };
 
+export const users = sqliteTable(
+  "users",
+  {
+    id: text("id").primaryKey(),
+    username: text("username").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    role: text("role").notNull().default("owner"),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    passwordChangedAt: text("password_changed_at").notNull(),
+    ...timestamps
+  },
+  (table) => [uniqueIndex("users_username_unique").on(table.username)]
+);
+
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    lastSeenAt: text("last_seen_at").notNull(),
+    revokedAt: text("revoked_at"),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("sessions_token_hash_unique").on(table.tokenHash),
+    index("sessions_user_idx").on(table.userId),
+    index("sessions_expiration_idx").on(table.expiresAt),
+    index("sessions_active_user_idx").on(table.userId, table.revokedAt)
+  ]
+);
+
 export const accounts = sqliteTable("accounts", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -265,12 +300,8 @@ export const creditCardBillPayments = sqliteTable(
     ...timestamps
   },
   (table) => [
-    uniqueIndex("credit_card_bill_payments_idempotency_unique").on(
-      table.idempotencyKey
-    ),
-    uniqueIndex("credit_card_bill_payments_transaction_unique").on(
-      table.paymentTransactionId
-    ),
+    uniqueIndex("credit_card_bill_payments_idempotency_unique").on(table.idempotencyKey),
+    uniqueIndex("credit_card_bill_payments_transaction_unique").on(table.paymentTransactionId),
     index("credit_card_bill_payments_bill_idx").on(table.billId),
     index("credit_card_bill_payments_account_idx").on(table.accountId),
     check(
@@ -309,13 +340,13 @@ export const installmentPurchases = sqliteTable(
   ]
 );
 
-
-
 export const installments = sqliteTable(
   "installments",
   {
     id: text("id").primaryKey(),
-    installmentPurchaseId: text("installment_purchase_id").references(() => installmentPurchases.id),
+    installmentPurchaseId: text("installment_purchase_id").references(
+      () => installmentPurchases.id
+    ),
     purchaseTransactionId: text("purchase_transaction_id")
       .notNull()
       .references(() => transactions.id),
@@ -373,7 +404,9 @@ export const plannedExpenses = sqliteTable(
   {
     id: text("id").primaryKey(),
     budgetMonth: text("budget_month").notNull(),
-    subcategoryId: text("subcategory_id").notNull().references(() => subcategories.id),
+    subcategoryId: text("subcategory_id")
+      .notNull()
+      .references(() => subcategories.id),
     name: text("name").notNull(),
     amountCents: integer("amount_cents").notNull(),
     accountId: text("account_id").references(() => accounts.id),
@@ -387,7 +420,10 @@ export const plannedExpenses = sqliteTable(
     index("planned_expenses_account_idx").on(table.accountId),
     index("planned_expenses_card_idx").on(table.creditCardId),
     check("planned_expenses_positive_amount", sql`${table.amountCents} > 0`),
-    check("planned_expenses_single_source", sql`(${table.accountId} IS NOT NULL) <> (${table.creditCardId} IS NOT NULL)`)
+    check(
+      "planned_expenses_single_source",
+      sql`(${table.accountId} IS NOT NULL) <> (${table.creditCardId} IS NOT NULL)`
+    )
   ]
 );
 
