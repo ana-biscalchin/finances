@@ -46,6 +46,8 @@ T12,T13,T14 → T15 → T16
 
 ### T1: Provar Render Free e Neon Free
 
+**Execução:** concluída em 2026-07-27. Evidências em `docs/operations/free-tier-proof.md` e `docs/operations/staging-validation-2026-07-27.md`.
+
 - **O quê:** subir uma prova sem dados pessoais com Fastify servindo o build Vite no Render Free e conectando ao Neon Free PostgreSQL.
 - **Onde:** `.specs/codebase/decisions/`, `.specs/codebase/ARCHITECTURE.md`, `.specs/codebase/STACK.md`, documentação de infraestrutura a criar.
 - **Depende de:** nenhuma.
@@ -67,6 +69,8 @@ T12,T13,T14 → T15 → T16
 
 ### T2: Criar configuração tipada por ambiente
 
+**Execução:** concluída em 2026-07-27 no PR 23.
+
 - **O quê:** centralizar e validar configuração de API, Neon, URL pública do Render, CORS local, cookies, senha/sessão, logs e feature flags no startup.
 - **Onde:** `apps/api/src/config/`, `apps/api/src/server.ts`, `packages/database/src/connection.ts`, `.env.example` sem segredos e testes.
 - **Depende de:** T1.
@@ -83,6 +87,8 @@ T12,T13,T14 → T15 → T16
 
 ### T3: Consolidar o cliente HTTP e a topologia da API
 
+**Execução:** concluída em 2026-07-27 para a fronteira HTTP. As rotas financeiras em staging só ficarão funcionais sobre PostgreSQL após T8.
+
 - **O quê:** remover `fetch`/URLs duplicadas, usar `/api` em produção, restringir CORS e adicionar limites/headers/health checks.
 - **Onde:** `apps/web/src/app/shared/api-client.ts`, páginas que chamam `fetch`, `apps/api/src/server.ts`, testes web/API e configuração do proxy.
 - **Depende de:** T2.
@@ -98,6 +104,8 @@ T12,T13,T14 → T15 → T16
 - **Commit:** `feat(platform): establish production http boundary`
 
 ### T4: Preparar CI, artefatos e ambientes isolados
+
+**Execução:** parcial em 2026-07-27. CI, staging isolado, auto-deploy, smoke e rollback foram validados. O consumo direto do artefato imutável e o job de migration PostgreSQL dependem da T8; produção permanece bloqueada.
 
 - **O quê:** criar pipeline reprodutível para checks, build imutável, staging, produção e promoção manual, sem migrations destrutivas no startup.
 - **Onde:** configuração de CI/CD e deploy do Render/Neon, runbook inicial em `docs/operations/`.
