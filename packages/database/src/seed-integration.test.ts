@@ -24,7 +24,7 @@ describe("database seeds", () => {
     migrate(connection.db, { migrationsFolder: resolve(process.cwd(), "drizzle") });
     connection.sqlite.close();
 
-    const tsx = resolve(process.cwd(), "../../node_modules/.bin/tsx");
+    const tsx = resolve(process.cwd(), "node_modules/.bin/tsx");
     const environment = { ...process.env, DATABASE_PATH: databasePath, DEMO_MONTH: "2026-07" };
     for (let execution = 0; execution < 2; execution++) {
       execFileSync(tsx, ["src/seed.ts"], { cwd: process.cwd(), env: environment });

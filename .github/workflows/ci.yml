@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:online
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Package immutable artifact
+        run: tar -czf finances-${GITHUB_SHA}.tar.gz apps/api/dist apps/web/dist packages/*/dist package.json pnpm-lock.yaml pnpm-workspace.yaml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finances-${{ github.sha }}
+          path: finances-${{ github.sha }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14

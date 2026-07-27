@@ -24,7 +24,8 @@
     "db:setup": "pnpm db:migrate && pnpm db:seed",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "format:online": "prettier --check apps/api/src/config apps/api/src/server.ts apps/api/src/platform.test.ts apps/web/src/app/shared/api-client.ts apps/web/vite.config.ts .github/workflows/ci.yml render.yaml docs/operations"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
