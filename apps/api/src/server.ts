@@ -3,8 +3,8 @@ import helmet from "@fastify/helmet";
 import fastifyStatic from "@fastify/static";
 import { createDatabaseConnection } from "@finances/database";
 import Fastify, { type FastifyInstance } from "fastify";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createDatabaseProbe, type DatabaseProbe } from "./config/database-probe.js";
 import { loadConfig, redactConfigError, type ApiConfig } from "./config/environment.js";
@@ -144,7 +144,9 @@ export function buildServer(options: BuildServerOptions = {}) {
   app.register(registerBusinessRoutes, { prefix: "/api" });
   if (config.environment !== "production") app.register(registerBusinessRoutes);
   if (config.serveWeb) {
-    app.register(fastifyStatic, { root: resolve(process.cwd(), "apps/web/dist"), wildcard: false });
+    const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+    const webRoot = resolve(workspaceRoot, "apps/web/dist");
+    app.register(fastifyStatic, { root: webRoot, wildcard: false });
     app.setNotFoundHandler((request, reply) =>
       request.url.startsWith("/api/")
         ? reply.code(404).send({ message: "Recurso não encontrado." })
