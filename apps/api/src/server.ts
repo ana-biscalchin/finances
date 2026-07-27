@@ -153,6 +153,11 @@ export function buildServer(options: BuildServerOptions = {}) {
         const user = sessionService.resolve(request.cookies[config.auth.cookieName]);
         if (!user) return reply.code(401).send({ message: "Autenticação necessária." });
         request.authenticatedUser = user;
+        request.requestContext = {
+          ownerId: user.id,
+          userId: user.id,
+          requestId: request.id
+        };
       });
     }
     registerAccountRoutes(routesApp, connection);
