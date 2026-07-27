@@ -1,4 +1,12 @@
-import { createDatabaseConnection, paymentMethods, transactions } from "@finances/database";
+import {
+  accounts,
+  createDatabaseConnection,
+  creditCardBills,
+  creditCards,
+  paymentMethods,
+  transactions,
+  users
+} from "@finances/database";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -811,5 +819,96 @@ describe("reports API", () => {
         amountCents: 20000
       })
     );
+  });
+  it("does not include financial data owned by another identity", async () => {
+    const connection = createDatabaseConnection(databasePath);
+    connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "test",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
+    connection.db
+      .insert(accounts)
+      .values({
+        id: "other-account",
+        ownerId: "other-owner",
+        name: "Outra",
+        type: "checking",
+        initialBalanceCents: 100000
+      })
+      .run();
+    connection.db
+      .insert(creditCards)
+      .values({
+        id: "other-card",
+        ownerId: "other-owner",
+        name: "Outro cartão",
+        closingDay: 5,
+        dueDay: 12
+      })
+      .run();
+    connection.db
+      .insert(creditCardBills)
+      .values({
+        id: "other-bill",
+        creditCardId: "other-card",
+        billMonth: "2026-07",
+        closingDate: "2026-06-05",
+        dueDate: "2026-07-12",
+        status: "open"
+      })
+      .run();
+    connection.db
+      .insert(transactions)
+      .values([
+        {
+          id: "other-income",
+          ownerId: "other-owner",
+          accountId: "other-account",
+          type: "income",
+          description: "Privada",
+          amountCents: 50000,
+          eventDate: "2026-07-01",
+          budgetMonth: "2026-07",
+          status: "confirmed"
+        },
+        {
+          id: "other-expense",
+          ownerId: "other-owner",
+          creditCardId: "other-card",
+          creditCardBillId: "other-bill",
+          type: "expense",
+          description: "Privada",
+          amountCents: 25000,
+          eventDate: "2026-06-01",
+          budgetMonth: "2026-07",
+          status: "confirmed"
+        }
+      ])
+      .run();
+    connection.sqlite.close();
+
+    const annual = (
+      await app.inject({ method: "GET", url: "/reports/annual-summary?year=2026" })
+    ).json();
+    expect(
+      annual.every(
+        (month: { incomeCents: number; expenseCents: number }) =>
+          month.incomeCents === 0 && month.expenseCents === 0
+      )
+    ).toBe(true);
+    const daily = (
+      await app.inject({ method: "GET", url: "/reports/daily-evolution?month=2026-07" })
+    ).json();
+    expect(daily[30]).toEqual(expect.objectContaining({ balance: 0, totalSpent: 0 }));
+    expect(
+      (
+        await app.inject({ method: "GET", url: "/reports/credit-cards-summary?month=2026-07" })
+      ).json()
+    ).toEqual([]);
   });
 });
