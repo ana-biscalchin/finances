@@ -6,6 +6,7 @@ import {
   transactions,
   type createDatabaseConnection
 } from "@finances/database";
+import { and, eq } from "drizzle-orm";
 import { buildAccountCashProjection, type AccountCashProjectionInput } from "@finances/domain";
 import { createRecurrenceService } from "./recurrence-service.js";
 import { createPaymentSourcePlanningService } from "../modules/payment-source-planning/application/service.js";
@@ -18,7 +19,7 @@ const previousMonth = (month: string) => {
 };
 export function createMonthlyOverviewService(connection: Connection, ownerId: string) {
   const { db } = connection;
-  const planning = createPaymentSourcePlanningService(connection);
+  const planning = createPaymentSourcePlanningService(connection, ownerId);
   return {
     overview(month: string) {
       return planning.overview(month);
@@ -28,6 +29,7 @@ export function createMonthlyOverviewService(connection: Connection, ownerId: st
         db
           .select()
           .from(transactions)
+          .where(eq(transactions.ownerId, ownerId))
           .all()
           .filter(
             (item) =>
@@ -47,20 +49,36 @@ export function createMonthlyOverviewService(connection: Connection, ownerId: st
         db
           .select()
           .from(creditCards)
+          .where(eq(creditCards.ownerId, ownerId))
           .all()
           .map((card) => [card.id, card])
       );
       const payments = db
-        .select()
+        .select({ payment: creditCardBillPayments })
         .from(creditCardBillPayments)
+        .innerJoin(creditCardBills, eq(creditCardBillPayments.billId, creditCardBills.id))
+        .innerJoin(
+          creditCards,
+          and(eq(creditCardBills.creditCardId, creditCards.id), eq(creditCards.ownerId, ownerId))
+        )
         .all()
+        .map(({ payment }) => payment)
         .filter((payment) => !payment.reversedAt);
-      const purchases = db.select().from(transactions).all();
-      const billObligations = db
+      const purchases = db
         .select()
+        .from(transactions)
+        .where(eq(transactions.ownerId, ownerId))
+        .all();
+      const billObligations = db
+        .select({ bill: creditCardBills })
         .from(creditCardBills)
+        .innerJoin(
+          creditCards,
+          and(eq(creditCardBills.creditCardId, creditCards.id), eq(creditCards.ownerId, ownerId))
+        )
+        .where(eq(creditCardBills.billMonth, month))
         .all()
-        .filter((bill) => bill.billMonth === month)
+        .map(({ bill }) => bill)
         .flatMap((bill) => {
           const accountId = cards.get(bill.creditCardId)?.paymentAccountId ?? null;
           const total = purchases
@@ -120,6 +138,7 @@ export function createMonthlyOverviewService(connection: Connection, ownerId: st
       const accountRows = db
         .select()
         .from(accounts)
+        .where(eq(accounts.ownerId, ownerId))
         .all()
         .filter((account) => account.isActive);
       const projection = buildAccountCashProjection({

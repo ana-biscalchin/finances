@@ -31,6 +31,7 @@ describe("payment source schema", () => {
   it("stores individual planned expenses with exactly one origin", () => {
     expect(Object.keys(getTableColumns(plannedExpenses))).toEqual([
       "id",
+      "ownerId",
       "budgetMonth",
       "subcategoryId",
       "name",
@@ -52,11 +53,8 @@ describe("payment source schema", () => {
       ])
     );
     expect(config.checks.map((constraint) => constraint.name)).toEqual(
-      expect.arrayContaining([
-        "planned_expenses_positive_amount",
-        "planned_expenses_single_source"
-      ])
+      expect.arrayContaining(["planned_expenses_positive_amount", "planned_expenses_single_source"])
     );
-    expect(config.foreignKeys).toHaveLength(4);
+    expect(config.foreignKeys).toHaveLength(5);
   });
 });

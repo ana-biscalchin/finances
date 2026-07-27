@@ -1,6 +1,7 @@
 import {
   accountPaymentMethods,
   accounts,
+  categories,
   creditCardBillPayments,
   creditCardBills,
   creditCards,
@@ -31,12 +32,22 @@ export class RecurrenceServiceError extends Error {
 export function createRecurrenceService(connection: Connection, ownerId: string) {
   const { db } = connection;
   const get = (id: string) => {
-    const rule = db.select().from(recurrenceRules).where(eq(recurrenceRules.id, id)).get();
+    const rule = db
+      .select()
+      .from(recurrenceRules)
+      .where(and(eq(recurrenceRules.ownerId, ownerId), eq(recurrenceRules.id, id)))
+      .get();
     if (!rule) throw new RecurrenceServiceError("Recorrência não encontrada.", 404);
     return rule;
   };
   const cardClosing = (cardId: string | null) =>
-    cardId ? db.select().from(creditCards).where(eq(creditCards.id, cardId)).get() : undefined;
+    cardId
+      ? db
+          .select()
+          .from(creditCards)
+          .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.id, cardId)))
+          .get()
+      : undefined;
   const billLocked = (billId: string) => {
     const bill = db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
     return Boolean(
@@ -59,13 +70,25 @@ export function createRecurrenceService(connection: Connection, ownerId: string)
     const subcategory = db
       .select()
       .from(subcategories)
+      .innerJoin(
+        categories,
+        and(eq(subcategories.categoryId, categories.id), eq(categories.ownerId, ownerId))
+      )
       .where(eq(subcategories.id, value.subcategoryId))
       .get();
     const account = value.accountId
-      ? db.select().from(accounts).where(eq(accounts.id, value.accountId)).get()
+      ? db
+          .select()
+          .from(accounts)
+          .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, value.accountId)))
+          .get()
       : null;
     const card = value.creditCardId
-      ? db.select().from(creditCards).where(eq(creditCards.id, value.creditCardId)).get()
+      ? db
+          .select()
+          .from(creditCards)
+          .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.id, value.creditCardId)))
+          .get()
       : null;
     const method = value.paymentMethodId
       ? db.select().from(paymentMethods).where(eq(paymentMethods.id, value.paymentMethodId)).get()
@@ -101,7 +124,7 @@ export function createRecurrenceService(connection: Connection, ownerId: string)
     }
   };
   return {
-    list: () => db.select().from(recurrenceRules).all(),
+    list: () => db.select().from(recurrenceRules).where(eq(recurrenceRules.ownerId, ownerId)).all(),
     create(input: unknown) {
       const result = recurrenceInputSchema.safeParse(input);
       if (!result.success)
@@ -110,7 +133,7 @@ export function createRecurrenceService(connection: Connection, ownerId: string)
           400
         );
       validateReferences(result.data);
-      const rule = { id: crypto.randomUUID(), ...result.data, status: "active" };
+      const rule = { id: crypto.randomUUID(), ownerId, ...result.data, status: "active" };
       db.insert(recurrenceRules).values(rule).run();
       return get(rule.id);
     },
@@ -118,6 +141,7 @@ export function createRecurrenceService(connection: Connection, ownerId: string)
       return db
         .select()
         .from(recurrenceRules)
+        .where(eq(recurrenceRules.ownerId, ownerId))
         .all()
         .flatMap((rule) => {
           const card = cardClosing(rule.creditCardId);
@@ -133,7 +157,13 @@ export function createRecurrenceService(connection: Connection, ownerId: string)
       const existing = db
         .select()
         .from(transactions)
-        .where(and(eq(transactions.recurrenceRuleId, id), eq(transactions.recurrenceMonth, month)))
+        .where(
+          and(
+            eq(transactions.ownerId, ownerId),
+            eq(transactions.recurrenceRuleId, id),
+            eq(transactions.recurrenceMonth, month)
+          )
+        )
         .get();
       if (existing) return existing;
       const rule = get(id);
@@ -200,17 +230,26 @@ export function createRecurrenceService(connection: Connection, ownerId: string)
     },
     pause(id: string) {
       get(id);
-      db.update(recurrenceRules).set({ status: "paused" }).where(eq(recurrenceRules.id, id)).run();
+      db.update(recurrenceRules)
+        .set({ status: "paused" })
+        .where(and(eq(recurrenceRules.ownerId, ownerId), eq(recurrenceRules.id, id)))
+        .run();
       return get(id);
     },
     resume(id: string) {
       get(id);
-      db.update(recurrenceRules).set({ status: "active" }).where(eq(recurrenceRules.id, id)).run();
+      db.update(recurrenceRules)
+        .set({ status: "active" })
+        .where(and(eq(recurrenceRules.ownerId, ownerId), eq(recurrenceRules.id, id)))
+        .run();
       return get(id);
     },
     end(id: string) {
       get(id);
-      db.update(recurrenceRules).set({ status: "ended" }).where(eq(recurrenceRules.id, id)).run();
+      db.update(recurrenceRules)
+        .set({ status: "ended" })
+        .where(and(eq(recurrenceRules.ownerId, ownerId), eq(recurrenceRules.id, id)))
+        .run();
       return get(id);
     },
     changeFrom(id: string, month: string, changes: Record<string, unknown>) {
@@ -220,12 +259,12 @@ export function createRecurrenceService(connection: Connection, ownerId: string)
         month,
         changes
       );
-      const next = { ...split.next, id: crypto.randomUUID() };
+      const next = { ...split.next, id: crypto.randomUUID(), ownerId };
       validateReferences(next);
       db.transaction(() => {
         db.update(recurrenceRules)
           .set({ endMonth: split.previous.endMonth, status: "ended" })
-          .where(eq(recurrenceRules.id, id))
+          .where(and(eq(recurrenceRules.ownerId, ownerId), eq(recurrenceRules.id, id)))
           .run();
         db.insert(recurrenceRules).values(next).run();
       });

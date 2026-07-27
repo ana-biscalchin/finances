@@ -68,6 +68,7 @@ describe("canonical monthly views", () => {
       .insert(plannedExpenses)
       .values({
         id: "plan",
+        ownerId: TEST_OWNER_ID,
         budgetMonth: "2026-07",
         subcategoryId: "subcategory",
         name: "Conta",
@@ -152,6 +153,7 @@ describe("canonical monthly views", () => {
       .insert(recurrenceRules)
       .values({
         id: "rule",
+        ownerId: TEST_OWNER_ID,
         kind: "expense",
         description: "Prevista",
         amountCents: 20_000,

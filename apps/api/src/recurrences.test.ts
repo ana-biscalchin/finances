@@ -7,7 +7,8 @@ import {
   paymentMethods,
   recurrenceRules,
   subcategories,
-  transactions
+  transactions,
+  users
 } from "@finances/database";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -143,5 +144,58 @@ describe("recurrence service", () => {
     expect(service.list()).toHaveLength(1);
     service.pause(rule.id);
     expect(() => service.confirm(rule.id, "2026-07")).toThrow("inativa");
+  });
+  it("does not expose or mutate recurrence rules from another owner", () => {
+    connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "test",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
+    connection.db
+      .insert(accounts)
+      .values({ id: "other-account", ownerId: "other-owner", name: "Outra", type: "checking" })
+      .run();
+    connection.db
+      .insert(categories)
+      .values({ id: "other-category", ownerId: "other-owner", name: "Outra", nature: "expense" })
+      .run();
+    connection.db
+      .insert(subcategories)
+      .values({ id: "other-subcategory", categoryId: "other-category", name: "Privada" })
+      .run();
+    const otherService = createRecurrenceService(connection, "other-owner");
+    const privateRule = otherService.create({
+      kind: "income",
+      description: "Privada",
+      amountCents: 1000,
+      subcategoryId: "other-subcategory",
+      accountId: "other-account",
+      frequency: "monthly",
+      dayOfMonth: 1,
+      startMonth: "2026-07"
+    });
+    const service = createRecurrenceService(connection, TEST_OWNER_ID);
+
+    expect(service.list()).toEqual([]);
+    expect(() => service.pause(privateRule.id)).toThrow("não encontrada");
+    expect(() =>
+      service.create({
+        kind: "income",
+        description: "Invasão",
+        amountCents: 1000,
+        subcategoryId: "other-subcategory",
+        accountId: "other-account",
+        frequency: "monthly",
+        dayOfMonth: 1,
+        startMonth: "2026-07"
+      })
+    ).toThrow("não encontrado");
+    expect(otherService.list()[0]).toEqual(
+      expect.objectContaining({ id: privateRule.id, ownerId: "other-owner", status: "active" })
+    );
   });
 });

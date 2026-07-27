@@ -2,9 +2,12 @@ import {
   accounts,
   categories,
   createDatabaseConnection,
+  plannedExpenses,
   subcategories,
-  transactions
+  transactions,
+  users
 } from "@finances/database";
+import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -150,5 +153,74 @@ describe("planned expenses API", () => {
     expect(
       (await app.inject({ method: "DELETE", url: `/planned-expenses/${id}` })).statusCode
     ).toBe(204);
+  });
+  it("does not expose, mutate, copy, or reference plans from another owner", async () => {
+    connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "test",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
+    connection.db
+      .insert(accounts)
+      .values({ id: "other-account", ownerId: "other-owner", name: "Outra", type: "checking" })
+      .run();
+    connection.db
+      .insert(categories)
+      .values({ id: "other-category", ownerId: "other-owner", name: "Outra", nature: "expense" })
+      .run();
+    connection.db
+      .insert(subcategories)
+      .values({ id: "other-subcategory", categoryId: "other-category", name: "Privada" })
+      .run();
+    connection.db
+      .insert(plannedExpenses)
+      .values({
+        id: "other-plan",
+        ownerId: "other-owner",
+        budgetMonth: "2026-07",
+        subcategoryId: "other-subcategory",
+        name: "Privada",
+        amountCents: 1000,
+        accountId: "other-account"
+      })
+      .run();
+
+    expect(
+      (await app.inject({ method: "GET", url: "/monthly-overview?month=2026-07" })).json().items
+    ).toEqual([]);
+    expect(
+      (await app.inject({ method: "DELETE", url: "/planned-expenses/other-plan" })).statusCode
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/planned-expenses",
+          payload: {
+            budgetMonth: "2026-07",
+            subcategoryId: "other-subcategory",
+            name: "Invasão",
+            amountCents: 1000,
+            accountId: "other-account"
+          }
+        })
+      ).statusCode
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/planned-expenses/copy",
+          payload: { sourceMonth: "2026-07", targetMonth: "2026-08" }
+        })
+      ).json()
+    ).toEqual({ copied: 0, skipped: [] });
+    expect(
+      connection.db.select().from(plannedExpenses).where(eq(plannedExpenses.id, "other-plan")).get()
+    ).toEqual(expect.objectContaining({ name: "Privada", ownerId: "other-owner" }));
   });
 });

@@ -74,10 +74,10 @@ try {
 
     for (const item of seed.recurrenceRules) {
       db.insert(recurrenceRules)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: recurrenceRules.id,
-          set: { ...item, updatedAt: now }
+          set: { ...item, ownerId, updatedAt: now }
         })
         .run();
     }
@@ -104,10 +104,10 @@ try {
 
     for (const item of seed.plannedExpenses) {
       db.insert(plannedExpenses)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: plannedExpenses.id,
-          set: { ...item, updatedAt: now }
+          set: { ...item, ownerId, updatedAt: now }
         })
         .run();
     }

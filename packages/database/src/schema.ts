@@ -223,6 +223,7 @@ export const recurrenceRules = sqliteTable(
   "recurrence_rules",
   {
     id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
     kind: text("kind").notNull(),
     description: text("description").notNull(),
     amountCents: integer("amount_cents").notNull(),
@@ -241,6 +242,7 @@ export const recurrenceRules = sqliteTable(
   },
   (table) => [
     check("recurrence_rules_positive_amount", sql`${table.amountCents} > 0`),
+    index("recurrence_rules_owner_status_idx").on(table.ownerId, table.status),
     check("recurrence_rules_day_range", sql`${table.dayOfMonth} BETWEEN 1 AND 31`),
     check(
       "recurrence_rules_single_target",
@@ -431,6 +433,7 @@ export const plannedExpenses = sqliteTable(
   "planned_expenses",
   {
     id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
     budgetMonth: text("budget_month").notNull(),
     subcategoryId: text("subcategory_id")
       .notNull()
@@ -444,6 +447,7 @@ export const plannedExpenses = sqliteTable(
     ...timestamps
   },
   (table) => [
+    index("planned_expenses_owner_month_idx").on(table.ownerId, table.budgetMonth),
     index("planned_expenses_month_subcategory_idx").on(table.budgetMonth, table.subcategoryId),
     index("planned_expenses_account_idx").on(table.accountId),
     index("planned_expenses_card_idx").on(table.creditCardId),
