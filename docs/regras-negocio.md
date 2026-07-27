@@ -76,5 +76,5 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 
 - Backups locais podem ser criados, listados, restaurados e excluídos na API e na interface.
 - A restauração valida o arquivo e cria um ponto de segurança antes de substituir o estado atual.
-- Google Drive é opcional e usa a pasta `Carteira da Ana`.
+- Google Drive existe apenas no protótipo local legado e será retirado do release online inicial; uma eventual reintrodução fica no backlog.
 - Relatórios comparativos, orientação de decisão, patrimônio, reservas completas, dívidas e rentabilidade são backlog.

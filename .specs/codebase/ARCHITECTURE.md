@@ -1,27 +1,39 @@
 # Arquitetura
 
 **Produto:** Carteira da Ana  
-**Atualizado:** 2026-07-13
+**Atualizado:** 2026-07-27
 
 ## Visão geral
 
-A aplicação React local consulta uma API Fastify. A API coordena regras puras de domínio e persiste em SQLite com Drizzle. Google Drive é opcional e usado apenas para backups.
+No protótipo, a aplicação React local consulta uma API Fastify, que coordena regras puras de domínio e persiste em SQLite com Drizzle. No release online inicial, um Render Free Web Service servirá o build React/Vite e a API Fastify na mesma origem; a API autenticará Ana por usuário e senha e persistirá no Neon Free PostgreSQL. Google Drive não participará do release.
 
 ```mermaid
 flowchart LR
-    Ana --> Web[React + Mantine]
-    Web --> API[Fastify]
+    Ana -->|HTTPS onrender.com| Render[Render Free Web Service]
+    Render --> Web[Build React + Mantine]
+    Render --> API[Fastify + sessão própria]
     API --> Domain[packages/domain]
-    API --> DB[(SQLite + Drizzle)]
-    API -. opcional .-> Drive[Google Drive]
+    API --> DB[(Neon Free PostgreSQL + Drizzle)]
 ```
 
-| Camada | Caminho | Responsabilidade |
-| --- | --- | --- |
-| Interface | `apps/web` | Navegação, formulários e visualizações mensais |
-| API | `apps/api` | Contratos HTTP, serviços de aplicação e transações |
-| Domínio | `packages/domain` | Dinheiro, datas e classificação financeira puramente testáveis |
-| Persistência | `packages/database` | Schema, migrations, conexão, integridade e backup SQLite |
+| Camada       | Caminho             | Responsabilidade                                               |
+| ------------ | ------------------- | -------------------------------------------------------------- |
+| Interface    | `apps/web`          | Navegação, formulários e visualizações mensais                 |
+| API          | `apps/api`          | Contratos HTTP, serviços de aplicação e transações             |
+| Domínio      | `packages/domain`   | Dinheiro, datas e classificação financeira puramente testáveis |
+| Persistência | `packages/database` | Schema, migrations, conexão, integridade e backup SQLite       |
+
+O diagrama representa o alvo decidido no ADR 002. Os planos gratuitos e seus limites precisam ser confirmados pela prova de implantação antes da implementação; o protótipo continua usando SQLite local.
+
+## Fronteiras da arquitetura online
+
+- O navegador nunca acessa o banco nem recebe segredos de servidor.
+- Toda rota financeira exige identidade e autorização por proprietária no servidor.
+- A preferência é web e API sob a mesma origem; se forem separadas, CORS usa allowlist explícita.
+- Configuração varia por ambiente, é validada na inicialização e usa a URL `*.onrender.com` atribuída ao serviço em produção.
+- Banco, backups e arquivos importados não dependem do filesystem efêmero da aplicação.
+- Logs e telemetria não incluem valores financeiros, conteúdo importado, tokens ou credenciais.
+- Migrations são executadas como etapa controlada de deploy, com rollback e recuperação documentados.
 
 ## Fluxos críticos
 
@@ -68,16 +80,18 @@ flowchart LR
 3. `/simple-import/confirm` aplica o contrato normal de criação em uma transação atômica.
 4. Não há conciliador bancário no fluxo canônico.
 
-## Persistência e segurança local
+## Persistência e segurança
 
 - Valores são centavos inteiros e datas de negócio não dependem de UTC.
 - O protótipo usa uma baseline canônica. O reset destrutivo exige ambiente de desenvolvimento/UAT, caminho explícito dentro da raiz permitida e confirmação `RESET`.
 - O banco principal e backups ficam fora do Git.
 - A restauração cria um ponto de segurança antes de alterar o banco conectado.
+- Esses controles locais não bastam para produção: a arquitetura online adicionará identidade, escopo de propriedade, segredos gerenciados, HTTPS, backups externos e observabilidade.
 
 ## Limites atuais
 
-- Produto e dados financeiros funcionam localmente; Drive não é obrigatório.
+- Produto e dados financeiros funcionam hoje localmente; a implantação online ainda não está pronta para produção.
 - Escopo monetário: BRL.
 - Patrimônio, investimentos/rentabilidade, dívidas e relatórios prescritivos estão no backlog.
-- Distribuição futura como web ou desktop continua aberta.
+- Distribuição será web online; não haverá executável.
+- Render, Neon PostgreSQL, autenticação própria e acesso privado estão decididos; apenas a política final de retenção depende da validação dos recursos gratuitos. O plano e a estimativa estão em `.specs/project/ONLINE-MIGRATION.md`.

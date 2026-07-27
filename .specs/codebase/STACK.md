@@ -49,10 +49,11 @@
 
 ### Persistência
 
-- SQLite local
+- SQLite local no protótipo e no desenvolvimento
 - `better-sqlite3`
 - Drizzle ORM e Drizzle Kit
 - Banco padrão em `data/financas.sqlite`
+- Neon PostgreSQL no plano gratuito para produção inicial, sujeito à validação dos limites vigentes na prova de implantação
 
 ## Organização do código
 
@@ -92,11 +93,16 @@ Serviços locais:
 - Web: `http://localhost:5173`
 - API: `http://localhost:3000`
 
+Essas URLs são exclusivas de desenvolvimento. A produção inicial usará a URL HTTPS gratuita `*.onrender.com`, sem domínio próprio.
+
 ## Observações da detecção
 
 - Os gates foram validados com Node.js 25.3.0 e pnpm 11.5.2.
 - O diagnóstico genérico classificou o projeto como `nextjs-node` por encontrar `package.json`, mas o código comprova que o frontend usa React com Vite, não Next.js.
 - O backup local está implementado na API e na interface e possui testes automatizados.
-- A integração com Google Drive está implementada, mas sua operação real depende de configuração OAuth e não foi validada nesta análise.
+- A integração local legada com Google Drive está implementada, mas será retirada/desabilitada no release online inicial.
 - Backup local e restauração estão implementados e cobertos por testes de integridade.
-- A decisão entre distribuição web e empacotamento desktop permanece aberta.
+- A distribuição será exclusivamente web e online; empacotamento desktop não faz mais parte do escopo.
+- O release inicial usará um Render Free Web Service para Fastify + build Vite na mesma origem e Neon Free PostgreSQL; login será próprio por usuário e senha.
+- Google Drive será retirado do release online; OAuth Google, multiusuário e domínio próprio ficam no backlog.
+- O levantamento de configuração, identidade, persistência, segurança e operação necessário para produção está em `.specs/project/ONLINE-MIGRATION.md`.

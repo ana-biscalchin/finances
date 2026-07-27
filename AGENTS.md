@@ -9,26 +9,26 @@ Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 - Caminho local atual: `/home/ana/Documents/pessoal/finances`.
 - Objetivo: gerenciar financas pessoais.
 - Status atual: prototipo local em desenvolvimento com nucleos de contas, categorias, lancamentos, faturas, controle mensal, importacao CSV, relatorios e backups implementados.
-- Distribuicao atual: aplicacao web local.
-- Distribuicao futura: web ou desktop, ainda a decidir.
+- Distribuicao atual: prototipo web local em desenvolvimento.
+- Distribuicao decidida: aplicacao web hospedada e acessada online; nao haverá executável.
 
 ## Stack Decidida
 
 - Frontend: React + TypeScript + Vite.
 - UI: Mantine.
-- Backend/API local: Node.js + Fastify.
-- Banco: SQLite local.
+- Backend/API: Node.js + Fastify; local no desenvolvimento e hospedado em producao.
+- Banco atual: SQLite local. Banco decidido para producao: Neon PostgreSQL, inicialmente no plano gratuito.
 - ORM/migrations: Drizzle.
 - Gerenciador de pacotes: pnpm (workspaces).
 - Graficos: Recharts.
 - Icones: Tabler Icons.
-- Empacotamento futuro: decisao aberta; Electron e uma possibilidade, nao uma escolha confirmada.
+- Empacotamento desktop: fora de escopo por decisao de produto.
 
 ## Principios Importantes
 
-- Manter como web app local em `localhost`.
-- Preparar arquitetura para Electron, sem comecar por Electron.
-- Banco local no inicio, com backups simples.
+- Manter `localhost` apenas para desenvolvimento e testes.
+- Preparar a aplicacao para hospedagem online segura, sem Electron ou executavel.
+- Nao publicar o prototipo antes de implementar autenticacao, autorizacao, persistencia hospedada, gestao de segredos e backups externos.
 - Controle mensal e a tela central do app.
 - O Controle mensal ainda nao esta satisfatorio; avaliar seus problemas antes de redesenha-lo.
 - Relatorios devem ser bonitos, claros e explicativos.
@@ -47,6 +47,11 @@ Este arquivo resume o contexto do projeto para futuras sessoes de Codex/agentes.
 - `README.md`: visao geral do projeto.
 - `.specs/codebase/STACK.md`: stack, versoes, comandos e observacoes do ambiente.
 - `.specs/codebase/ARCHITECTURE.md`: componentes, integracoes e fluxos criticos.
+- `.specs/codebase/decisions/001-distribuicao-online.md`: decisao de distribuicao exclusivamente online.
+- `.specs/codebase/decisions/002-arquitetura-release-online-inicial.md`: acesso, autenticacao, Render, Neon e escopo do primeiro release.
+- `.specs/project/ONLINE-MIGRATION.md`: levantamento e plano de refatoracao para producao online.
+- `.specs/features/online-distribution/design.md`: design tecnico proposto para a distribuicao online.
+- `.specs/features/online-distribution/tasks.md`: tarefas de implementacao e gates para a distribuicao online.
 - `docs/regras-negocio.md`: regras de negocio atuais.
 - `docs/regras-negocio.md`: regras financeiras, inclusive cartao e fatura.
 - `docs/categorias.md`: taxonomia inicial de categorias.
@@ -75,7 +80,8 @@ Manter separacao entre UI, API, banco e dominio.
 - Modo claro/escuro.
 - Estrategia de leitura OFX.
 - API/UI de reservas.
-- Distribuicao futura como aplicacao web ou desktop.
+- Politica final de backup/retencao dentro dos limites do Neon Free.
+- Momento futuro para adotar dominio proprio, OAuth Google e multiusuario.
 
 ## Como Trabalhar Neste Repo
 
@@ -108,6 +114,5 @@ Ao terminar uma etapa de desenvolvimento, sempre responder com:
 - Features que precisam ser testadas visualmente.
 - O que o app ja e capaz de fazer.
 - Quais testes unitarios foram implementados/executados.
-
 
 Quando houver app visual para revisar, deixar `pnpm dev` rodando em segundo plano para a usuaria abrir o app.

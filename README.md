@@ -1,6 +1,8 @@
 # Carteira da Ana
 
-App local para gerenciamento de financas pessoais, com foco em controle mensal, faturas de cartao, categorias gerenciaveis, importacao CSV e relatorios explicativos.
+Aplicacao web para gerenciamento de financas pessoais, com foco em controle mensal, faturas de cartao, categorias gerenciaveis, importacao CSV e relatorios explicativos.
+
+O produto será disponibilizado online e não terá versão executável. O estado atual ainda é um protótipo local; autenticação, persistência hospedada, segurança e operação precisam ser concluídas antes da publicação.
 
 ## Estado atual
 
@@ -16,18 +18,19 @@ O projeto ja possui:
 - importacao/exportacao CSV de lancamentos;
 - relatorios iniciais com Recharts;
 - criacao, listagem, restauracao e exclusao de backups locais;
-- integracao opcional de backups com Google Drive.
+- integracao local legada de backups com Google Drive, que será retirada do release online inicial.
 
 Ainda nao estao implementados:
 
 - importacao OFX;
 - API/UI de reservas, apesar do schema existir;
-- configuracoes finais e empacotamento Electron.
+- preparação para produção online, incluindo autenticação, banco hospedado, backups e deploy.
 
 ## Principios do produto
 
-- O app roda localmente em `localhost`.
-- O banco principal fica em SQLite local.
+- Em produção, o app será acessado online por HTTPS; `localhost` permanece somente para desenvolvimento.
+- O protótipo usa SQLite local. A produção usará Neon PostgreSQL.
+- O release inicial será privado para Ana, com usuário e senha, hospedado no Render sem domínio próprio.
 - O controle mensal e a tela central.
 - Compras no cartao impactam o mes da fatura.
 - Pagamento de fatura movimenta a conta escolhida, mas nao duplica as compras.
@@ -42,6 +45,8 @@ Ainda nao estao implementados:
 - [Categorias financeiras](docs/categorias.md)
 - [Arquitetura](.specs/codebase/ARCHITECTURE.md)
 - [Stack e comandos](.specs/codebase/STACK.md)
+- [Decisão de distribuição online](.specs/codebase/decisions/001-distribuicao-online.md)
+- [Plano e estimativa da migração online](.specs/project/ONLINE-MIGRATION.md)
 
 ## Desenvolvimento
 
