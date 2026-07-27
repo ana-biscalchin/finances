@@ -64,7 +64,7 @@ try {
 
     for (const item of seed.transfers) {
       db.insert(accountTransfers)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: accountTransfers.id,
           set: { ...item, updatedAt: now }

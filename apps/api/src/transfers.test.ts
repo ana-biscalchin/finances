@@ -2,7 +2,8 @@ import {
   accountTransfers,
   accounts,
   createDatabaseConnection,
-  transactions
+  transactions,
+  users
 } from "@finances/database";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -127,7 +128,7 @@ describe("atomic account transfers", () => {
   });
 
   it("rolls back the aggregate and outgoing leg when the incoming insert fails", () => {
-    const service = createTransferService(connection, {
+    const service = createTransferService(connection, TEST_OWNER_ID, {
       afterOutgoingInsert() {
         throw new Error("simulated incoming failure");
       }
@@ -163,9 +164,9 @@ describe("atomic account transfers", () => {
       .set({ amountCents: 999 })
       .where(eq(transactions.id, created.json().legs[0].id))
       .run();
-    expect(() => createTransferService(connection).get(created.json().transfer.id)).toThrow(
-      "equivalent"
-    );
+    expect(() =>
+      createTransferService(connection, TEST_OWNER_ID).get(created.json().transfer.id)
+    ).toThrow("equivalent");
   });
 
   it("returns explicit validation, absence, and conflict responses", async () => {
@@ -207,7 +208,7 @@ describe("atomic account transfers", () => {
   });
 
   it("does not leave orphan legs after deletion", async () => {
-    const service = createTransferService(connection);
+    const service = createTransferService(connection, TEST_OWNER_ID);
     const created = service.create({
       sourceAccountId: "account-source",
       destinationAccountId: "account-destination",
@@ -224,5 +225,96 @@ describe("atomic account transfers", () => {
         .where(eq(transactions.transferId, created.transfer.id))
         .all()
     ).toEqual([]);
+  });
+
+  it("does not access or mutate transfers owned by another identity", async () => {
+    connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "argon2id-test-only",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
+    connection.db
+      .insert(accounts)
+      .values([
+        { id: "other-source", ownerId: "other-owner", name: "Outra origem", type: "checking" },
+        { id: "other-destination", ownerId: "other-owner", name: "Outro destino", type: "checking" }
+      ])
+      .run();
+    connection.db
+      .insert(accountTransfers)
+      .values({
+        id: "other-transfer",
+        ownerId: "other-owner",
+        sourceAccountId: "other-source",
+        destinationAccountId: "other-destination",
+        amountCents: 1000,
+        eventDate: "2026-07-20",
+        description: "Privada"
+      })
+      .run();
+    connection.db
+      .insert(transactions)
+      .values([
+        {
+          id: "other-out",
+          transferId: "other-transfer",
+          accountId: "other-source",
+          type: "expense",
+          description: "Privada",
+          amountCents: 1000,
+          eventDate: "2026-07-20",
+          budgetMonth: "2026-07",
+          status: "confirmed"
+        },
+        {
+          id: "other-in",
+          transferId: "other-transfer",
+          accountId: "other-destination",
+          type: "income",
+          description: "Privada",
+          amountCents: 1000,
+          eventDate: "2026-07-20",
+          budgetMonth: "2026-07",
+          status: "confirmed"
+        }
+      ])
+      .run();
+
+    expect(
+      (await app.inject({ method: "DELETE", url: "/transfers/other-transfer" })).statusCode
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/transfers",
+          payload: {
+            sourceAccountId: "other-source",
+            destinationAccountId: "other-destination",
+            amountCents: 500,
+            eventDate: "2026-07-20",
+            description: "Invasão"
+          }
+        })
+      ).statusCode
+    ).toBe(404);
+    expect(
+      connection.db
+        .select()
+        .from(accountTransfers)
+        .where(eq(accountTransfers.id, "other-transfer"))
+        .get()
+    ).toEqual(expect.objectContaining({ description: "Privada", ownerId: "other-owner" }));
+    expect(
+      connection.db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.transferId, "other-transfer"))
+        .all()
+    ).toHaveLength(2);
   });
 });

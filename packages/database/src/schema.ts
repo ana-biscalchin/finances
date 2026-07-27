@@ -193,6 +193,7 @@ export const accountTransfers = sqliteTable(
   "account_transfers",
   {
     id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
     sourceAccountId: text("source_account_id")
       .notNull()
       .references(() => accounts.id),
@@ -211,6 +212,7 @@ export const accountTransfers = sqliteTable(
       "account_transfers_distinct_accounts",
       sql`${table.sourceAccountId} <> ${table.destinationAccountId}`
     ),
+    index("account_transfers_owner_event_idx").on(table.ownerId, table.eventDate),
     index("account_transfers_source_idx").on(table.sourceAccountId),
     index("account_transfers_destination_idx").on(table.destinationAccountId),
     index("account_transfers_event_date_idx").on(table.eventDate)
