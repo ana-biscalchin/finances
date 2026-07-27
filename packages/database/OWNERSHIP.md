@@ -29,7 +29,7 @@ Esta matriz define o escopo de `ownerId` para T6–T8. `users.id` é simultaneam
 - Colunas diretas são `NOT NULL` e referenciam `users.id`.
 - Não existe valor default de `ownerId` no banco ou na aplicação.
 - Um banco vazio pode receber o schema diretamente.
-- Um SQLite com dados somente pode ser atualizado com uma usuária bootstrap explicitamente selecionada por nome; ausência, ambiguidade ou falha de FK aborta toda a operação.
+- Um SQLite com dados somente pode ser atualizado com uma usuária bootstrap explicitamente selecionada por `MIGRATION_OWNER_USERNAME`; ausência, identidade inexistente ou falha de FK aborta toda a operação.
 - A atribuição ao owner ocorre em transação e é validada antes de tornar as colunas obrigatórias.
 - Filhos sem `ownerId` são autorizados por join obrigatório até sua raiz proprietária.
 - Unicidades gerenciáveis deixam de ser globais e começam pelo proprietário.

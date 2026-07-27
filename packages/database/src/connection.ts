@@ -16,12 +16,20 @@ export function resolveDatabasePath(
   return resolve(workspaceRoot, databasePath);
 }
 
-export function createDatabaseConnection(databasePath?: string) {
+export function createDatabaseConnection(
+  databasePath?: string,
+  options: { migrationOwnerUsername?: string } = {}
+) {
   const resolvedPath = resolveDatabasePath(databasePath);
 
   mkdirSync(dirname(resolvedPath), { recursive: true });
 
   const sqlite = new Database(resolvedPath);
+  sqlite.function(
+    "migration_owner_username",
+    { deterministic: true },
+    () => options.migrationOwnerUsername ?? process.env.MIGRATION_OWNER_USERNAME ?? null
+  );
   sqlite.pragma("foreign_keys = ON");
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("synchronous = NORMAL");
@@ -59,4 +67,3 @@ export async function restoreDatabaseOnline(backupPath: string, mainDbPath: stri
     backupDb.close();
   }
 }
-
