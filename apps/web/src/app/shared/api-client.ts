@@ -11,7 +11,7 @@ export class ApiClientError extends Error {
 export function createApiClient(
   options: { baseUrl?: string; fetcher?: Fetcher; timeoutMs?: number; getRetries?: number } = {}
 ) {
-  const baseUrl = options.baseUrl ?? import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+  const baseUrl = options.baseUrl ?? import.meta.env.VITE_API_URL ?? "/api";
   const fetcher = options.fetcher ?? fetch;
   const timeoutMs = options.timeoutMs ?? 8_000;
   const getRetries = options.getRetries ?? 1;
@@ -29,6 +29,7 @@ export function createApiClient(
       try {
         const response = await fetcher(`${baseUrl}${path}`, {
           method,
+          credentials: "include",
           signal: controller.signal,
           headers:
             body === undefined
@@ -62,6 +63,7 @@ export function createApiClient(
     throw new ApiClientError("Falha transitória na API.");
   }
   return {
+    raw: (path: string, init?: RequestInit) => fetcher(``, { ...init, credentials: "include" }),
     get: <T>(path: string, schema: ZodType<T>) => request("GET", path, schema),
     post: <T>(path: string, body: unknown, schema: ZodType<T>, headers?: Record<string, string>) =>
       request("POST", path, schema, body, headers),

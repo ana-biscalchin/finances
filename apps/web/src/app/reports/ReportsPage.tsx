@@ -1,3 +1,4 @@
+import { apiClient } from "../shared/api-client.js";
 import {
   Alert,
   Badge,
@@ -50,8 +51,6 @@ import {
 import { formatMoney, moneyFromCents } from "@finances/domain";
 import { MonthSelector } from "../shared/MonthSelector";
 import { getErrorMessage, reportClientError } from "../shared/errors";
-
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 interface ReportsPageProps {
   selectedMonth: string;
@@ -165,9 +164,9 @@ export function ReportsPage({
     async function fetchOptions() {
       try {
         const [accRes, pmRes, catRes] = await Promise.all([
-          fetch(`${apiBaseUrl}/accounts`),
-          fetch(`${apiBaseUrl}/payment-methods`),
-          fetch(`${apiBaseUrl}/categories`)
+          apiClient.raw(`/accounts`),
+          apiClient.raw(`/payment-methods`),
+          apiClient.raw(`/categories`)
         ]);
 
         if (accRes.ok) setAccountsList(await accRes.json());
@@ -197,8 +196,8 @@ export function ReportsPage({
       if (timeframe === "monthly") {
         queryParams.append("month", selectedMonth);
         const [dailyRes, cardRes] = await Promise.all([
-          fetch(`${apiBaseUrl}/reports/daily-evolution?${queryParams.toString()}`),
-          fetch(`${apiBaseUrl}/reports/credit-cards-summary?month=${selectedMonth}`)
+          apiClient.raw(`/reports/daily-evolution?${queryParams.toString()}`),
+          apiClient.raw(`/reports/credit-cards-summary?month=${selectedMonth}`)
         ]);
 
         if (!dailyRes.ok) throw new Error("Erro ao carregar evolução diária.");
@@ -209,8 +208,8 @@ export function ReportsPage({
       } else {
         queryParams.append("year", selectedYear);
         const [annualRes, catRes] = await Promise.all([
-          fetch(`${apiBaseUrl}/reports/annual-summary?${queryParams.toString()}`),
-          fetch(`${apiBaseUrl}/reports/categories-breakdown?${queryParams.toString()}`)
+          apiClient.raw(`/reports/annual-summary?${queryParams.toString()}`),
+          apiClient.raw(`/reports/categories-breakdown?${queryParams.toString()}`)
         ]);
 
         if (!annualRes.ok) throw new Error("Erro ao carregar sumário anual.");
@@ -737,7 +736,12 @@ export function ReportsPage({
                                   </Text>
                                   {bill.futureInstallmentMonths.length > 0 ? (
                                     <Text size="10px" c="dimmed">
-                                      até {bill.futureInstallmentMonths[bill.futureInstallmentMonths.length - 1]}
+                                      até{" "}
+                                      {
+                                        bill.futureInstallmentMonths[
+                                          bill.futureInstallmentMonths.length - 1
+                                        ]
+                                      }
                                     </Text>
                                   ) : null}
                                 </Box>
@@ -750,7 +754,9 @@ export function ReportsPage({
                                   </Text>
                                   <Text size="10px" c="dimmed">
                                     {bill.categoryBreakdown[0]
-                                      ? formatMoney(moneyFromCents(bill.categoryBreakdown[0].amountCents))
+                                      ? formatMoney(
+                                          moneyFromCents(bill.categoryBreakdown[0].amountCents)
+                                        )
                                       : "Sem compras categorizadas"}
                                   </Text>
                                 </Box>
@@ -1044,17 +1050,19 @@ export function ReportsPage({
                             }}
                           />
                           <Legend verticalAlign="top" height={36} />
-                          {getPaymentMethodNames(categoriesSpent).map((paymentMethodName, index) => (
-                            <Bar
-                              key={paymentMethodName}
-                              dataKey={paymentMethodName}
-                              stackId="payment-methods"
-                              name={paymentMethodName}
-                              fill={getPaymentMethodColor(index)}
-                              radius={[0, 4, 4, 0]}
-                              barSize={18}
-                            />
-                          ))}
+                          {getPaymentMethodNames(categoriesSpent).map(
+                            (paymentMethodName, index) => (
+                              <Bar
+                                key={paymentMethodName}
+                                dataKey={paymentMethodName}
+                                stackId="payment-methods"
+                                name={paymentMethodName}
+                                fill={getPaymentMethodColor(index)}
+                                radius={[0, 4, 4, 0]}
+                                barSize={18}
+                              />
+                            )
+                          )}
                         </BarChart>
                       </ResponsiveContainer>
                     )}
@@ -1165,7 +1173,7 @@ function MonthlyCategoryChart({
         if (filterCategoryId) queryParams.append("categoryId", filterCategoryId);
         queryParams.append("view", view);
 
-        const res = await fetch(`${apiBaseUrl}/reports/categories-breakdown?${queryParams.toString()}`);
+        const res = await apiClient.raw(`/reports/categories-breakdown?${queryParams.toString()}`);
         if (!res.ok) throw new Error();
         setData(await res.json());
       } catch (error) {
@@ -1412,8 +1420,8 @@ function PaymentMethodsParticipationChart({
         if (filterCategoryId) queryParams.append("categoryId", filterCategoryId);
         queryParams.append("view", view);
 
-        const res = await fetch(
-          `${apiBaseUrl}/reports/payment-methods-participation?${queryParams.toString()}`
+        const res = await apiClient.raw(
+          `/reports/payment-methods-participation?${queryParams.toString()}`
         );
         if (!res.ok) throw new Error();
         setData(await res.json());

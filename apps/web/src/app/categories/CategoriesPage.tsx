@@ -1,3 +1,4 @@
+import { apiClient } from "../shared/api-client.js";
 import {
   ActionIcon,
   Alert,
@@ -73,8 +74,6 @@ const behaviors = [
   { value: "extra", label: "Extra" }
 ];
 
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-
 export function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -96,7 +95,7 @@ export function CategoriesPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/categories?includeInactive=${includeInactive}`);
+      const response = await apiClient.raw(`/categories?includeInactive=${includeInactive}`);
 
       if (!response.ok) {
         throw new Error("Não foi possível carregar as categorias.");
@@ -168,13 +167,13 @@ export function CategoriesPage() {
       let response: Response;
 
       if (modal.mode === "merge") {
-        response = await fetch(`${apiBaseUrl}/subcategories/${modal.id}/merge`, {
+        response = await apiClient.raw(`/subcategories/${modal.id}/merge`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ targetSubcategoryId: modal.targetSubcategoryId })
         });
       } else {
-        response = await fetch(getSaveUrl(modal), {
+        response = await apiClient.raw(getSaveUrl(modal), {
           method: modal.mode === "create" ? "POST" : "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(buildPayload(modal))
@@ -221,8 +220,8 @@ export function CategoriesPage() {
     setError(null);
 
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/${resource === "category" ? "categories" : "subcategories"}/${id}/${action}`,
+      const response = await apiClient.raw(
+        `/${resource === "category" ? "categories" : "subcategories"}/${id}/${action}`,
         {
           method: "PATCH"
         }
@@ -688,8 +687,8 @@ function getModalTitle(modal: ModalState) {
 
 function getSaveUrl(modal: ModalState) {
   const resourcePath = modal.type === "category" ? "categories" : "subcategories";
-  if (modal.mode === "create") return `${apiBaseUrl}/${resourcePath}`;
-  return `${apiBaseUrl}/${resourcePath}/${modal.id}`;
+  if (modal.mode === "create") return `/${resourcePath}`;
+  return `/${resourcePath}/${modal.id}`;
 }
 
 function buildPayload(modal: ModalState) {

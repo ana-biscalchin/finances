@@ -1,3 +1,4 @@
+import { apiClient } from "../shared/api-client.js";
 import {
   ActionIcon,
   Alert,
@@ -30,10 +31,26 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
-import { accountSchema, accountsSchema, creditCardSchema, creditCardsSchema, paymentMethodSchema, type Account, type CreditCard, type PaymentMethod } from "../shared/api-contracts";
+import {
+  accountSchema,
+  accountsSchema,
+  creditCardSchema,
+  creditCardsSchema,
+  paymentMethodSchema,
+  type Account,
+  type CreditCard,
+  type PaymentMethod
+} from "../shared/api-contracts";
 import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
 import { emptySelectValue } from "../shared/payment-source-options";
-import { buildAccountPayload, createAccountForm, setDefaultPaymentMethod, suggestPaymentMethods, togglePaymentMethod, type AccountFormState } from "./account-form-state";
+import {
+  buildAccountPayload,
+  createAccountForm,
+  setDefaultPaymentMethod,
+  suggestPaymentMethods,
+  togglePaymentMethod,
+  type AccountFormState
+} from "./account-form-state";
 import { TransferDialog } from "./TransferDialog";
 
 type CardFormState = {
@@ -45,7 +62,6 @@ type CardFormState = {
   limitReais: number | string;
 };
 
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 const emptyForm = createAccountForm({ methods: [] });
 
 const emptyCardForm: CardFormState = {
@@ -95,7 +111,7 @@ export function AccountsPage() {
   const activeCards = useMemo(() => cards.filter((card) => card.isActive), [cards]);
 
   async function loadPaymentMethods() {
-    const response = await fetch(`${apiBaseUrl}/payment-methods`);
+    const response = await apiClient.raw(`/payment-methods`);
 
     if (!response.ok) {
       throw new Error("Não foi possível carregar os meios de pagamento.");
@@ -109,7 +125,7 @@ export function AccountsPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/accounts?includeInactive=${includeInactive}`);
+      const response = await apiClient.raw(`/accounts?includeInactive=${includeInactive}`);
 
       if (!response.ok) {
         throw new Error("Não foi possível carregar as contas.");
@@ -129,7 +145,7 @@ export function AccountsPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/credit-cards?includeInactive=true`);
+      const response = await apiClient.raw(`/credit-cards?includeInactive=true`);
 
       if (!response.ok) {
         throw new Error("Não foi possível carregar os cartões.");
@@ -175,7 +191,9 @@ export function AccountsPage() {
         account.initialBalanceCents === 0 ? "" : account.initialBalanceCents / 100,
       sortOrder: account.sortOrder,
       isPrimary: account.isPrimary,
-      paymentMethods: account.paymentMethods.filter((item) => item.isActive).map((item) => ({ paymentMethodId: item.paymentMethodId, isDefault: item.isDefault }))
+      paymentMethods: account.paymentMethods
+        .filter((item) => item.isActive)
+        .map((item) => ({ paymentMethodId: item.paymentMethodId, isDefault: item.isDefault }))
     });
     setIsModalOpen(true);
   }
@@ -209,8 +227,8 @@ export function AccountsPage() {
 
     try {
       const payload = buildAccountPayload(form);
-      const response = await fetch(
-        editingAccount ? `${apiBaseUrl}/accounts/${editingAccount.id}` : `${apiBaseUrl}/accounts`,
+      const response = await apiClient.raw(
+        editingAccount ? `/accounts/${editingAccount.id}` : `/accounts`,
         {
           method: editingAccount ? "PUT" : "POST",
           headers: {
@@ -264,8 +282,8 @@ export function AccountsPage() {
         paymentAccountId: toNullableSelectValue(cardForm.paymentAccountId),
         limitCents: parseOptionalMoneyToCents(cardForm.limitReais)
       };
-      const response = await fetch(
-        editingCard ? `${apiBaseUrl}/credit-cards/${editingCard.id}` : `${apiBaseUrl}/credit-cards`,
+      const response = await apiClient.raw(
+        editingCard ? `/credit-cards/${editingCard.id}` : `/credit-cards`,
         {
           method: editingCard ? "PUT" : "POST",
           headers: {
@@ -283,7 +301,7 @@ export function AccountsPage() {
       const shouldSetAsDefault = !editingCard && activeCards.length === 0 && savedCard?.id;
 
       if (shouldSetAsDefault) {
-        await fetch(`${apiBaseUrl}/credit-cards/${savedCard.id}/set-default`, { method: "PATCH" });
+        await apiClient.raw(`/credit-cards/${savedCard.id}/set-default`, { method: "PATCH" });
       }
 
       setIsCardDrawerOpen(false);
@@ -306,7 +324,7 @@ export function AccountsPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/accounts/${account.id}/archive`, {
+      const response = await apiClient.raw(`/accounts/${account.id}/archive`, {
         method: "PATCH"
       });
 
@@ -325,7 +343,7 @@ export function AccountsPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/accounts/${account.id}/restore`, {
+      const response = await apiClient.raw(`/accounts/${account.id}/restore`, {
         method: "PATCH"
       });
 
@@ -350,7 +368,7 @@ export function AccountsPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/credit-cards/${card.id}/archive`, {
+      const response = await apiClient.raw(`/credit-cards/${card.id}/archive`, {
         method: "PATCH"
       });
 
@@ -369,7 +387,7 @@ export function AccountsPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/credit-cards/${card.id}/restore`, {
+      const response = await apiClient.raw(`/credit-cards/${card.id}/restore`, {
         method: "PATCH"
       });
 
@@ -388,7 +406,7 @@ export function AccountsPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/credit-cards/${card.id}/set-default`, {
+      const response = await apiClient.raw(`/credit-cards/${card.id}/set-default`, {
         method: "PATCH"
       });
 
@@ -445,7 +463,11 @@ export function AccountsPage() {
             </Text>
           </div>
           <Group gap="xs">
-            <Button variant="light" onClick={() => setIsTransferOpen(true)} disabled={accounts.filter((account) => account.isActive).length < 2}>
+            <Button
+              variant="light"
+              onClick={() => setIsTransferOpen(true)}
+              disabled={accounts.filter((account) => account.isActive).length < 2}
+            >
               Transferir
             </Button>
             <Checkbox
@@ -516,7 +538,10 @@ export function AccountsPage() {
                           </Badge>
                         ) : null}
                         <Text size="sm" c="dimmed">
-                          {account.paymentMethods.filter((item) => item.isActive).map((item) => item.method.name).join(", ") || "Sem formas associadas"}
+                          {account.paymentMethods
+                            .filter((item) => item.isActive)
+                            .map((item) => item.method.name)
+                            .join(", ") || "Sem formas associadas"}
                         </Text>
                       </Stack>
                     </Table.Td>
@@ -701,7 +726,12 @@ export function AccountsPage() {
         )}
       </Paper>
 
-      <TransferDialog opened={isTransferOpen} accounts={accounts} onClose={() => setIsTransferOpen(false)} onCreated={() => void loadAccounts()} />
+      <TransferDialog
+        opened={isTransferOpen}
+        accounts={accounts}
+        onClose={() => setIsTransferOpen(false)}
+        onCreated={() => void loadAccounts()}
+      />
 
       <Modal
         opened={isModalOpen}
@@ -725,7 +755,11 @@ export function AccountsPage() {
             value={form.type}
             onChange={(value) => {
               const type = value ?? "checking";
-              setForm((current) => ({ ...current, type, paymentMethods: suggestPaymentMethods(type, paymentMethods) }));
+              setForm((current) => ({
+                ...current,
+                type,
+                paymentMethods: suggestPaymentMethods(type, paymentMethods)
+              }));
             }}
             required
           />
@@ -766,13 +800,53 @@ export function AccountsPage() {
             }}
           />
           <Stack gap="xs">
-            <Text fw={500} size="sm">Formas permitidas</Text>
-            <Text size="xs" c="dimmed">Escolha as formas aceitas nesta conta e marque uma como padrão.</Text>
-            {paymentMethods.filter((method) => method.isActive).map((method) => {
-              const selected = form.paymentMethods.some((item) => item.paymentMethodId === method.id);
-              const isDefault = form.paymentMethods.some((item) => item.paymentMethodId === method.id && item.isDefault);
-              return <Group key={method.id} justify="space-between"><Checkbox label={method.name} checked={selected} onChange={(event) => setForm((current) => ({ ...current, paymentMethods: togglePaymentMethod(current.paymentMethods, method.id, event.currentTarget.checked) }))}/><Button size="compact-xs" variant={isDefault ? "filled" : "subtle"} disabled={!selected} onClick={() => setForm((current) => ({ ...current, paymentMethods: setDefaultPaymentMethod(current.paymentMethods, method.id) }))}>{isDefault ? "Padrão" : "Tornar padrão"}</Button></Group>;
-            })}
+            <Text fw={500} size="sm">
+              Formas permitidas
+            </Text>
+            <Text size="xs" c="dimmed">
+              Escolha as formas aceitas nesta conta e marque uma como padrão.
+            </Text>
+            {paymentMethods
+              .filter((method) => method.isActive)
+              .map((method) => {
+                const selected = form.paymentMethods.some(
+                  (item) => item.paymentMethodId === method.id
+                );
+                const isDefault = form.paymentMethods.some(
+                  (item) => item.paymentMethodId === method.id && item.isDefault
+                );
+                return (
+                  <Group key={method.id} justify="space-between">
+                    <Checkbox
+                      label={method.name}
+                      checked={selected}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          paymentMethods: togglePaymentMethod(
+                            current.paymentMethods,
+                            method.id,
+                            event.currentTarget.checked
+                          )
+                        }))
+                      }
+                    />
+                    <Button
+                      size="compact-xs"
+                      variant={isDefault ? "filled" : "subtle"}
+                      disabled={!selected}
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          paymentMethods: setDefaultPaymentMethod(current.paymentMethods, method.id)
+                        }))
+                      }
+                    >
+                      {isDefault ? "Padrão" : "Tornar padrão"}
+                    </Button>
+                  </Group>
+                );
+              })}
           </Stack>
           <Group justify="flex-end">
             <Button variant="subtle" onClick={() => setIsModalOpen(false)}>

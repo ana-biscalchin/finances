@@ -134,7 +134,6 @@ type TransactionFormState = {
   installmentCount: number;
 };
 
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 const today = getTodayBusinessDate();
 const currentMonth = today.slice(0, 7);
 const emptySelectValue = "__none__";
@@ -271,9 +270,9 @@ export function TransactionsPage() {
     const [accountsResponse, paymentMethodsResponse, categoriesResponse, creditCardsResponse] =
       await Promise.all([
         apiClient.get("/accounts", accountsSchema),
-        fetch(`${apiBaseUrl}/payment-methods`),
-        fetch(`${apiBaseUrl}/categories?includeInactive=true`),
-        fetch(`${apiBaseUrl}/credit-cards`)
+        apiClient.raw(`/payment-methods`),
+        apiClient.raw(`/categories?includeInactive=true`),
+        apiClient.raw(`/credit-cards`)
       ]);
 
     if (!paymentMethodsResponse.ok || !categoriesResponse.ok || !creditCardsResponse.ok) {
@@ -303,7 +302,7 @@ export function TransactionsPage() {
         filterSubcategoryIds
       });
 
-      const response = await fetch(`${apiBaseUrl}/transactions?${params.toString()}`);
+      const response = await apiClient.raw(`/transactions?${params.toString()}`);
 
       if (!response.ok) {
         throw new Error("Não foi possível carregar os lançamentos.");
@@ -326,7 +325,7 @@ export function TransactionsPage() {
       filterPaymentMethodIds,
       filterSubcategoryIds
     });
-    window.open(`${apiBaseUrl}/transactions/export?${params.toString()}`, "_blank");
+    window.open(`/transactions/export?${params.toString()}`, "_blank");
   }
 
   useEffect(() => {
@@ -518,10 +517,8 @@ export function TransactionsPage() {
         }
       }
 
-      const response = await fetch(
-        editingTransaction
-          ? `${apiBaseUrl}/transactions/${editingTransaction.id}`
-          : `${apiBaseUrl}/transactions`,
+      const response = await apiClient.raw(
+        editingTransaction ? `/transactions/${editingTransaction.id}` : `/transactions`,
         {
           method: editingTransaction ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -574,7 +571,7 @@ export function TransactionsPage() {
       setError(null);
 
       try {
-        const response = await fetch(`${apiBaseUrl}/transactions/${transaction.id}`, {
+        const response = await apiClient.raw(`/transactions/${transaction.id}`, {
           method: "DELETE"
         });
 
@@ -611,7 +608,7 @@ export function TransactionsPage() {
       );
 
       try {
-        const response = await fetch(`${apiBaseUrl}/transactions/${transaction.id}`, {
+        const response = await apiClient.raw(`/transactions/${transaction.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1054,7 +1051,7 @@ export function TransactionsPage() {
           subcategoryId: nextTransaction.subcategoryId
         });
 
-        const response = await fetch(`${apiBaseUrl}/transactions/${transaction.id}`, {
+        const response = await apiClient.raw(`/transactions/${transaction.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
