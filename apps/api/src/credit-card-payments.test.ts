@@ -4,7 +4,8 @@ import {
   creditCardBillPayments,
   creditCardBills,
   creditCards,
-  transactions
+  transactions,
+  users
 } from "@finances/database";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -13,7 +14,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createBillPaymentService } from "./application/bill-payment-service.js";
-import { seedTestOwner } from "./test-support/owner.js";
+import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
 import { buildServer } from "./server.js";
 
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
@@ -41,6 +42,7 @@ describe("credit card bill payment service", () => {
       .insert(creditCards)
       .values({
         id: "card-1",
+        ownerId: "test-owner",
         name: "Cartão",
         closingDay: 10,
         dueDay: 20,
@@ -79,7 +81,7 @@ describe("credit card bill payment service", () => {
   });
 
   it("records partial, minimum, and final payments using the informed date", () => {
-    const service = createBillPaymentService(connection);
+    const service = createBillPaymentService(connection, TEST_OWNER_ID);
     const partial = service.pay("bill-1", "payment-key-1", {
       accountId: "account-1",
       paymentDate: "2026-07-18",
@@ -106,7 +108,7 @@ describe("credit card bill payment service", () => {
   });
 
   it("is idempotent and keeps interest and penalty in one decomposed cash movement", () => {
-    const service = createBillPaymentService(connection);
+    const service = createBillPaymentService(connection, TEST_OWNER_ID);
     const input = {
       accountId: "account-1",
       paymentDate: "2026-07-21",
@@ -126,7 +128,7 @@ describe("credit card bill payment service", () => {
   });
 
   it("reverses without deleting history and restores the derived bill state", () => {
-    const service = createBillPaymentService(connection);
+    const service = createBillPaymentService(connection, TEST_OWNER_ID);
     const paid = service.pay("bill-1", "payment-key", {
       accountId: "account-1",
       paymentDate: "2026-07-20",
@@ -155,7 +157,7 @@ describe("credit card bill payment service", () => {
   });
 
   it("rolls back all records when an intermediate write fails", () => {
-    const service = createBillPaymentService(connection, {
+    const service = createBillPaymentService(connection, TEST_OWNER_ID, {
       afterCashMovement() {
         throw new Error("simulated failure");
       }
@@ -175,7 +177,7 @@ describe("credit card bill payment service", () => {
   });
 
   it("exposes payment and reversal endpoints with an idempotency key", async () => {
-    const app = buildServer({ connection, logger: false });
+    const app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
     const response = await app.inject({
       method: "POST",
       url: "/credit-cards/card-1/bills/bill-1/payments",
@@ -197,7 +199,7 @@ describe("credit card bill payment service", () => {
   });
 
   it("rejects invalid, missing, conflicting, and excessive payment requests", () => {
-    const service = createBillPaymentService(connection);
+    const service = createBillPaymentService(connection, TEST_OWNER_ID);
     const valid = {
       accountId: "account-1",
       paymentDate: "2026-07-20",
@@ -286,7 +288,7 @@ describe("credit card bill payment service", () => {
         }
       ])
       .run();
-    const result = createBillPaymentService(connection).pay("bill-1", "refund-key", {
+    const result = createBillPaymentService(connection, TEST_OWNER_ID).pay("bill-1", "refund-key", {
       accountId: "account-1",
       paymentDate: "2026-07-20",
       amountCents: 10_000,
@@ -296,8 +298,8 @@ describe("credit card bill payment service", () => {
   });
 
   it("locks financial fields after payment but keeps metadata editable until reversal", async () => {
-    const app = buildServer({ connection, logger: false });
-    const paid = createBillPaymentService(connection).pay("bill-1", "lock-key", {
+    const app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
+    const paid = createBillPaymentService(connection, TEST_OWNER_ID).pay("bill-1", "lock-key", {
       accountId: "account-1",
       paymentDate: "2026-07-20",
       amountCents: 10_000,
@@ -335,7 +337,11 @@ describe("credit card bill payment service", () => {
       })
     );
 
-    createBillPaymentService(connection).reverse("bill-1", paid.payment.id, "2026-07-21T10:00:00Z");
+    createBillPaymentService(connection, TEST_OWNER_ID).reverse(
+      "bill-1",
+      paid.payment.id,
+      "2026-07-21T10:00:00Z"
+    );
     expect(
       (
         await app.inject({
@@ -354,7 +360,7 @@ describe("credit card bill payment service", () => {
       .set({ closedAt: "2026-07-10T10:00:00Z" })
       .where(eq(creditCardBills.id, "bill-1"))
       .run();
-    const app = buildServer({ connection, logger: false });
+    const app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
     const payload = {
       type: "expense",
       description: "Compra",
@@ -370,6 +376,123 @@ describe("credit card bill payment service", () => {
     expect(
       (await app.inject({ method: "DELETE", url: "/transactions/purchase-1" })).statusCode
     ).toBe(409);
+    await app.close();
+  });
+
+  it("does not enumerate or mutate a card, bill, or payment account from another identity", async () => {
+    connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "argon2id-test-only",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
+    connection.db
+      .insert(accounts)
+      .values({
+        id: "other-account",
+        ownerId: "other-owner",
+        name: "Conta alheia",
+        type: "checking"
+      })
+      .run();
+    connection.db
+      .insert(creditCards)
+      .values({
+        id: "other-card",
+        ownerId: "other-owner",
+        name: "Cartão alheio",
+        closingDay: 5,
+        dueDay: 15,
+        paymentAccountId: "other-account",
+        isDefault: true
+      })
+      .run();
+    connection.db
+      .insert(creditCardBills)
+      .values({
+        id: "other-bill",
+        creditCardId: "other-card",
+        billMonth: "2026-07",
+        dueDate: "2026-07-15"
+      })
+      .run();
+
+    const app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
+    const listed = await app.inject({ method: "GET", url: "/credit-cards?includeInactive=true" });
+    expect(listed.json().map((card: { id: string }) => card.id)).toEqual(["card-1"]);
+    expect((await app.inject({ method: "GET", url: "/credit-cards/other-card" })).statusCode).toBe(
+      404
+    );
+    expect(
+      (await app.inject({ method: "GET", url: "/credit-cards/other-card/bills?month=2026-07" }))
+        .statusCode
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: "/credit-cards/other-card",
+          payload: { name: "Invadido", closingDay: 5, dueDay: 15 }
+        })
+      ).statusCode
+    ).toBe(404);
+    expect(
+      (await app.inject({ method: "PATCH", url: "/credit-cards/other-card/set-default" }))
+        .statusCode
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/credit-cards/other-card/bills/other-bill/payments",
+          headers: { "idempotency-key": "forbidden" },
+          payload: {
+            accountId: "account-1",
+            paymentDate: "2026-07-10",
+            amountCents: 1,
+            principalCents: 1
+          }
+        })
+      ).statusCode
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/credit-cards",
+          payload: {
+            name: "Referência inválida",
+            closingDay: 5,
+            dueDay: 15,
+            paymentAccountId: "other-account"
+          }
+        })
+      ).statusCode
+    ).toBe(400);
+
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/credit-cards/card-1/bills/bill-1/payments",
+          headers: { "idempotency-key": "foreign-account" },
+          payload: {
+            accountId: "other-account",
+            paymentDate: "2026-07-10",
+            amountCents: 1,
+            principalCents: 1
+          }
+        })
+      ).statusCode
+    ).toBe(404);
+
+    expect(
+      connection.db.select().from(creditCards).where(eq(creditCards.id, "other-card")).get()
+    ).toEqual(expect.objectContaining({ name: "Cartão alheio", isDefault: true, isActive: true }));
+    expect(connection.db.select().from(creditCardBillPayments).all()).toEqual([]);
     await app.close();
   });
 });

@@ -116,6 +116,7 @@ describe("canonical monthly views", () => {
       .insert(creditCards)
       .values({
         id: "card",
+        ownerId: "test-owner",
         name: "Cartão",
         closingDay: 10,
         dueDay: 20,
@@ -124,7 +125,13 @@ describe("canonical monthly views", () => {
       .run();
     connection.db
       .insert(creditCards)
-      .values({ id: "card-no-account", name: "Sem conta", closingDay: 10, dueDay: 20 })
+      .values({
+        id: "card-no-account",
+        ownerId: "test-owner",
+        name: "Sem conta",
+        closingDay: 10,
+        dueDay: 20
+      })
       .run();
     connection.db
       .insert(creditCardBills)

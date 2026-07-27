@@ -146,18 +146,26 @@ export const subcategories = sqliteTable(
   ]
 );
 
-export const creditCards = sqliteTable("credit_cards", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  institution: text("institution"),
-  closingDay: integer("closing_day").notNull(),
-  dueDay: integer("due_day").notNull(),
-  paymentAccountId: text("payment_account_id").references(() => accounts.id),
-  limitCents: integer("limit_cents"),
-  isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
-  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-  ...timestamps
-});
+export const creditCards = sqliteTable(
+  "credit_cards",
+  {
+    id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
+    name: text("name").notNull(),
+    institution: text("institution"),
+    closingDay: integer("closing_day").notNull(),
+    dueDay: integer("due_day").notNull(),
+    paymentAccountId: text("payment_account_id").references(() => accounts.id),
+    limitCents: integer("limit_cents"),
+    isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    ...timestamps
+  },
+  (table) => [
+    index("credit_cards_owner_active_idx").on(table.ownerId, table.isActive),
+    index("credit_cards_owner_default_idx").on(table.ownerId, table.isDefault)
+  ]
+);
 
 export const creditCardBills = sqliteTable(
   "credit_card_bills",

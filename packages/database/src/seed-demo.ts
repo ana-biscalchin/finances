@@ -44,7 +44,7 @@ try {
 
     for (const item of seed.creditCards) {
       db.insert(creditCards)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: creditCards.id,
           set: { ...item, isActive: true, updatedAt: now }

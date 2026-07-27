@@ -29,6 +29,13 @@
       "when": 1785186094001,
       "tag": "0003_giant_zodiak",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1785186712979,
+      "tag": "0004_typical_terror",
+      "breakpoints": true
     }
   ]
 }

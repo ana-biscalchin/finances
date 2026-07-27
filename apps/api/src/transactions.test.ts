@@ -52,7 +52,7 @@ describe("canonical transactions API", () => {
       .run();
     connection.db
       .insert(creditCards)
-      .values({ id: "card", name: "Cartão", closingDay: 10, dueDay: 20 })
+      .values({ id: "card", ownerId: "test-owner", name: "Cartão", closingDay: 10, dueDay: 20 })
       .run();
     app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });

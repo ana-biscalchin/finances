@@ -43,7 +43,7 @@ describe("recurrence service", () => {
       .run();
     connection.db
       .insert(creditCards)
-      .values({ id: "card-1", name: "Cartão", closingDay: 10, dueDay: 20 })
+      .values({ id: "card-1", ownerId: "test-owner", name: "Cartão", closingDay: 10, dueDay: 20 })
       .run();
     connection.db
       .insert(categories)
