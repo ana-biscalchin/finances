@@ -473,6 +473,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       if (installmentCount > 1) {
         const created = buildCreditCardInstallmentTransactions(
           connection,
+          requestContextFrom(request).ownerId,
           transactionData,
           installmentCount
         );
@@ -486,7 +487,9 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         }
 
         for (const t of created) {
-          db.insert(transactions).values(t).run();
+          db.insert(transactions)
+            .values({ ...t, ownerId: requestContextFrom(request).ownerId })
+            .run();
         }
 
         createInstallmentMetadataForTransactions(connection, {
@@ -518,7 +521,9 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         updatedAt: new Date().toISOString()
       };
 
-      db.insert(transactions).values(transaction).run();
+      db.insert(transactions)
+        .values({ ...transaction, ownerId: requestContextFrom(request).ownerId })
+        .run();
       return reply.code(201).send(transaction);
     } catch (error) {
       return sendPayloadError(error, reply, "Erro ao salvar lançamento de cartão.");
@@ -619,6 +624,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       if (installmentCount > 1 && !preserveBillMonth) {
         const created = buildCreditCardInstallmentTransactions(
           connection,
+          requestContextFrom(request).ownerId,
           transactionData,
           installmentCount
         );
@@ -649,7 +655,10 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
             .where(eq(transactions.id, transactionId))
             .run();
 
-          for (const t of rest) db.insert(transactions).values(t).run();
+          for (const t of rest)
+            db.insert(transactions)
+              .values({ ...t, ownerId: requestContextFrom(request).ownerId })
+              .run();
 
           createInstallmentMetadataForTransactions(connection, {
             creditCardId: id,

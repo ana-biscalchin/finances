@@ -137,9 +137,13 @@ export function createTransferService(
       .values({ ...aggregate.transfer, ownerId, status: "active" })
       .run();
     const [outgoing, incoming] = aggregate.legs;
-    db.insert(transactions).values(outgoing).run();
+    db.insert(transactions)
+      .values({ ...outgoing, ownerId })
+      .run();
     hooks.afterOutgoingInsert?.();
-    db.insert(transactions).values(incoming).run();
+    db.insert(transactions)
+      .values({ ...incoming, ownerId })
+      .run();
   }
 
   return {

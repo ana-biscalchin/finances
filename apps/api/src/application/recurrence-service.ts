@@ -28,7 +28,7 @@ export class RecurrenceServiceError extends Error {
   }
 }
 
-export function createRecurrenceService(connection: Connection) {
+export function createRecurrenceService(connection: Connection, ownerId: string) {
   const { db } = connection;
   const get = (id: string) => {
     const rule = db.select().from(recurrenceRules).where(eq(recurrenceRules.id, id)).get();
@@ -180,6 +180,7 @@ export function createRecurrenceService(connection: Connection) {
       }
       const occurrence = {
         id: crypto.randomUUID(),
+        ownerId,
         type: forecast.kind,
         description: forecast.description,
         amountCents: forecast.amountCents,

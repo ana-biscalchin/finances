@@ -7,7 +7,8 @@ import {
   installments,
   paymentMethods,
   subcategories,
-  transactions
+  transactions,
+  users
 } from "@finances/database";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -263,5 +264,79 @@ describe("canonical transactions API", () => {
         .where(eq(installments.purchaseTransactionId, firstId))
         .all()
     ).toEqual([]);
+  });
+  it("does not expose, mutate, or reference transactions owned by another identity", async () => {
+    connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "argon2id-test-only",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
+    connection.db
+      .insert(accounts)
+      .values({
+        id: "other-account",
+        ownerId: "other-owner",
+        name: "Outra conta",
+        type: "checking"
+      })
+      .run();
+    connection.db
+      .insert(transactions)
+      .values({
+        id: "other-transaction",
+        ownerId: "other-owner",
+        accountId: "other-account",
+        type: "expense",
+        description: "Privada",
+        amountCents: 2500,
+        eventDate: "2026-07-20",
+        budgetMonth: "2026-07",
+        status: "confirmed"
+      })
+      .run();
+
+    const listed = await app.inject({ method: "GET", url: "/transactions?budgetMonth=2026-07" });
+    expect(listed.json()).toEqual([]);
+    expect(
+      (await app.inject({ method: "GET", url: "/transactions/other-transaction" })).statusCode
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/transactions/other-transaction/metadata",
+          payload: { description: "Invadida" }
+        })
+      ).statusCode
+    ).toBe(404);
+    expect(
+      (await app.inject({ method: "DELETE", url: "/transactions/other-transaction" })).statusCode
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/transactions",
+          payload: {
+            type: "expense",
+            description: "Referência cruzada",
+            amountCents: 1000,
+            eventDate: "2026-07-20",
+            accountId: "other-account"
+          }
+        })
+      ).statusCode
+    ).toBe(400);
+    expect(
+      connection.db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, "other-transaction"))
+        .get()
+    ).toEqual(expect.objectContaining({ description: "Privada", ownerId: "other-owner" }));
   });
 });

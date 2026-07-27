@@ -24,6 +24,8 @@ import {
 import { and, asc, desc, eq, gte, inArray, isNull, lte, type SQL } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
+import { requestContextFrom } from "../application/request-context.js";
+
 import {
   isRecord,
   parseOptionalString,
@@ -65,7 +67,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
   app.get("/transactions", async (request) => {
     const query = request.query as Record<string, unknown>;
-    const filters = buildTransactionFilters(query);
+    const filters = buildTransactionFilters(requestContextFrom(request).ownerId, query);
 
     const baseQuery = db.select().from(transactions);
     const queryWithFilters = filters.length > 0 ? baseQuery.where(and(...filters)) : baseQuery;
@@ -77,7 +79,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
   app.get("/transactions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const transaction = db.select().from(transactions).where(eq(transactions.id, id)).get();
+    const transaction = findOwnedTransaction(connection, requestContextFrom(request).ownerId, id);
 
     if (!transaction) {
       return reply.code(404).send({ message: "Lançamento não encontrado." });
@@ -93,12 +95,16 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply;
     }
 
-    if (!ensureReferencesOrReply(connection, payload, reply)) {
+    if (!ensureReferencesOrReply(connection, requestContextFrom(request).ownerId, payload, reply)) {
       return reply;
     }
 
     const { destinationAccountId, installmentCount, ...rawTransactionData } = payload;
-    const transferValidation = validateTransferPayload(connection, payload);
+    const transferValidation = validateTransferPayload(
+      connection,
+      requestContextFrom(request).ownerId,
+      payload
+    );
     if (transferValidation) {
       return reply.code(400).send({ message: transferValidation });
     }
@@ -108,6 +114,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     if (installmentCount > 1 && rawTransactionData.creditCardId) {
       const created = buildCreditCardInstallmentTransactions(
         connection,
+        requestContextFrom(request).ownerId,
         rawTransactionData,
         installmentCount
       );
@@ -121,7 +128,9 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       }
 
       for (const t of created) {
-        db.insert(transactions).values(t).run();
+        db.insert(transactions)
+          .values({ ...t, ownerId: requestContextFrom(request).ownerId })
+          .run();
       }
 
       createInstallmentMetadataForTransactions(connection, {
@@ -140,10 +149,15 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply.code(201).send(created);
     }
 
-    if (destinationAccountId) return reply.code(400).send({ message: "Use o endpoint /transfers para transferências." });
+    if (destinationAccountId)
+      return reply.code(400).send({ message: "Use o endpoint /transfers para transferências." });
 
     // ── Single transaction ─────────────────────────────────────────────
-    const transactionData = normalizeTransactionForStorage(connection, rawTransactionData);
+    const transactionData = normalizeTransactionForStorage(
+      connection,
+      requestContextFrom(request).ownerId,
+      rawTransactionData
+    );
     if (
       transactionData.creditCardId &&
       transactionData.creditCardBillId &&
@@ -156,7 +170,8 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
     const transaction = {
       id: transactionId,
-      ...transactionData,
+      ownerId: requestContextFrom(request).ownerId,
+      ...transactionData
     };
 
     db.insert(transactions).values(transaction).run();
@@ -165,7 +180,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
   app.put("/transactions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const current = db.select().from(transactions).where(eq(transactions.id, id)).get();
+    const current = findOwnedTransaction(connection, requestContextFrom(request).ownerId, id);
 
     if (!current) {
       return reply.code(404).send({ message: "Lançamento não encontrado." });
@@ -183,11 +198,15 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       return reply;
     }
 
-    if (!ensureReferencesOrReply(connection, payload, reply)) {
+    if (!ensureReferencesOrReply(connection, requestContextFrom(request).ownerId, payload, reply)) {
       return reply;
     }
 
-    const transferValidation = validateTransferPayload(connection, payload);
+    const transferValidation = validateTransferPayload(
+      connection,
+      requestContextFrom(request).ownerId,
+      payload
+    );
     if (transferValidation) {
       return reply.code(400).send({ message: transferValidation });
     }
@@ -198,6 +217,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     if (installmentCount > 1 && rawTransactionData.creditCardId) {
       const created = buildCreditCardInstallmentTransactions(
         connection,
+        requestContextFrom(request).ownerId,
         rawTransactionData,
         installmentCount
       );
@@ -216,11 +236,18 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
           notes: first.notes,
           updatedAt: new Date().toISOString()
         })
-        .where(eq(transactions.id, id))
+        .where(
+          and(
+            eq(transactions.ownerId, requestContextFrom(request).ownerId),
+            eq(transactions.id, id)
+          )
+        )
         .run();
 
       for (const t of rest) {
-        db.insert(transactions).values(t).run();
+        db.insert(transactions)
+          .values({ ...t, ownerId: requestContextFrom(request).ownerId })
+          .run();
       }
 
       createInstallmentMetadataForTransactions(connection, {
@@ -236,27 +263,34 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         }))
       });
 
-      const updated = db.select().from(transactions).where(eq(transactions.id, id)).get();
+      const updated = findOwnedTransaction(connection, requestContextFrom(request).ownerId, id);
       return reply.code(200).send(updated);
     }
 
-    const transactionData = normalizeTransactionForStorage(connection, rawTransactionData);
+    const transactionData = normalizeTransactionForStorage(
+      connection,
+      requestContextFrom(request).ownerId,
+      rawTransactionData
+    );
 
-    if (destinationAccountId) return reply.code(400).send({ message: "Use o endpoint /transfers para transferências." });
+    if (destinationAccountId)
+      return reply.code(400).send({ message: "Use o endpoint /transfers para transferências." });
     db.update(transactions)
       .set({
         ...transactionData,
         updatedAt: new Date().toISOString()
       })
-      .where(eq(transactions.id, id))
+      .where(
+        and(eq(transactions.ownerId, requestContextFrom(request).ownerId), eq(transactions.id, id))
+      )
       .run();
 
-    return db.select().from(transactions).where(eq(transactions.id, id)).get();
+    return findOwnedTransaction(connection, requestContextFrom(request).ownerId, id);
   });
 
   app.patch("/transactions/:id/metadata", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const current = db.select().from(transactions).where(eq(transactions.id, id)).get();
+    const current = findOwnedTransaction(connection, requestContextFrom(request).ownerId, id);
     if (!current) return reply.code(404).send({ message: "Lançamento não encontrado." });
     const body = isRecord(request.body) ? request.body : {};
     let description: string;
@@ -269,17 +303,27 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     } catch (error) {
       return sendPayloadError(error, reply, "Metadados inválidos.");
     }
-    if (subcategoryId && !db.select().from(subcategories).where(eq(subcategories.id, subcategoryId)).get()) {
+    try {
+      ensureOptionalSubcategoryExists(
+        connection,
+        requestContextFrom(request).ownerId,
+        subcategoryId
+      );
+    } catch {
       return reply.code(400).send({ message: "Subcategoria não encontrada." });
     }
-    db.update(transactions).set({ description, subcategoryId, notes, updatedAt: new Date().toISOString() })
-      .where(eq(transactions.id, id)).run();
-    return db.select().from(transactions).where(eq(transactions.id, id)).get();
+    db.update(transactions)
+      .set({ description, subcategoryId, notes, updatedAt: new Date().toISOString() })
+      .where(
+        and(eq(transactions.ownerId, requestContextFrom(request).ownerId), eq(transactions.id, id))
+      )
+      .run();
+    return findOwnedTransaction(connection, requestContextFrom(request).ownerId, id);
   });
 
   app.delete("/transactions/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const current = db.select().from(transactions).where(eq(transactions.id, id)).get();
+    const current = findOwnedTransaction(connection, requestContextFrom(request).ownerId, id);
 
     if (!current) {
       return reply.code(404).send({ message: "Lançamento não encontrado." });
@@ -290,14 +334,21 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       current.creditCardBillId &&
       isBillFinanciallyLocked(db, current.creditCardBillId)
     ) {
-      return reply
-        .code(409)
-        .send({ message: "Não é possível excluir lançamentos de uma fatura fechada ou com pagamento." });
+      return reply.code(409).send({
+        message: "Não é possível excluir lançamentos de uma fatura fechada ou com pagamento."
+      });
     }
 
     db.transaction((tx) => {
       tx.delete(installments).where(eq(installments.purchaseTransactionId, id)).run();
-      tx.delete(transactions).where(eq(transactions.id, id)).run();
+      tx.delete(transactions)
+        .where(
+          and(
+            eq(transactions.ownerId, requestContextFrom(request).ownerId),
+            eq(transactions.id, id)
+          )
+        )
+        .run();
     });
 
     return reply.code(204).send();
@@ -305,7 +356,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
   app.get("/transactions/export", async (request, reply) => {
     const query = request.query as Record<string, unknown>;
-    const filters = buildTransactionFilters(query);
+    const filters = buildTransactionFilters(requestContextFrom(request).ownerId, query);
 
     const baseQuery = db
       .select({
@@ -431,7 +482,16 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
     }
 
     const card = defaultCreditCardId
-      ? db.select().from(creditCards).where(eq(creditCards.id, defaultCreditCardId)).get()
+      ? db
+          .select()
+          .from(creditCards)
+          .where(
+            and(
+              eq(creditCards.ownerId, requestContextFrom(request).ownerId),
+              eq(creditCards.id, defaultCreditCardId)
+            )
+          )
+          .get()
       : null;
 
     if (defaultCreditCardId && !card) {
@@ -446,7 +506,13 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         nature: dbCategories.nature
       })
       .from(subcategories)
-      .leftJoin(dbCategories, eq(subcategories.categoryId, dbCategories.id))
+      .innerJoin(
+        dbCategories,
+        and(
+          eq(subcategories.categoryId, dbCategories.id),
+          eq(dbCategories.ownerId, requestContextFrom(request).ownerId)
+        )
+      )
       .all();
 
     const parsedItems = csvRows
@@ -578,9 +644,12 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       .from(transactions)
       .leftJoin(accounts, eq(transactions.accountId, accounts.id))
       .where(
-        budgetMonths.length > 0
-          ? inArray(transactions.budgetMonth, budgetMonths)
-          : and(gte(transactions.eventDate, minDateStr), lte(transactions.eventDate, maxDateStr))
+        and(
+          eq(transactions.ownerId, requestContextFrom(request).ownerId),
+          budgetMonths.length > 0
+            ? inArray(transactions.budgetMonth, budgetMonths)
+            : and(gte(transactions.eventDate, minDateStr), lte(transactions.eventDate, maxDateStr))
+        )
       )
       .all();
 
@@ -662,14 +731,29 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       for (const t of body.transactions!) {
         const id = crypto.randomUUID();
         const eventDate = assertBusinessDate(t.eventDate);
-        ensureOptionalAccountExists(connection, t.creditCardId ? null : t.accountId ?? null);
-        ensureOptionalPaymentMethodExists(connection, t.creditCardId ? null : t.paymentMethodId ?? null);
-        ensureOptionalSubcategoryExists(connection, t.subcategoryId ?? null);
-        ensureOptionalCreditCardExists(connection, t.creditCardId ?? null);
+        ensureOptionalAccountExists(
+          connection,
+          requestContextFrom(request).ownerId,
+          t.creditCardId ? null : (t.accountId ?? null)
+        );
+        ensureOptionalPaymentMethodExists(
+          connection,
+          t.creditCardId ? null : (t.paymentMethodId ?? null)
+        );
+        ensureOptionalSubcategoryExists(
+          connection,
+          requestContextFrom(request).ownerId,
+          t.subcategoryId ?? null
+        );
+        ensureOptionalCreditCardExists(
+          connection,
+          requestContextFrom(request).ownerId,
+          t.creditCardId ?? null
+        );
         ensurePaymentSource(connection, {
           type: t.type,
-          accountId: t.creditCardId ? null : t.accountId ?? null,
-          paymentMethodId: t.creditCardId ? null : t.paymentMethodId ?? null,
+          accountId: t.creditCardId ? null : (t.accountId ?? null),
+          paymentMethodId: t.creditCardId ? null : (t.paymentMethodId ?? null),
           creditCardId: t.creditCardId ?? null,
           subcategoryId: t.subcategoryId ?? null
         });
@@ -682,7 +766,12 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
           const card = tx
             .select()
             .from(creditCards)
-            .where(eq(creditCards.id, t.creditCardId))
+            .where(
+              and(
+                eq(creditCards.ownerId, requestContextFrom(request).ownerId),
+                eq(creditCards.id, t.creditCardId)
+              )
+            )
             .get();
           if (!card) {
             throw new ValidationError("Cartão de crédito não encontrado.");
@@ -736,6 +825,7 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
 
         const newTx = {
           id,
+          ownerId: requestContextFrom(request).ownerId,
           type: assertTransactionType(t.type),
           description: t.description || "Transação Importada",
           amountCents: t.amountCents,
@@ -777,8 +867,17 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
   });
 }
 
-function buildTransactionFilters(query: Record<string, unknown>): SQL[] {
+function findOwnedTransaction(connection: DatabaseConnection, ownerId: string, id: string) {
+  return connection.db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.ownerId, ownerId), eq(transactions.id, id)))
+    .get();
+}
+
+function buildTransactionFilters(ownerId: string, query: Record<string, unknown>): SQL[] {
   return [
+    eq(transactions.ownerId, ownerId),
     typeof query.budgetMonth === "string" && query.budgetMonth
       ? eq(transactions.budgetMonth, assertYearMonth(query.budgetMonth))
       : undefined,
@@ -877,15 +976,17 @@ function parseTransactionPayload(body: unknown) {
 
 function validateTransferPayload(
   connection: DatabaseConnection,
+  ownerId: string,
   payload: ParsedTransactionPayload
 ) {
-  const isTransferSubcategory = isTransferSubcategoryId(connection, payload.subcategoryId);
+  const isTransferSubcategory = isTransferSubcategoryId(connection, ownerId, payload.subcategoryId);
   const hasDestination = Boolean(payload.destinationAccountId);
   if (payload.creditCardId && (isTransferSubcategory || hasDestination)) {
     return "Compra no cartão não pode ser transferência entre contas.";
   }
 
-  if (isTransferSubcategory || hasDestination) return "Use o endpoint /transfers para transferências entre contas.";
+  if (isTransferSubcategory || hasDestination)
+    return "Use o endpoint /transfers para transferências entre contas.";
 
   if (payload.destinationAccountId && payload.accountId === payload.destinationAccountId) {
     return "Conta de origem e conta de destino devem ser diferentes.";
@@ -894,7 +995,11 @@ function validateTransferPayload(
   return null;
 }
 
-function isTransferSubcategoryId(connection: DatabaseConnection, subcategoryId: string | null) {
+function isTransferSubcategoryId(
+  connection: DatabaseConnection,
+  ownerId: string,
+  subcategoryId: string | null
+) {
   if (!subcategoryId) {
     return false;
   }
@@ -913,13 +1018,14 @@ function isTransferSubcategoryId(connection: DatabaseConnection, subcategoryId: 
 
 function normalizeTransactionForStorage(
   connection: DatabaseConnection,
+  ownerId: string,
   transactionData: TransactionData
 ): TransactionData {
   if (!transactionData.creditCardId) {
     return transactionData;
   }
 
-  const card = getCreditCardOrThrow(connection, transactionData.creditCardId);
+  const card = getCreditCardOrThrow(connection, ownerId, transactionData.creditCardId);
   const budgetMonth = getCreditCardBillMonth(transactionData.eventDate, card.closingDay);
   const bill = getOrCreateCreditCardBill(connection, card, budgetMonth);
 
@@ -934,6 +1040,7 @@ function normalizeTransactionForStorage(
 
 export function buildCreditCardInstallmentTransactions(
   connection: DatabaseConnection,
+  ownerId: string,
   transactionData: TransactionData,
   installmentCount: number
 ) {
@@ -941,7 +1048,7 @@ export function buildCreditCardInstallmentTransactions(
     throw new ValidationError("Parcelamento exige cartão de crédito.");
   }
 
-  const card = getCreditCardOrThrow(connection, transactionData.creditCardId);
+  const card = getCreditCardOrThrow(connection, ownerId, transactionData.creditCardId);
   const firstBillMonth = getCreditCardBillMonth(transactionData.eventDate, card.closingDay);
   const baseAmountCents = Math.floor(transactionData.amountCents / installmentCount);
 
@@ -960,16 +1067,20 @@ export function buildCreditCardInstallmentTransactions(
       budgetMonth,
       accountId: null,
       paymentMethodId: null,
-      creditCardBillId: bill.id,
+      creditCardBillId: bill.id
     };
   });
 }
 
-function getCreditCardOrThrow(connection: DatabaseConnection, creditCardId: string) {
+function getCreditCardOrThrow(
+  connection: DatabaseConnection,
+  ownerId: string,
+  creditCardId: string
+) {
   const card = connection.db
     .select()
     .from(creditCards)
-    .where(eq(creditCards.id, creditCardId))
+    .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.id, creditCardId)))
     .get();
 
   if (!card) {
@@ -1031,12 +1142,21 @@ export function isBillPaid(db: DatabaseConnection["db"], billId: string | null):
 }
 
 export function isBillFinanciallyLocked(db: DatabaseConnection["db"], billId: string): boolean {
-  const bill = db.select({ closedAt: creditCardBills.closedAt }).from(creditCardBills)
-    .where(eq(creditCardBills.id, billId)).get();
+  const bill = db
+    .select({ closedAt: creditCardBills.closedAt })
+    .from(creditCardBills)
+    .where(eq(creditCardBills.id, billId))
+    .get();
   if (bill?.closedAt) return true;
-  return db.select({ id: creditCardBillPayments.id }).from(creditCardBillPayments)
-    .where(and(eq(creditCardBillPayments.billId, billId), isNull(creditCardBillPayments.reversedAt)))
-    .get() !== undefined;
+  return (
+    db
+      .select({ id: creditCardBillPayments.id })
+      .from(creditCardBillPayments)
+      .where(
+        and(eq(creditCardBillPayments.billId, billId), isNull(creditCardBillPayments.reversedAt))
+      )
+      .get() !== undefined
+  );
 }
 
 function parseTransactionPayloadOrReply(body: unknown, reply: FastifyReply) {
@@ -1049,14 +1169,15 @@ function parseTransactionPayloadOrReply(body: unknown, reply: FastifyReply) {
 
 function ensureReferencesOrReply(
   connection: DatabaseConnection,
+  ownerId: string,
   payload: ReturnType<typeof parseTransactionPayload>,
   reply: FastifyReply
 ) {
   try {
-    ensureOptionalAccountExists(connection, payload.accountId);
+    ensureOptionalAccountExists(connection, ownerId, payload.accountId);
     ensureOptionalPaymentMethodExists(connection, payload.paymentMethodId);
-    ensureOptionalSubcategoryExists(connection, payload.subcategoryId);
-    ensureOptionalCreditCardExists(connection, payload.creditCardId);
+    ensureOptionalSubcategoryExists(connection, ownerId, payload.subcategoryId);
+    ensureOptionalCreditCardExists(connection, ownerId, payload.creditCardId);
     ensurePaymentSource(connection, payload);
     return true;
   } catch (error) {
@@ -1067,7 +1188,10 @@ function ensureReferencesOrReply(
 
 function ensurePaymentSource(
   connection: DatabaseConnection,
-  payload: Pick<ParsedTransactionPayload, "type" | "accountId" | "paymentMethodId" | "creditCardId" | "subcategoryId">
+  payload: Pick<
+    ParsedTransactionPayload,
+    "type" | "accountId" | "paymentMethodId" | "creditCardId" | "subcategoryId"
+  >
 ) {
   if (payload.creditCardId) return;
   const isConsumption = payload.type === "expense" && Boolean(payload.subcategoryId);
@@ -1078,12 +1202,20 @@ function ensurePaymentSource(
   validateActiveAccountPaymentMethod(connection, payload.accountId, payload.paymentMethodId);
 }
 
-function ensureOptionalAccountExists(connection: DatabaseConnection, accountId: string | null) {
+function ensureOptionalAccountExists(
+  connection: DatabaseConnection,
+  ownerId: string,
+  accountId: string | null
+) {
   if (!accountId) {
     return;
   }
 
-  const account = connection.db.select().from(accounts).where(eq(accounts.id, accountId)).get();
+  const account = connection.db
+    .select()
+    .from(accounts)
+    .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, accountId)))
+    .get();
 
   if (!account) {
     throw new ValidationError("Conta não encontrada.");
@@ -1111,6 +1243,7 @@ function ensureOptionalPaymentMethodExists(
 
 function ensureOptionalSubcategoryExists(
   connection: DatabaseConnection,
+  ownerId: string,
   subcategoryId: string | null
 ) {
   if (!subcategoryId) {
@@ -1120,6 +1253,10 @@ function ensureOptionalSubcategoryExists(
   const sub = connection.db
     .select()
     .from(subcategories)
+    .innerJoin(
+      dbCategories,
+      and(eq(subcategories.categoryId, dbCategories.id), eq(dbCategories.ownerId, ownerId))
+    )
     .where(eq(subcategories.id, subcategoryId))
     .get();
 
@@ -1130,6 +1267,7 @@ function ensureOptionalSubcategoryExists(
 
 function ensureOptionalCreditCardExists(
   connection: DatabaseConnection,
+  ownerId: string,
   creditCardId: string | null
 ) {
   if (!creditCardId) {
@@ -1139,7 +1277,7 @@ function ensureOptionalCreditCardExists(
   const card = connection.db
     .select()
     .from(creditCards)
-    .where(eq(creditCards.id, creditCardId))
+    .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.id, creditCardId)))
     .get();
 
   if (!card) {
@@ -1533,7 +1671,12 @@ function isDuplicateImportedTransaction(
     const existingCardTransactions = db
       .select()
       .from(transactions)
-      .where(eq(transactions.budgetMonth, candidate.budgetMonth))
+      .where(
+        and(
+          eq(transactions.ownerId, candidate.ownerId),
+          eq(transactions.budgetMonth, candidate.budgetMonth)
+        )
+      )
       .all();
 
     return existingCardTransactions.some((transaction) => {
@@ -1559,6 +1702,7 @@ function isDuplicateImportedTransaction(
     .from(transactions)
     .where(
       and(
+        eq(transactions.ownerId, candidate.ownerId),
         eq(transactions.amountCents, candidate.amountCents),
         eq(transactions.eventDate, candidate.eventDate),
         eq(transactions.description, candidate.description),

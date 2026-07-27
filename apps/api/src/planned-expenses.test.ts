@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { seedTestOwner } from "./test-support/owner.js";
+import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
 import { buildServer } from "./server.js";
 
 describe("planned expenses API", () => {
@@ -36,7 +36,7 @@ describe("planned expenses API", () => {
       .insert(subcategories)
       .values({ id: "housing", categoryId: "home", name: "Despesas da casa" })
       .run();
-    app = buildServer({ connection, logger: false });
+    app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });
   afterEach(async () => {
     await app.close();
@@ -69,6 +69,7 @@ describe("planned expenses API", () => {
       .values([
         {
           id: "energy-a",
+          ownerId: "test-owner",
           type: "expense",
           description: "Energia parcial",
           amountCents: 9_000,
@@ -80,6 +81,7 @@ describe("planned expenses API", () => {
         },
         {
           id: "energy-b",
+          ownerId: "test-owner",
           type: "expense",
           description: "Energia restante",
           amountCents: 12_000,

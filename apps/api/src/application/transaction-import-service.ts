@@ -1,6 +1,7 @@
 import {
   accountPaymentMethods,
   accounts,
+  categories,
   creditCardBillPayments,
   creditCardBills,
   creditCards,
@@ -30,8 +31,20 @@ const key = (item: DuplicateKeyItem) =>
     item.accountId ?? "",
     item.creditCardId ?? ""
   ].join("|");
-export function createTransactionImportService(connection: Connection, hooks: Hooks = {}) {
-  const existingKeys = () => new Set(connection.db.select().from(transactions).all().map(key));
+export function createTransactionImportService(
+  connection: Connection,
+  ownerId: string,
+  hooks: Hooks = {}
+) {
+  const existingKeys = () =>
+    new Set(
+      connection.db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.ownerId, ownerId))
+        .all()
+        .map(key)
+    );
   const billLocked = (billId: string) => {
     const bill = connection.db
       .select()
@@ -78,21 +91,37 @@ export function createTransactionImportService(connection: Connection, hooks: Ho
           }
           const item = result.data;
           const account = item.accountId
-            ? connection.db.select().from(accounts).where(eq(accounts.id, item.accountId)).get()
+            ? connection.db
+                .select()
+                .from(accounts)
+                .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, item.accountId)))
+                .get()
             : null;
           const method = item.paymentMethodId
-            ? connection.db.select().from(paymentMethods).where(eq(paymentMethods.id, item.paymentMethodId)).get()
+            ? connection.db
+                .select()
+                .from(paymentMethods)
+                .where(eq(paymentMethods.id, item.paymentMethodId))
+                .get()
             : null;
           const accountValid = !item.accountId || Boolean(account?.isActive);
           const methodValid = !item.paymentMethodId || Boolean(method?.isActive);
           const associationValid =
             !item.accountId ||
             !item.paymentMethodId ||
-            Boolean(connection.db.select().from(accountPaymentMethods).where(and(
-              eq(accountPaymentMethods.accountId, item.accountId),
-              eq(accountPaymentMethods.paymentMethodId, item.paymentMethodId),
-              eq(accountPaymentMethods.isActive, true)
-            )).get());
+            Boolean(
+              connection.db
+                .select()
+                .from(accountPaymentMethods)
+                .where(
+                  and(
+                    eq(accountPaymentMethods.accountId, item.accountId),
+                    eq(accountPaymentMethods.paymentMethodId, item.paymentMethodId),
+                    eq(accountPaymentMethods.isActive, true)
+                  )
+                )
+                .get()
+            );
           const consumptionSourceValid =
             item.type !== "expense" ||
             !item.subcategoryId ||
@@ -102,13 +131,17 @@ export function createTransactionImportService(connection: Connection, hooks: Ho
             connection.db
               .select()
               .from(subcategories)
+              .innerJoin(
+                categories,
+                and(eq(subcategories.categoryId, categories.id), eq(categories.ownerId, ownerId))
+              )
               .where(eq(subcategories.id, item.subcategoryId))
               .get();
           const card = item.creditCardId
             ? connection.db
                 .select()
                 .from(creditCards)
-                .where(eq(creditCards.id, item.creditCardId))
+                .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.id, item.creditCardId)))
                 .get()
             : null;
           const informedBill = item.creditCardBillId
@@ -175,6 +208,7 @@ export function createTransactionImportService(connection: Connection, hooks: Ho
             .insert(transactions)
             .values({
               id: crypto.randomUUID(),
+              ownerId,
               ...item,
               accountId: item.creditCardId ? null : item.accountId,
               paymentMethodId: item.creditCardId ? null : item.paymentMethodId,

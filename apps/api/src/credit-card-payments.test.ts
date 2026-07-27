@@ -63,6 +63,7 @@ describe("credit card bill payment service", () => {
       .insert(transactions)
       .values({
         id: "purchase-1",
+        ownerId: TEST_OWNER_ID,
         type: "expense",
         description: "Compra",
         amountCents: 100_000,
@@ -255,6 +256,7 @@ describe("credit card bill payment service", () => {
       .values([
         {
           id: "refund-1",
+          ownerId: TEST_OWNER_ID,
           type: "refund",
           description: "Reembolso",
           amountCents: 1_000,
@@ -266,6 +268,7 @@ describe("credit card bill payment service", () => {
         },
         {
           id: "chargeback-1",
+          ownerId: TEST_OWNER_ID,
           type: "chargeback",
           description: "Estorno",
           amountCents: 1_000,
@@ -277,6 +280,7 @@ describe("credit card bill payment service", () => {
         },
         {
           id: "income-1",
+          ownerId: TEST_OWNER_ID,
           type: "income",
           description: "Ignorada",
           amountCents: 1_000,

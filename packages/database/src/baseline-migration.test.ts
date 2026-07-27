@@ -10,7 +10,7 @@ describe("canonical database baseline", () => {
   it("applies the baseline and additive migrations and creates an integral schema", () => {
     const migrationsFolder = resolve(process.cwd(), "drizzle");
     const sqlFiles = readdirSync(migrationsFolder).filter((name) => name.endsWith(".sql"));
-    expect(sqlFiles).toHaveLength(6);
+    expect(sqlFiles).toHaveLength(7);
     expect(readFileSync(resolve(migrationsFolder, "0001_last_cerebro.sql"), "utf8")).not.toContain(
       "DROP TABLE"
     );

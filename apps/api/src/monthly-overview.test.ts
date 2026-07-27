@@ -17,7 +17,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { seedTestOwner } from "./test-support/owner.js";
+import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
 import { createMonthlyOverviewService } from "./application/monthly-overview-service.js";
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
 describe("canonical monthly views", () => {
@@ -63,7 +63,7 @@ describe("canonical monthly views", () => {
     rmSync(dir, { recursive: true, force: true });
   });
   it("returns spending without counting transfer and exposes account risk", () => {
-    const service = createMonthlyOverviewService(connection);
+    const service = createMonthlyOverviewService(connection, TEST_OWNER_ID);
     connection.db
       .insert(plannedExpenses)
       .values({
@@ -82,6 +82,7 @@ describe("canonical monthly views", () => {
       .values([
         {
           id: "expense",
+          ownerId: TEST_OWNER_ID,
           type: "expense",
           description: "Conta",
           amountCents: 30_000,
@@ -93,6 +94,7 @@ describe("canonical monthly views", () => {
         },
         {
           id: "income",
+          ownerId: TEST_OWNER_ID,
           type: "income",
           description: "Receita",
           amountCents: 10_000,
@@ -111,7 +113,7 @@ describe("canonical monthly views", () => {
     );
   });
   it("includes account forecasts and only the unpaid principal of card bills", () => {
-    const service = createMonthlyOverviewService(connection);
+    const service = createMonthlyOverviewService(connection, TEST_OWNER_ID);
     connection.db
       .insert(creditCards)
       .values({
@@ -167,6 +169,7 @@ describe("canonical monthly views", () => {
       .values([
         {
           id: "purchase",
+          ownerId: TEST_OWNER_ID,
           type: "expense",
           description: "Compra",
           amountCents: 50_000,
@@ -179,6 +182,7 @@ describe("canonical monthly views", () => {
         },
         {
           id: "cash-payment",
+          ownerId: TEST_OWNER_ID,
           type: "expense",
           description: "Pagamento",
           amountCents: 10_000,
@@ -190,6 +194,7 @@ describe("canonical monthly views", () => {
         },
         {
           id: "unassigned-purchase",
+          ownerId: TEST_OWNER_ID,
           type: "expense",
           description: "Sem conta pagadora",
           amountCents: 5_000,
@@ -228,6 +233,7 @@ describe("canonical monthly views", () => {
       .insert(transactions)
       .values({
         id: "confirmed-recurrence",
+        ownerId: TEST_OWNER_ID,
         type: "expense",
         description: "Prevista",
         amountCents: 20_000,

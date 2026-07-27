@@ -16,7 +16,7 @@ const previousMonth = (month: string) => {
   const date = new Date(year!, value! - 2, 1);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 };
-export function createMonthlyOverviewService(connection: Connection) {
+export function createMonthlyOverviewService(connection: Connection, ownerId: string) {
   const { db } = connection;
   const planning = createPaymentSourcePlanningService(connection);
   return {
@@ -37,7 +37,7 @@ export function createMonthlyOverviewService(connection: Connection) {
           )
           .map((item) => `${item.recurrenceRuleId}:${item.recurrenceMonth}`)
       );
-      const recurrence = createRecurrenceService(connection);
+      const recurrence = createRecurrenceService(connection, ownerId);
       const allForecasts = [previousMonth(month), month]
         .flatMap((occurrenceMonth) =>
           recurrence.forecast(occurrenceMonth).map((item) => ({ ...item, occurrenceMonth }))
@@ -150,6 +150,6 @@ export function createMonthlyOverviewService(connection: Connection) {
             }
           ]
         : projection;
-    },
+    }
   };
 }

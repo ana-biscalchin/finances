@@ -261,6 +261,7 @@ describe("atomic account transfers", () => {
       .values([
         {
           id: "other-out",
+          ownerId: "other-owner",
           transferId: "other-transfer",
           accountId: "other-source",
           type: "expense",
@@ -272,6 +273,7 @@ describe("atomic account transfers", () => {
         },
         {
           id: "other-in",
+          ownerId: "other-owner",
           transferId: "other-transfer",
           accountId: "other-destination",
           type: "income",

@@ -260,6 +260,7 @@ export const transactions = sqliteTable(
   "transactions",
   {
     id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
     type: text("type").notNull(),
     description: text("description").notNull(),
     amountCents: integer("amount_cents").notNull(),
@@ -278,6 +279,8 @@ export const transactions = sqliteTable(
     ...timestamps
   },
   (table) => [
+    index("transactions_owner_budget_month_idx").on(table.ownerId, table.budgetMonth),
+    index("transactions_owner_event_date_idx").on(table.ownerId, table.eventDate),
     index("transactions_budget_month_idx").on(table.budgetMonth),
     index("transactions_budget_month_event_idx").on(
       table.budgetMonth,
@@ -293,7 +296,8 @@ export const transactions = sqliteTable(
     index("transactions_credit_card_month_idx").on(table.creditCardId, table.budgetMonth),
     index("transactions_credit_card_bill_idx").on(table.creditCardBillId),
     index("transactions_transfer_idx").on(table.transferId),
-    uniqueIndex("transactions_recurrence_month_unique").on(
+    uniqueIndex("transactions_owner_recurrence_month_unique").on(
+      table.ownerId,
       table.recurrenceRuleId,
       table.recurrenceMonth
     ),

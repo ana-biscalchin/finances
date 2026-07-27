@@ -151,6 +151,7 @@ export function createBillPaymentService(
         db.insert(transactions)
           .values({
             id: transactionId,
+            ownerId,
             type: "expense",
             description: `Pagamento de fatura ${bill.billMonth}`,
             amountCents: parsed.amountCents,

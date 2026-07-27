@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { seedTestOwner } from "./test-support/owner.js";
+import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
 import { createRecurrenceService } from "./application/recurrence-service.js";
 
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
@@ -60,7 +60,7 @@ describe("recurrence service", () => {
   });
 
   it("forecasts without materializing and confirms one account occurrence per month", () => {
-    const service = createRecurrenceService(connection);
+    const service = createRecurrenceService(connection, TEST_OWNER_ID);
     const rule = service.create({
       kind: "expense",
       description: "Aluguel",
@@ -83,7 +83,7 @@ describe("recurrence service", () => {
   });
 
   it("places a confirmed card occurrence in its calculated bill", () => {
-    const service = createRecurrenceService(connection);
+    const service = createRecurrenceService(connection, TEST_OWNER_ID);
     const rule = service.create({
       kind: "expense",
       description: "Assinatura",
@@ -101,7 +101,7 @@ describe("recurrence service", () => {
   });
 
   it("pause, resume, end, and this-and-future changes preserve confirmed facts", () => {
-    const service = createRecurrenceService(connection);
+    const service = createRecurrenceService(connection, TEST_OWNER_ID);
     const rule = service.create({
       kind: "expense",
       description: "Aluguel",
@@ -126,7 +126,7 @@ describe("recurrence service", () => {
   });
 
   it("rejects invalid or unavailable rules and exposes persisted rules", () => {
-    const service = createRecurrenceService(connection);
+    const service = createRecurrenceService(connection, TEST_OWNER_ID);
     expect(() => service.create({})).toThrow();
     expect(() => service.pause("missing")).toThrow("não encontrada");
     const rule = service.create({
