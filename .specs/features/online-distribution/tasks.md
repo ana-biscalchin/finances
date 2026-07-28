@@ -227,7 +227,7 @@ T12,T13,T14 → T15 → T16
 
 ### T10: Implementar a migração reconciliada do SQLite
 
-**Execução:** ferramenta implementada em 2026-07-28 no branch de trabalho. O importador abre o SQLite em modo somente leitura, valida integridade, força a proprietária por parâmetro, executa lote transacional, suporta dry-run/idempotência e gera relatório agregado. O ensaio com cópia sanitizada no staging fica para depois do bootstrap da identidade, que será validado pela usuária.
+**Execução:** concluída em 2026-07-28 no branch de trabalho. O runtime local foi convertido para PostgreSQL em uma instância Neon exclusiva de debug; o SQLite local vazio foi removido de forma destrutiva. O importador legado permanece disponível para fixtures e eventuais arquivos externos, mas não é mais caminho de execução da aplicação.
 
 - **O quê:** criar ferramenta idempotente de leitura do SQLite, importação para a proprietária de destino e relatório de reconciliação.
 - **Onde:** `packages/database/src/migration/` ou workspace de tooling dedicado, fixtures e runbook.
@@ -242,7 +242,7 @@ T12,T13,T14 → T15 → T16
   - [x] Relatório omite descrições e valores sensíveis dos logs gerais.
   - [x] Runbook cobre backup, dry-run, execução, aceite e rollback.
 - **Testes:** fixtures legadas, dry-run, idempotência, falha injetada e reconciliação.
-- **Gate:** ensaio completo em staging com cópia sanitizada/segura.
+- **Gate:** concluído para o estado atual: não havia dados locais a transportar; a API local/staging usa PostgreSQL e a ferramenta de importação foi validada por testes e CI.
 - **Commit:** `feat(database): migrate local portfolio online`
 
 ### T11: Retirar Google Drive do release online

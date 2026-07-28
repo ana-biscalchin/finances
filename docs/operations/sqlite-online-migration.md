@@ -1,6 +1,6 @@
 # Migração SQLite para o PostgreSQL online
 
-A ferramenta `db:import:sqlite` abre a origem em modo somente leitura, valida o `integrity_check`,
+A ferramenta `db:import:sqlite` permanece disponível para arquivos legados externos; ela abre a origem em modo somente leitura, valida o `integrity_check`,
 exige `MIGRATION_OWNER_USERNAME` e grava os dados financeiros na proprietária indicada. O `owner_id`
 da origem nunca é confiado: ele é substituído pelo ID da proprietária resolvida no destino.
 
@@ -27,3 +27,8 @@ nomes de contas ou valores individuais.
 
 Uma falha interrompe a transação e deixa o destino no estado anterior ao lote. O rollback operacional
 é restaurar o ponto criado antes da execução; a ferramenta não executa SQL reverso destrutivo.
+
+## Estado atual
+
+O arquivo local `data/financas.sqlite` estava vazio e foi removido em 2026-07-28. O runtime local agora
+usa exclusivamente a instância PostgreSQL Neon de debug; SQLite não é mais usado para desenvolvimento.
