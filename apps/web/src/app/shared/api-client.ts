@@ -65,7 +65,8 @@ export function createApiClient(
     throw new ApiClientError("Falha transitória na API.");
   }
   return {
-    raw: (path: string, init?: RequestInit) => fetcher(``, { ...init, credentials: "include" }),
+    raw: (path: string, init?: RequestInit) =>
+      fetcher(`${baseUrl}${path}`, { ...init, credentials: "include" }),
     get: <T>(path: string, schema: ZodType<T>) => request("GET", path, schema),
     post: <T>(path: string, body: unknown, schema: ZodType<T>, headers?: Record<string, string>) =>
       request("POST", path, schema, body, headers),

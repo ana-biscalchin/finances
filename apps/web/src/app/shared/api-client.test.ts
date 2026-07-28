@@ -63,6 +63,14 @@ describe("shared API client", () => {
     await client.delete("/item", schema);
     expect(fetcher.mock.calls.map((call) => call[1]?.method)).toEqual(["PUT", "PATCH", "DELETE"]);
   });
+  it("keeps the base URL when using raw responses", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+    const client = createApiClient({ baseUrl: "/api", fetcher });
+    await client.raw("/accounts?includeInactive=false");
+    expect(fetcher).toHaveBeenCalledWith("/api/accounts?includeInactive=false", {
+      credentials: "include"
+    });
+  });
   it("accepts an empty 204 response for deletion", async () => {
     const client = createApiClient({
       fetcher: vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
