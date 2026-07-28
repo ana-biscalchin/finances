@@ -2,7 +2,6 @@ import {
   accountPaymentMethods,
   accounts,
   categories,
-  createDatabaseConnection,
   creditCardBillPayments,
   creditCardBills,
   creditCards,
@@ -12,23 +11,17 @@ import {
   subcategories,
   transactions
 } from "@finances/database";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
+import { createPostgresTestConnection, postgresTestsEnabled, removePostgresTestOwner, seedPostgresTestOwner } from "./test-support/postgres.js";
 import { createMonthlyOverviewService } from "./application/monthly-overview-service.js";
-const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
-describe("canonical monthly views", () => {
-  let dir: string;
-  let connection: ReturnType<typeof createDatabaseConnection>;
+const TEST_OWNER_ID = "test-owner";
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
+describePostgres("canonical monthly views", () => {
+  let connection: ReturnType<typeof createPostgresTestConnection>;
   beforeEach(async () => {
-    dir = mkdtempSync(resolve(tmpdir(), "monthly-overview-"));
-    connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
-    migrate(connection.db, { migrationsFolder });
-    await seedTestOwner(connection);
-    connection.db
+    connection = createPostgresTestConnection();
+    await seedPostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.db
       .insert(accounts)
       .values({
         id: "account",
@@ -37,9 +30,9 @@ describe("canonical monthly views", () => {
         type: "checking",
         initialBalanceCents: 100_000
       })
-      .run();
-    connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).run();
-    connection.db
+      .execute();
+    await connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).execute();
+    await connection.db
       .insert(accountPaymentMethods)
       .values({
         id: "account-pix",
@@ -48,23 +41,23 @@ describe("canonical monthly views", () => {
         isActive: true,
         isDefault: true
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(categories)
       .values({ ownerId: "test-owner", id: "category", nature: "expense", name: "Casa" })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(subcategories)
       .values({ id: "subcategory", categoryId: "category", name: "Casa" })
-      .run();
+      .execute();
   });
-  afterEach(() => {
-    connection.sqlite.close();
-    rmSync(dir, { recursive: true, force: true });
+  afterEach(async () => {
+    await removePostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.close();
   });
   it("returns spending without counting transfer and exposes account risk", async () => {
-    const service = createMonthlyOverviewService(connection, TEST_OWNER_ID);
-    connection.db
+    const service = createMonthlyOverviewService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
+    await connection.db
       .insert(plannedExpenses)
       .values({
         id: "plan",
@@ -77,8 +70,8 @@ describe("canonical monthly views", () => {
         creditCardId: null,
         sortOrder: 0
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(transactions)
       .values([
         {
@@ -105,7 +98,7 @@ describe("canonical monthly views", () => {
           status: "confirmed"
         }
       ])
-      .run();
+      .execute();
     expect((await service.overview("2026-07")).summary).toEqual(
       expect.objectContaining({ spentCents: 30_000, abovePlannedCents: 10_000 })
     );
@@ -114,8 +107,8 @@ describe("canonical monthly views", () => {
     );
   });
   it("includes account forecasts and only the unpaid principal of card bills", async () => {
-    const service = createMonthlyOverviewService(connection, TEST_OWNER_ID);
-    connection.db
+    const service = createMonthlyOverviewService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
+    await connection.db
       .insert(creditCards)
       .values({
         id: "card",
@@ -125,8 +118,8 @@ describe("canonical monthly views", () => {
         dueDay: 20,
         paymentAccountId: "account"
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCards)
       .values({
         id: "card-no-account",
@@ -135,12 +128,12 @@ describe("canonical monthly views", () => {
         closingDay: 10,
         dueDay: 20
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCardBills)
       .values({ id: "bill", creditCardId: "card", billMonth: "2026-07", dueDate: "2026-07-20" })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCardBills)
       .values({
         id: "bill-no-account",
@@ -148,8 +141,8 @@ describe("canonical monthly views", () => {
         billMonth: "2026-07",
         dueDate: "2026-07-20"
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(recurrenceRules)
       .values({
         id: "rule",
@@ -165,8 +158,8 @@ describe("canonical monthly views", () => {
         startMonth: "2026-07",
         status: "active"
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(transactions)
       .values([
         {
@@ -208,8 +201,8 @@ describe("canonical monthly views", () => {
           status: "confirmed"
         }
       ])
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCardBillPayments)
       .values({
         id: "payment",
@@ -221,7 +214,7 @@ describe("canonical monthly views", () => {
         paymentDate: "2026-07-20",
         principalCents: 10_000
       })
-      .run();
+      .execute();
     expect((await service.cashPosition("2026-07"))[0]).toEqual(
       expect.objectContaining({ currentBalanceCents: 90_000, expectedBalanceCents: 30_000 })
     );
@@ -232,7 +225,7 @@ describe("canonical monthly views", () => {
         atRisk: true
       })
     );
-    connection.db
+    await connection.db
       .insert(transactions)
       .values({
         id: "confirmed-recurrence",
@@ -248,7 +241,7 @@ describe("canonical monthly views", () => {
         recurrenceMonth: "2026-07",
         status: "confirmed"
       })
-      .run();
+      .execute();
     expect((await service.cashPosition("2026-07"))[0]).toEqual(
       expect.objectContaining({
         currentBalanceCents: 70_000,
