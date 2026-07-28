@@ -1,29 +1,21 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { loadConfig } from "./config/environment.js";
 import { buildServer } from "./server.js";
+import { createPostgresTestConnection, postgresTestsEnabled } from "./test-support/postgres.js";
 
-const directories: string[] = [];
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
 
 function testApp(overrides: NodeJS.ProcessEnv = {}) {
-  const directory = mkdtempSync(resolve(tmpdir(), "finances-platform-"));
-  directories.push(directory);
+  const connection = createPostgresTestConnection();
   return buildServer({
-    databasePath: resolve(directory, "test.sqlite"),
+    connection,
     logger: false,
     config: loadConfig({ NODE_ENV: "test", CORS_ORIGINS: "http://localhost:5173", ...overrides })
   });
 }
 
-afterEach(() => {
-  for (const directory of directories.splice(0))
-    rmSync(directory, { recursive: true, force: true });
-});
-
-describe("production HTTP boundary", () => {
+describePostgres("production HTTP boundary", () => {
   it("exposes safe liveness and readiness checks", async () => {
     const app = testApp();
     expect((await app.inject({ url: "/health/live" })).json()).toEqual({ status: "OK" });
@@ -34,7 +26,7 @@ describe("production HTTP boundary", () => {
   it("returns unavailable readiness without exposing dependency details", async () => {
     const app = buildServer({
       logger: false,
-      databasePath: resolve(mkdtempSync(resolve(tmpdir(), "finances-ready-")), "test.sqlite"),
+      connection: createPostgresTestConnection(),
       config: loadConfig({ NODE_ENV: "test" }),
       databaseProbe: {
         check: vi.fn().mockRejectedValue(new Error("postgresql://secret")),
