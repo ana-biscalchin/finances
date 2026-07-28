@@ -1,6 +1,5 @@
 import {
   accounts,
-  createDatabaseConnection,
   creditCardBillPayments,
   creditCardBills,
   creditCards,
@@ -8,27 +7,20 @@ import {
   users
 } from "@finances/database";
 import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createBillPaymentService } from "./application/bill-payment-service.js";
-import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
+import { createPostgresTestConnection, postgresTestsEnabled, removePostgresTestOwner, seedPostgresTestOwner } from "./test-support/postgres.js";
 import { buildServer } from "./server.js";
 
-const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
-
-describe("credit card bill payment service", () => {
-  let tempDir: string;
-  let connection: ReturnType<typeof createDatabaseConnection>;
+const TEST_OWNER_ID = "test-owner";
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
+describePostgres("credit card bill payment service", () => {
+  let connection: ReturnType<typeof createPostgresTestConnection>;
 
   beforeEach(async () => {
-    tempDir = mkdtempSync(resolve(tmpdir(), "finances-bill-payment-test-"));
-    connection = createDatabaseConnection(resolve(tempDir, "test.sqlite"));
-    migrate(connection.db, { migrationsFolder });
-    await seedTestOwner(connection);
-    connection.db
+    connection = createPostgresTestConnection();
+    await seedPostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.db
       .insert(accounts)
       .values({
         id: "account-1",
@@ -37,8 +29,8 @@ describe("credit card bill payment service", () => {
         type: "checking",
         initialBalanceCents: 200_000
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCards)
       .values({
         id: "card-1",
@@ -48,8 +40,8 @@ describe("credit card bill payment service", () => {
         dueDay: 20,
         paymentAccountId: "account-1"
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCardBills)
       .values({
         id: "bill-1",
@@ -58,8 +50,8 @@ describe("credit card bill payment service", () => {
         dueDate: "2026-07-20",
         minimumDueCents: 10_000
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(transactions)
       .values({
         id: "purchase-1",
@@ -73,16 +65,16 @@ describe("credit card bill payment service", () => {
         creditCardBillId: "bill-1",
         status: "confirmed"
       })
-      .run();
+      .execute();
   });
 
-  afterEach(() => {
-    connection.sqlite.close();
-    rmSync(tempDir, { recursive: true, force: true });
+  afterEach(async () => {
+    await removePostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.close();
   });
 
   it("records partial, minimum, and final payments using the informed date", async () => {
-    const service = createBillPaymentService(connection, TEST_OWNER_ID);
+    const service = createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     const partial = await service.pay("bill-1", "payment-key-1", {
       accountId: "account-1",
       paymentDate: "2026-07-18",
@@ -105,11 +97,11 @@ describe("credit card bill payment service", () => {
       penaltyCents: 0
     });
     expect(final.summary.status).toBe("paid");
-    expect(connection.db.select().from(creditCardBillPayments).all()).toHaveLength(2);
+    expect(await connection.db.select().from(creditCardBillPayments).execute()).toHaveLength(2);
   });
 
   it("is idempotent and keeps interest and penalty in one decomposed cash movement", async () => {
-    const service = createBillPaymentService(connection, TEST_OWNER_ID);
+    const service = createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     const input = {
       accountId: "account-1",
       paymentDate: "2026-07-21",
@@ -122,14 +114,14 @@ describe("credit card bill payment service", () => {
     const retry = await service.pay("bill-1", "same-key", input);
 
     expect(retry.payment.id).toBe(first.payment.id);
-    expect(connection.db.select().from(creditCardBillPayments).all()).toHaveLength(1);
-    const entries = connection.db.select().from(transactions).all();
+    expect(await connection.db.select().from(creditCardBillPayments).execute()).toHaveLength(1);
+    const entries = await connection.db.select().from(transactions).execute();
     expect(entries.filter((entry) => entry.notes?.includes("bill-payment-charge"))).toEqual([]);
     expect(first.paymentTransaction.amountCents).toBe(11_500);
   });
 
   it("reverses without deleting history and restores the derived bill state", async () => {
-    const service = createBillPaymentService(connection, TEST_OWNER_ID);
+    const service = createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     const paid = await service.pay("bill-1", "payment-key", {
       accountId: "account-1",
       paymentDate: "2026-07-20",
@@ -142,23 +134,23 @@ describe("credit card bill payment service", () => {
 
     expect(reversed.summary.status).toBe("overdue");
     expect(
-      connection.db
+      (await connection.db
         .select()
         .from(creditCardBillPayments)
         .where(eq(creditCardBillPayments.id, paid.payment.id))
-        .get()?.reversedAt
+        .execute())[0]?.reversedAt
     ).toBeTruthy();
     expect(
-      connection.db
+      (await connection.db
         .select()
         .from(transactions)
         .where(eq(transactions.id, paid.paymentTransaction.id))
-        .get()?.status
+        .execute())[0]?.status
     ).toBe("canceled");
   });
 
   it("rolls back all records when an intermediate write fails", async () => {
-    const service = createBillPaymentService(connection, TEST_OWNER_ID, {
+    const service = createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID, {
       afterCashMovement() {
         throw new Error("simulated failure");
       }
@@ -173,8 +165,8 @@ describe("credit card bill payment service", () => {
         penaltyCents: 0
       })
     ).rejects.toThrow("simulated failure");
-    expect(connection.db.select().from(creditCardBillPayments).all()).toEqual([]);
-    expect(connection.db.select().from(transactions).all()).toHaveLength(1);
+    expect(await connection.db.select().from(creditCardBillPayments).execute()).toEqual([]);
+    expect(await connection.db.select().from(transactions).execute()).toHaveLength(1);
   });
 
   it("exposes payment and reversal endpoints with an idempotency key", async () => {
@@ -200,7 +192,7 @@ describe("credit card bill payment service", () => {
   });
 
   it("rejects invalid, missing, conflicting, and excessive payment requests", async () => {
-    const service = createBillPaymentService(connection, TEST_OWNER_ID);
+    const service = createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     const valid = {
       accountId: "account-1",
       paymentDate: "2026-07-20",
@@ -215,17 +207,17 @@ describe("credit card bill payment service", () => {
     await expect(
       service.pay("bill-1", "missing-account", { ...valid, accountId: "missing" })
     ).rejects.toThrow("Conta de pagamento");
-    connection.db
+    await connection.db
       .update(accounts)
       .set({ isActive: false })
       .where(eq(accounts.id, "account-1"))
-      .run();
+      .execute();
     await expect(service.pay("bill-1", "inactive-account", valid)).rejects.toThrow("arquivada");
-    connection.db
+    await connection.db
       .update(accounts)
       .set({ isActive: true })
       .where(eq(accounts.id, "account-1"))
-      .run();
+      .execute();
     await expect(
       service.pay("bill-1", "excess", { ...valid, amountCents: 100_001, principalCents: 100_001 })
     ).rejects.toThrow("excede");
@@ -240,7 +232,7 @@ describe("credit card bill payment service", () => {
       (await service.reverse("bill-1", paid.payment.id, "2026-07-22T10:00:00Z")).payment.id
     ).toBe(paid.payment.id);
 
-    connection.db
+    await connection.db
       .insert(creditCardBills)
       .values({
         id: "bill-2",
@@ -248,12 +240,12 @@ describe("credit card bill payment service", () => {
         billMonth: "2026-08",
         dueDate: "2026-08-20"
       })
-      .run();
+      .execute();
     await expect(service.pay("bill-2", "reversal-key", valid)).rejects.toThrow("já utilizada");
   });
 
   it("subtracts card refunds and chargebacks while ignoring unrelated transaction types", async () => {
-    connection.db
+    await connection.db
       .insert(transactions)
       .values([
         {
@@ -293,8 +285,8 @@ describe("credit card bill payment service", () => {
           status: "confirmed"
         }
       ])
-      .run();
-    const result = await createBillPaymentService(connection, TEST_OWNER_ID).pay(
+      .execute();
+    const result = await createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID).pay(
       "bill-1",
       "refund-key",
       {
@@ -309,7 +301,7 @@ describe("credit card bill payment service", () => {
 
   it("locks financial fields after payment but keeps metadata editable until reversal", async () => {
     const app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
-    const paid = await createBillPaymentService(connection, TEST_OWNER_ID).pay(
+    const paid = await createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID).pay(
       "bill-1",
       "lock-key",
       {
@@ -351,7 +343,7 @@ describe("credit card bill payment service", () => {
       })
     );
 
-    await createBillPaymentService(connection, TEST_OWNER_ID).reverse(
+    await createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID).reverse(
       "bill-1",
       paid.payment.id,
       "2026-07-21T10:00:00Z"
@@ -369,11 +361,11 @@ describe("credit card bill payment service", () => {
   });
 
   it("locks financial mutation and deletion when the bill is explicitly closed", async () => {
-    connection.db
+    await connection.db
       .update(creditCardBills)
       .set({ closedAt: "2026-07-10T10:00:00Z" })
       .where(eq(creditCardBills.id, "bill-1"))
-      .run();
+      .execute();
     const app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
     const payload = {
       type: "expense",
@@ -394,7 +386,7 @@ describe("credit card bill payment service", () => {
   });
 
   it("does not enumerate or mutate a card, bill, or payment account from another identity", async () => {
-    connection.db
+    await connection.db
       .insert(users)
       .values({
         id: "other-owner",
@@ -402,8 +394,8 @@ describe("credit card bill payment service", () => {
         passwordHash: "argon2id-test-only",
         passwordChangedAt: new Date().toISOString()
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(accounts)
       .values({
         id: "other-account",
@@ -411,8 +403,8 @@ describe("credit card bill payment service", () => {
         name: "Conta alheia",
         type: "checking"
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCards)
       .values({
         id: "other-card",
@@ -423,8 +415,8 @@ describe("credit card bill payment service", () => {
         paymentAccountId: "other-account",
         isDefault: true
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCardBills)
       .values({
         id: "other-bill",
@@ -432,7 +424,7 @@ describe("credit card bill payment service", () => {
         billMonth: "2026-07",
         dueDate: "2026-07-15"
       })
-      .run();
+      .execute();
 
     const app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
     const listed = await app.inject({ method: "GET", url: "/credit-cards?includeInactive=true" });
@@ -504,13 +496,13 @@ describe("credit card bill payment service", () => {
     ).toBe(404);
 
     expect(
-      connection.db.select().from(creditCards).where(eq(creditCards.id, "other-card")).get()
+      (await connection.db.select().from(creditCards).where(eq(creditCards.id, "other-card")).execute())[0]
     ).toEqual(expect.objectContaining({ name: "Cartão alheio", isDefault: true, isActive: true }));
-    expect(connection.db.select().from(creditCardBillPayments).all()).toEqual([]);
+    expect(await connection.db.select().from(creditCardBillPayments).execute()).toEqual([]);
     await app.close();
   });
   it("allows the same idempotency key independently for two owners", async () => {
-    connection.db
+    await connection.db
       .insert(users)
       .values({
         id: "other-owner",
@@ -518,12 +510,12 @@ describe("credit card bill payment service", () => {
         passwordHash: "test",
         passwordChangedAt: new Date().toISOString()
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(accounts)
       .values({ id: "other-account", ownerId: "other-owner", name: "Outra", type: "checking" })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCards)
       .values({
         id: "other-card",
@@ -532,8 +524,8 @@ describe("credit card bill payment service", () => {
         closingDay: 10,
         dueDay: 20
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCardBills)
       .values({
         id: "other-bill",
@@ -541,8 +533,8 @@ describe("credit card bill payment service", () => {
         billMonth: "2026-07",
         dueDate: "2026-07-20"
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(transactions)
       .values({
         id: "other-purchase",
@@ -556,19 +548,19 @@ describe("credit card bill payment service", () => {
         creditCardBillId: "other-bill",
         status: "confirmed"
       })
-      .run();
+      .execute();
     const input = { paymentDate: "2026-07-20", amountCents: 1000, principalCents: 1000 };
 
-    await createBillPaymentService(connection, TEST_OWNER_ID).pay("bill-1", "shared-key", {
+    await createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID).pay("bill-1", "shared-key", {
       ...input,
       accountId: "account-1"
     });
-    await createBillPaymentService(connection, "other-owner").pay("other-bill", "shared-key", {
+    await createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, "other-owner").pay("other-bill", "shared-key", {
       ...input,
       accountId: "other-account"
     });
 
-    expect(connection.db.select().from(creditCardBillPayments).all()).toEqual(
+    expect(await connection.db.select().from(creditCardBillPayments).execute()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ ownerId: TEST_OWNER_ID, idempotencyKey: "shared-key" }),
         expect.objectContaining({ ownerId: "other-owner", idempotencyKey: "shared-key" })

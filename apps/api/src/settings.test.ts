@@ -116,7 +116,7 @@ describePostgres("Settings and Google Drive API", () => {
       payload: { googleClientId: "owner-updated" }
     });
     expect(
-      await connection.db
+      (await connection.db
         .select()
         .from(settings)
         .where(and(eq(settings.ownerId, "other-owner"), eq(settings.key, "google_client_id")))
