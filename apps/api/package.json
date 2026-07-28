@@ -10,7 +10,7 @@
     "auth:bootstrap": "tsx src/auth/bootstrap-user.ts",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
-    "test": "vitest run src/ --passWithNoTests"
+    "test": "vitest run src/ --passWithNoTests --no-file-parallelism"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

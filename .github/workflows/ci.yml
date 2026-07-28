@@ -16,6 +16,23 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: finances
+          POSTGRES_PASSWORD: finances
+          POSTGRES_DB: finances_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U finances -d finances_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_DIALECT: postgres
+      DATABASE_URL: postgresql://finances:finances@localhost:5432/finances_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -31,6 +48,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm build
+      - run: pnpm --filter @finances/database db:migrate:postgres
       - run: pnpm test
       - name: Package immutable artifact
         run: tar -czf finances-${GITHUB_SHA}.tar.gz apps/api/dist apps/web/dist packages/*/dist package.json pnpm-lock.yaml pnpm-workspace.yaml
@@ -73,6 +91,5 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @finances/api... build
-      - run: pnpm --filter @finances/database db:migrate:postgres
       - run: pnpm --filter @finances/database db:migrate:postgres
       - run: pnpm --filter @finances/api exec vitest run src/postgres-integration.test.ts
