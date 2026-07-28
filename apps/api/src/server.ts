@@ -24,6 +24,7 @@ import { registerPaymentMethodRoutes } from "./modules/payment-methods.js";
 import { registerTransactionRoutes } from "./modules/transactions.js";
 import { registerReportRoutes } from "./modules/reports.js";
 import { registerBackupRoutes } from "./modules/backups.js";
+import { registerExportRoutes } from "./modules/exports.js";
 import { registerSettingsRoutes } from "./modules/settings.js";
 import { registerTransferRoutes } from "./modules/transfers.js";
 import { registerRecurrenceRoutes } from "./modules/recurrences.js";
@@ -182,6 +183,7 @@ export function buildServer(options: BuildServerOptions = {}) {
     registerTransactionRoutes(routesApp, applicationConnection);
     registerCreditCardRoutes(routesApp, applicationConnection);
     registerReportRoutes(routesApp, applicationConnection);
+    registerExportRoutes(routesApp, applicationConnection);
     if (connection.dialect === "sqlite") registerBackupRoutes(routesApp, connection);
     if (config.features.googleDrive) registerSettingsRoutes(routesApp, applicationConnection);
     registerTransferRoutes(routesApp, applicationConnection);

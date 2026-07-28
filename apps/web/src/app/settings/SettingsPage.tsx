@@ -58,6 +58,8 @@ function formatBytes(bytes: number) {
 }
 
 export function SettingsPage() {
+  // Google Drive is intentionally excluded from the hosted release (T11).
+  const googleDriveReleased = false;
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -199,6 +201,25 @@ export function SettingsPage() {
       setError(getErrorMessage(createError));
     } finally {
       setIsCreating(false);
+    }
+  }
+
+  async function exportData() {
+    setError(null);
+    try {
+      const response = await apiClient.raw(`/export`);
+      if (!response.ok) throw new Error("Não foi possível exportar os dados.");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `carteira-export-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setSuccessMessage("Exportação criada com sucesso.");
+    } catch (exportError) {
+      reportClientError("settings.exportData", exportError);
+      setError(getErrorMessage(exportError));
     }
   }
 
@@ -396,9 +417,11 @@ export function SettingsPage() {
           <Tabs.Tab value="backups" leftSection={<IconDatabase size={16} />}>
             Backups Locais
           </Tabs.Tab>
-          <Tabs.Tab value="gdrive" leftSection={<IconBrandGoogle size={16} />}>
-            Google Drive
-          </Tabs.Tab>
+          {googleDriveReleased && (
+            <Tabs.Tab value="gdrive" leftSection={<IconBrandGoogle size={16} />}>
+              Google Drive
+            </Tabs.Tab>
+          )}
         </Tabs.List>
 
         <Tabs.Panel value="backups">
@@ -412,8 +435,7 @@ export function SettingsPage() {
                   <Box>
                     <Text fw={600}>Banco de Dados Ativo</Text>
                     <Text size="xs" c="dimmed">
-                      SQLite local:{" "}
-                      <span style={{ fontFamily: "monospace" }}>data/financas.sqlite</span>
+                      Banco PostgreSQL hospedado; backups operacionais são gerenciados pela infraestrutura.
                     </Text>
                   </Box>
                 </Group>
@@ -425,6 +447,9 @@ export function SettingsPage() {
                   disabled={isCreating || isRestoring}
                 >
                   Criar Backup Manual
+                </Button>
+                <Button variant="light" leftSection={<IconDownload size={16} />} onClick={exportData}>
+                  Exportar meus dados
                 </Button>
               </Group>
             </Card>
@@ -545,7 +570,7 @@ export function SettingsPage() {
           </Stack>
         </Tabs.Panel>
 
-        <Tabs.Panel value="gdrive">
+        {googleDriveReleased && <Tabs.Panel value="gdrive">
           <Stack gap="md">
             <Card withBorder radius="md" p="md">
               <Stack gap="md">
@@ -723,7 +748,7 @@ export function SettingsPage() {
               </Paper>
             )}
           </Stack>
-        </Tabs.Panel>
+        </Tabs.Panel>}
       </Tabs>
 
       {/* Restore Safety Modal */}

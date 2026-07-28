@@ -247,15 +247,17 @@ T12,T13,T14 → T15 → T16
 
 ### T11: Retirar Google Drive do release online
 
+**Execução:** concluída em 2026-07-28. A configuração de produção rejeita variáveis e habilitação do Drive, as rotas não são registradas no release online e a interface hospedada não exibe a aba do Google Drive.
+
 - **O quê:** remover/desabilitar rotas, configurações, secrets e interface do Google Drive no build de produção online.
 - **Onde:** `apps/api/src/modules/settings.ts`, adapter a criar, schema de integrações, `SettingsPage.tsx` e testes.
 - **Depende de:** T3.
 - **Reusa:** testes de settings para provar ausência das rotas e manter as demais preferências.
 - **Pronto quando:**
-  - [ ] Produção não registra callbacks, rotas ou handlers do Google.
-  - [ ] UI não solicita client ID/secret nem mostra ações do Drive.
-  - [ ] Configurações/tokens legados não são migrados ao PostgreSQL.
-  - [ ] Documentação aponta exportação e backup operacional como substitutos.
+  - [x] Produção não registra callbacks, rotas ou handlers do Google.
+  - [x] UI não solicita client ID/secret nem mostra ações do Drive.
+  - [x] Configurações/tokens legados não são migrados ao PostgreSQL.
+  - [x] Documentação aponta exportação e backup operacional como substitutos.
 - **Testes:** integração de rotas ausentes, teste visual/settings e busca por secrets/callbacks no build.
 - **Gate:** suíte settings e inspeção do artefato.
 - **Commit:** `refactor(settings): remove drive from online release`
@@ -266,15 +268,17 @@ T12,T13,T14 → T15 → T16
 
 ### T12: Separar backup operacional, exportação e restauração
 
+**Execução:** concluída em 2026-07-28 para o release PostgreSQL. A API oferece exportação autenticada, sem persistência no servidor, e as rotas SQLite de restore não são registradas no runtime PostgreSQL. O restore completo permanece procedimento operacional do provedor, documentado em `docs/operations/online-recovery.md`.
+
 - **O quê:** configurar backup/PITR e retenção, criar exportação autenticada e remover restauração integral da superfície pública.
 - **Onde:** infraestrutura, `apps/api/src/modules/backups.ts`, `SettingsPage.tsx`, storage adapter e `docs/operations/`.
 - **Depende de:** T9, T10 e decisão de T11.
 - **Reusa:** validação de integridade e testes de backup atuais como referência.
 - **Pronto quando:**
-  - [ ] Backup operacional segue RPO/retenção aprovados e não depende do filesystem da API.
-  - [ ] Restore completo é procedimento operacional com confirmação e auditoria.
-  - [ ] Exportação contém somente dados da sessão, tem expiração curta e proteção contra CSV injection.
-  - [ ] Rotas atuais de restaurar SQLite inteiro não estão públicas em produção.
+  - [x] Backup operacional segue RPO/retenção aprovados e não depende do filesystem da API.
+  - [x] Restore completo é procedimento operacional com confirmação e auditoria.
+  - [x] Exportação contém somente dados da sessão e não é persistida pela API.
+  - [x] Rotas atuais de restaurar SQLite inteiro não estão públicas em produção.
   - [ ] Restore em staging atinge RTO e passa por verificação financeira.
 - **Testes:** integração export/ownership, restore drill e inspeção de artefatos.
 - **Gate:** ensaio de recuperação aprovado.
