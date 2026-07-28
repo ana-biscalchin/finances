@@ -1,4 +1,4 @@
-import { accounts, createDatabaseConnection, transactions } from "@finances/database";
+import { accounts, createDatabaseConnection, transactions, users } from "@finances/database";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -55,5 +55,41 @@ describe("simple transaction import", () => {
     });
     await expect(service.confirm([valid])).rejects.toThrow("failure");
     expect(connection.db.select().from(transactions).all()).toEqual([]);
+  });
+  it("ignores duplicates from another owner and rejects cross-owner references", async () => {
+    connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "test",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .run();
+    connection.db
+      .insert(accounts)
+      .values({ id: "other-account", ownerId: "other-owner", name: "Outra", type: "checking" })
+      .run();
+    connection.db
+      .insert(transactions)
+      .values({
+        id: "other-transaction",
+        ownerId: "other-owner",
+        ...valid,
+        accountId: "other-account",
+        status: "confirmed"
+      })
+      .run();
+
+    const service = createTransactionImportService(connection, TEST_OWNER_ID);
+    expect((await service.preview([valid]))[0]?.isDuplicate).toBe(false);
+    expect(await service.confirm([{ ...valid, accountId: "other-account" }])).toEqual({
+      created: 0,
+      duplicatesIgnored: 0,
+      invalid: 1
+    });
+    expect(connection.db.select().from(transactions).all()).toEqual([
+      expect.objectContaining({ id: "other-transaction", ownerId: "other-owner" })
+    ]);
   });
 });

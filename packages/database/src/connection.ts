@@ -87,10 +87,34 @@ export function createPostgresDatabaseConnection(options: {
       );
     },
     async check() {
-      const [result] = await client<{ users_table: string | null }[]>`
-        select to_regclass('public.users')::text as users_table
+      const [result] = await client<{ compatible_table_count: number }[]>`
+        select count(*)::int as compatible_table_count
+        from information_schema.tables
+        where table_schema = 'public'
+          and table_name = any(array[
+            'users',
+            'sessions',
+            'accounts',
+            'payment_methods',
+            'account_payment_methods',
+            'categories',
+            'subcategories',
+            'credit_cards',
+            'credit_card_bills',
+            'account_transfers',
+            'recurrence_rules',
+            'transactions',
+            'credit_card_bill_payments',
+            'installment_purchases',
+            'installments',
+            'reserve_goals',
+            'reserve_movements',
+            'planned_expenses',
+            'settings'
+          ])
       `;
-      if (!result?.users_table) throw new Error("Database schema is not compatible.");
+      if (result?.compatible_table_count !== 19)
+        throw new Error("Database schema is not compatible.");
     },
     async close() {
       await client.end({ timeout: 5 });

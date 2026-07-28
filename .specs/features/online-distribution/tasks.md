@@ -187,7 +187,7 @@ T12,T13,T14 → T15 → T16
 
 ### T8: Adaptar a persistência ao banco hospedado
 
-**Execução:** implementação concluída em 2026-07-27 no PR 23. Schema, migration, pool, readiness, shutdown e bootstrap PostgreSQL foram validados no branch temporário Neon `br-misty-base-avviu9j0`; a promoção ao branch principal de staging depende de confirmação operacional explícita.
+**Execução:** implementação concluída em 2026-07-28 no PR 23. Schema, migration repetível, pool, readiness do schema completo, shutdown, bootstrap e workflow financeiro PostgreSQL foram validados na CI e no branch temporário Neon `br-misty-base-avviu9j0`; a promoção ao branch principal de staging depende de confirmação operacional explícita.
 
 - **O quê:** implementar conexão, schema, migrations e comportamento transacional no banco aprovado, mantendo SQLite somente onde decidido.
 - **Onde:** `packages/database/`, configuração da API, migrations e testes de integração.

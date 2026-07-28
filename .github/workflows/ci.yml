@@ -74,4 +74,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @finances/api... build
       - run: pnpm --filter @finances/database db:migrate:postgres
+      - run: pnpm --filter @finances/database db:migrate:postgres
       - run: pnpm --filter @finances/api exec vitest run src/postgres-integration.test.ts
