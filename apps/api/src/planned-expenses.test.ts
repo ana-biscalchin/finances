@@ -20,13 +20,13 @@ describe("planned expenses API", () => {
   let dir: string;
   let connection: ReturnType<typeof createDatabaseConnection>;
   let app: ReturnType<typeof buildServer>;
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(resolve(tmpdir(), "planned-expenses-"));
     connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
     migrate(connection.db, {
       migrationsFolder: resolve(process.cwd(), "../../packages/database/drizzle")
     });
-    seedTestOwner(connection);
+    await seedTestOwner(connection);
     connection.db
       .insert(accounts)
       .values({ id: "checking", ownerId: "test-owner", name: "Conta", type: "checking" })

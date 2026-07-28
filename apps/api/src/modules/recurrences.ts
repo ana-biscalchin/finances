@@ -41,25 +41,30 @@ export function registerRecurrenceRoutes(app: FastifyInstance, connection: Conne
     createRecurrenceService(connection, requestContextFrom(request).ownerId);
   app.get("/recurrences", async (request) => {
     const { month } = parse(querySchema, request.query);
-    return month ? serviceFor(request).forecast(month) : serviceFor(request).list();
+    return month ? await serviceFor(request).forecast(month) : await serviceFor(request).list();
   });
   app.post("/recurrences", async (request, reply) =>
-    reply.code(201).send(serviceFor(request).create(parse(recurrenceInputSchema, request.body)))
+    reply
+      .code(201)
+      .send(await serviceFor(request).create(parse(recurrenceInputSchema, request.body)))
   );
-  app.post("/recurrences/:id/pause", async (request) =>
-    serviceFor(request).pause(parse(paramsSchema, request.params).id)
+  app.post(
+    "/recurrences/:id/pause",
+    async (request) => await serviceFor(request).pause(parse(paramsSchema, request.params).id)
   );
-  app.post("/recurrences/:id/resume", async (request) =>
-    serviceFor(request).resume(parse(paramsSchema, request.params).id)
+  app.post(
+    "/recurrences/:id/resume",
+    async (request) => await serviceFor(request).resume(parse(paramsSchema, request.params).id)
   );
-  app.delete("/recurrences/:id", async (request) =>
-    serviceFor(request).end(parse(paramsSchema, request.params).id)
+  app.delete(
+    "/recurrences/:id",
+    async (request) => await serviceFor(request).end(parse(paramsSchema, request.params).id)
   );
   app.post("/recurrences/:id/confirm-occurrence", async (request, reply) =>
     reply
       .code(201)
       .send(
-        serviceFor(request).confirm(
+        await serviceFor(request).confirm(
           parse(paramsSchema, request.params).id,
           parse(occurrenceSchema, request.body).month
         )
@@ -67,7 +72,7 @@ export function registerRecurrenceRoutes(app: FastifyInstance, connection: Conne
   );
   app.put("/recurrences/:id", async (request) => {
     const body = parse(changeSchema, request.body);
-    return serviceFor(request).changeFrom(
+    return await serviceFor(request).changeFrom(
       parse(paramsSchema, request.params).id,
       body.effectiveMonth,
       body.changes

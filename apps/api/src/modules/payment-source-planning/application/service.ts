@@ -13,47 +13,43 @@ import { and, eq } from "drizzle-orm";
 type Connection = ReturnType<typeof createDatabaseConnection>;
 export function createPaymentSourcePlanningService(connection: Connection, ownerId: string) {
   const { db } = connection;
-  function overview(month: string) {
-    const plannedRows = db
+  async function overview(month: string) {
+    const plannedRows = await db
       .select()
       .from(plannedExpenses)
-      .where(and(eq(plannedExpenses.ownerId, ownerId), eq(plannedExpenses.budgetMonth, month)))
-      .all();
-    const transactionRows = db
+      .where(and(eq(plannedExpenses.ownerId, ownerId), eq(plannedExpenses.budgetMonth, month)));
+    const transactionRows = await db
       .select()
       .from(transactions)
-      .where(and(eq(transactions.ownerId, ownerId), eq(transactions.budgetMonth, month)))
-      .all();
+      .where(and(eq(transactions.ownerId, ownerId), eq(transactions.budgetMonth, month)));
     const subcategoryIds = new Set([
       ...plannedRows.map((item) => item.subcategoryId),
       ...transactionRows.flatMap((item) => (item.subcategoryId ? [item.subcategoryId] : []))
     ]);
-    const accountRows = db.select().from(accounts).where(eq(accounts.ownerId, ownerId)).all();
-    const cardRows = db.select().from(creditCards).where(eq(creditCards.ownerId, ownerId)).all();
+    const accountRows = await db.select().from(accounts).where(eq(accounts.ownerId, ownerId));
+    const cardRows = await db.select().from(creditCards).where(eq(creditCards.ownerId, ownerId));
     const accountNames = new Map(accountRows.map((item) => [item.id, item.name]));
     const cardNames = new Map(cardRows.map((item) => [item.id, item.name]));
     const categoryRows = new Map(
-      db
-        .select()
-        .from(categories)
-        .where(eq(categories.ownerId, ownerId))
-        .all()
-        .map((item) => [item.id, item])
+      (await db.select().from(categories).where(eq(categories.ownerId, ownerId))).map((item) => [
+        item.id,
+        item
+      ])
     );
     const subcategoryRows = new Map(
-      db
-        .select({
-          id: subcategories.id,
-          categoryId: subcategories.categoryId,
-          name: subcategories.name
-        })
-        .from(subcategories)
-        .innerJoin(
-          categories,
-          and(eq(subcategories.categoryId, categories.id), eq(categories.ownerId, ownerId))
-        )
-        .all()
-        .map((item) => [item.id, item])
+      (
+        await db
+          .select({
+            id: subcategories.id,
+            categoryId: subcategories.categoryId,
+            name: subcategories.name
+          })
+          .from(subcategories)
+          .innerJoin(
+            categories,
+            and(eq(subcategories.categoryId, categories.id), eq(categories.ownerId, ownerId))
+          )
+      ).map((item) => [item.id, item])
     );
     const items = [...subcategoryIds].map((subcategoryId) => {
       const lines = plannedRows.filter((item) => item.subcategoryId === subcategoryId);

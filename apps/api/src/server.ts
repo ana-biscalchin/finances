@@ -3,12 +3,16 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import helmet from "@fastify/helmet";
 import fastifyStatic from "@fastify/static";
-import { createDatabaseConnection } from "@finances/database";
+import {
+  createDatabaseConnection,
+  createPostgresDatabaseConnection,
+  type PostgresDatabaseConnection
+} from "@finances/database";
 import Fastify, { type FastifyInstance } from "fastify";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { createDatabaseProbe, type DatabaseProbe } from "./config/database-probe.js";
+import { type DatabaseProbe } from "./config/database-probe.js";
 import { createSessionService } from "./auth/session-service.js";
 import { isTrustedMutationOrigin, registerSessionRoutes } from "./auth/routes.js";
 import { loadConfig, redactConfigError, type ApiConfig } from "./config/environment.js";
@@ -30,7 +34,7 @@ import { registerPlannedExpenseRoutes } from "./modules/planned-expenses.js";
 type BuildServerOptions = {
   databasePath?: string;
   logger?: boolean;
-  connection?: ReturnType<typeof createDatabaseConnection>;
+  connection?: ReturnType<typeof createDatabaseConnection> | PostgresDatabaseConnection;
   config?: ApiConfig;
   databaseProbe?: DatabaseProbe;
   testOwnerId?: string;
@@ -67,17 +71,19 @@ export function buildServer(options: BuildServerOptions = {}) {
   });
   const connection =
     options.connection ??
-    createDatabaseConnection(
-      options.databasePath ??
-        (config.database.dialect === "sqlite"
-          ? config.database.path
-          : (process.env.PROOF_DATABASE_PATH ?? "/tmp/finances-proof.sqlite"))
-    );
-  const databaseProbe = options.databaseProbe ?? createDatabaseProbe(config);
+    (config.database.dialect === "postgres"
+      ? createPostgresDatabaseConnection({
+          url: config.database.url,
+          poolMax: config.database.poolMax,
+          connectTimeoutSeconds: config.database.connectTimeoutSeconds
+        })
+      : createDatabaseConnection(options.databasePath ?? config.database.path));
+  const databaseProbe = options.databaseProbe ?? connection;
+  const applicationConnection = connection as ReturnType<typeof createDatabaseConnection>;
 
   app.addHook("onClose", async () => {
-    await databaseProbe.close();
-    connection.sqlite.close();
+    if (options.databaseProbe) await options.databaseProbe.close();
+    await connection.close();
   });
 
   app.register(cookie);
@@ -96,7 +102,7 @@ export function buildServer(options: BuildServerOptions = {}) {
   });
   app.register(helmet, { contentSecurityPolicy: false });
 
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler(async (error, request, reply) => {
     const apiError = normalizeApiError(error);
     const statusCode =
       typeof apiError.statusCode === "number" && apiError.statusCode >= 400
@@ -130,11 +136,11 @@ export function buildServer(options: BuildServerOptions = {}) {
   app.get("/meta", async () => ({
     name: "Carteira da Ana",
     version: "0.1.0",
-    storage: "local-sqlite"
+    storage: connection.dialect
   }));
 
   const sessionService = config.auth.enabled
-    ? createSessionService(connection, {
+    ? createSessionService(applicationConnection, {
         secret: config.sessionSecret!,
         absoluteTtlSeconds: config.auth.absoluteTtlSeconds,
         idleTtlSeconds: config.auth.idleTtlSeconds
@@ -146,7 +152,7 @@ export function buildServer(options: BuildServerOptions = {}) {
     });
   }
 
-  const registerBusinessRoutes = async (routesApp: FastifyInstance) => {
+  const registerBusinessRoutes = (routesApp: FastifyInstance) => {
     if (!sessionService && config.environment === "test" && options.testOwnerId) {
       routesApp.addHook("onRequest", async (request) => {
         request.requestContext = {
@@ -160,7 +166,7 @@ export function buildServer(options: BuildServerOptions = {}) {
       routesApp.addHook("onRequest", async (request, reply) => {
         if (!isTrustedMutationOrigin(request, config))
           return reply.code(403).send({ message: "Origem não permitida." });
-        const user = sessionService.resolve(request.cookies[config.auth.cookieName]);
+        const user = await sessionService.resolve(request.cookies[config.auth.cookieName]);
         if (!user) return reply.code(401).send({ message: "Autenticação necessária." });
         request.authenticatedUser = user;
         request.requestContext = {
@@ -170,19 +176,19 @@ export function buildServer(options: BuildServerOptions = {}) {
         };
       });
     }
-    registerAccountRoutes(routesApp, connection);
-    registerCategoryRoutes(routesApp, connection);
-    registerPaymentMethodRoutes(routesApp, connection);
-    registerTransactionRoutes(routesApp, connection);
-    registerCreditCardRoutes(routesApp, connection);
-    registerReportRoutes(routesApp, connection);
-    registerBackupRoutes(routesApp, connection);
-    if (config.features.googleDrive) registerSettingsRoutes(routesApp, connection);
-    registerTransferRoutes(routesApp, connection);
-    registerRecurrenceRoutes(routesApp, connection);
-    registerMonthlyOverviewRoutes(routesApp, connection);
-    registerPlannedExpenseRoutes(routesApp, connection);
-    registerSimpleImportRoutes(routesApp, connection);
+    registerAccountRoutes(routesApp, applicationConnection);
+    registerCategoryRoutes(routesApp, applicationConnection);
+    registerPaymentMethodRoutes(routesApp, applicationConnection);
+    registerTransactionRoutes(routesApp, applicationConnection);
+    registerCreditCardRoutes(routesApp, applicationConnection);
+    registerReportRoutes(routesApp, applicationConnection);
+    if (connection.dialect === "sqlite") registerBackupRoutes(routesApp, connection);
+    if (config.features.googleDrive) registerSettingsRoutes(routesApp, applicationConnection);
+    registerTransferRoutes(routesApp, applicationConnection);
+    registerRecurrenceRoutes(routesApp, applicationConnection);
+    registerMonthlyOverviewRoutes(routesApp, applicationConnection);
+    registerPlannedExpenseRoutes(routesApp, applicationConnection);
+    registerSimpleImportRoutes(routesApp, applicationConnection);
   };
   app.register(registerBusinessRoutes, { prefix: "/api" });
   if (config.environment !== "production") app.register(registerBusinessRoutes);
@@ -190,7 +196,7 @@ export function buildServer(options: BuildServerOptions = {}) {
     const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
     const webRoot = resolve(workspaceRoot, "apps/web/dist");
     app.register(fastifyStatic, { root: webRoot, wildcard: false });
-    app.setNotFoundHandler((request, reply) =>
+    app.setNotFoundHandler(async (request, reply) =>
       request.url.startsWith("/api/")
         ? reply.code(404).send({ message: "Recurso não encontrado." })
         : reply.sendFile("index.html")

@@ -50,7 +50,7 @@ describe("private password sessions", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  async function login(loginPassword = password) {
+  function login(loginPassword = password) {
     return app.inject({
       method: "POST",
       url: "/api/session/login",
@@ -171,17 +171,17 @@ describe("private password sessions", () => {
     expect((await login()).statusCode).toBe(401);
   });
 
-  it("expires sessions after inactivity and at the absolute deadline", () => {
+  it("expires sessions after inactivity and at the absolute deadline", async () => {
     let current = new Date("2026-07-27T12:00:00.000Z");
     const service = createSessionService(
       connection,
       { secret, absoluteTtlSeconds: 600, idleTtlSeconds: 60 },
       () => current
     );
-    const token = service.createSession("user-ana");
-    expect(service.resolve(token)?.id).toBe("user-ana");
+    const token = await service.createSession("user-ana");
+    expect((await service.resolve(token))?.id).toBe("user-ana");
     current = new Date("2026-07-27T12:01:01.000Z");
-    expect(service.resolve(token)).toBeNull();
+    expect(await service.resolve(token)).toBeNull();
 
     current = new Date("2026-07-27T12:00:00.000Z");
     const absolute = createSessionService(
@@ -189,9 +189,9 @@ describe("private password sessions", () => {
       { secret, absoluteTtlSeconds: 60, idleTtlSeconds: 300 },
       () => current
     );
-    const absoluteToken = absolute.createSession("user-ana");
+    const absoluteToken = await absolute.createSession("user-ana");
     current = new Date("2026-07-27T12:01:01.000Z");
-    expect(absolute.resolve(absoluteToken)).toBeNull();
+    expect(await absolute.resolve(absoluteToken)).toBeNull();
   });
 });
 

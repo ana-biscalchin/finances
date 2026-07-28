@@ -12,7 +12,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
+    "db:generate:postgres": "drizzle-kit generate --config=drizzle.postgres.config.ts",
     "db:migrate": "tsx src/migrate.ts",
+    "db:migrate:postgres": "tsx src/migrate-postgres.ts",
     "db:migrate:identity": "tsx src/migrate-identity.ts",
     "db:seed": "tsx src/seed.ts",
     "db:seed:demo": "tsx src/seed-demo.ts",

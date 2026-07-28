@@ -36,35 +36,39 @@ export function createTransactionImportService(
   ownerId: string,
   hooks: Hooks = {}
 ) {
-  const existingKeys = () =>
+  const existingKeys = async () =>
     new Set(
-      connection.db
-        .select()
-        .from(transactions)
-        .where(eq(transactions.ownerId, ownerId))
-        .all()
-        .map(key)
+      (
+        await connection.db.select().from(transactions).where(eq(transactions.ownerId, ownerId))
+      ).map(key)
     );
-  const billLocked = (billId: string) => {
-    const bill = connection.db
-      .select()
-      .from(creditCardBills)
-      .where(eq(creditCardBills.id, billId))
-      .get();
+  const billLocked = async (billId: string) => {
+    const bill = (
+      await connection.db
+        .select()
+        .from(creditCardBills)
+        .where(eq(creditCardBills.id, billId))
+        .limit(1)
+    )[0];
     return Boolean(
       bill?.closedAt ||
-      connection.db
-        .select()
-        .from(creditCardBillPayments)
-        .where(
-          and(eq(creditCardBillPayments.billId, billId), isNull(creditCardBillPayments.reversedAt))
-        )
-        .get()
+      (
+        await connection.db
+          .select()
+          .from(creditCardBillPayments)
+          .where(
+            and(
+              eq(creditCardBillPayments.billId, billId),
+              isNull(creditCardBillPayments.reversedAt)
+            )
+          )
+          .limit(1)
+      )[0]
     );
   };
   return {
-    preview(items: unknown[]) {
-      const existing = existingKeys();
+    async preview(items: unknown[]) {
+      const existing = await existingKeys();
       return items.map((raw) => {
         const result = importTransactionInputSchema.safeParse(raw);
         return result.success
@@ -77,12 +81,12 @@ export function createTransactionImportService(
             };
       });
     },
-    confirm(items: unknown[]) {
+    async confirm(items: unknown[]) {
       let created = 0;
       let duplicatesIgnored = 0;
       let invalid = 0;
-      const seen = existingKeys();
-      connection.db.transaction(() => {
+      const seen = await existingKeys();
+      await connection.transaction(async () => {
         for (const raw of items) {
           const result = importTransactionInputSchema.safeParse(raw);
           if (!result.success) {
@@ -91,18 +95,22 @@ export function createTransactionImportService(
           }
           const item = result.data;
           const account = item.accountId
-            ? connection.db
-                .select()
-                .from(accounts)
-                .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, item.accountId)))
-                .get()
+            ? (
+                await connection.db
+                  .select()
+                  .from(accounts)
+                  .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, item.accountId)))
+                  .limit(1)
+              )[0]
             : null;
           const method = item.paymentMethodId
-            ? connection.db
-                .select()
-                .from(paymentMethods)
-                .where(eq(paymentMethods.id, item.paymentMethodId))
-                .get()
+            ? (
+                await connection.db
+                  .select()
+                  .from(paymentMethods)
+                  .where(eq(paymentMethods.id, item.paymentMethodId))
+                  .limit(1)
+              )[0]
             : null;
           const accountValid = !item.accountId || Boolean(account?.isActive);
           const methodValid = !item.paymentMethodId || Boolean(method?.isActive);
@@ -110,17 +118,19 @@ export function createTransactionImportService(
             !item.accountId ||
             !item.paymentMethodId ||
             Boolean(
-              connection.db
-                .select()
-                .from(accountPaymentMethods)
-                .where(
-                  and(
-                    eq(accountPaymentMethods.accountId, item.accountId),
-                    eq(accountPaymentMethods.paymentMethodId, item.paymentMethodId),
-                    eq(accountPaymentMethods.isActive, true)
+              (
+                await connection.db
+                  .select()
+                  .from(accountPaymentMethods)
+                  .where(
+                    and(
+                      eq(accountPaymentMethods.accountId, item.accountId),
+                      eq(accountPaymentMethods.paymentMethodId, item.paymentMethodId),
+                      eq(accountPaymentMethods.isActive, true)
+                    )
                   )
-                )
-                .get()
+                  .limit(1)
+              )[0]
             );
           const consumptionSourceValid =
             item.type !== "expense" ||
@@ -128,28 +138,36 @@ export function createTransactionImportService(
             Boolean(item.creditCardId || (item.accountId && item.paymentMethodId));
           const categoryValid =
             !item.subcategoryId ||
-            connection.db
-              .select()
-              .from(subcategories)
-              .innerJoin(
-                categories,
-                and(eq(subcategories.categoryId, categories.id), eq(categories.ownerId, ownerId))
-              )
-              .where(eq(subcategories.id, item.subcategoryId))
-              .get();
-          const card = item.creditCardId
-            ? connection.db
+            (
+              await connection.db
                 .select()
-                .from(creditCards)
-                .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.id, item.creditCardId)))
-                .get()
+                .from(subcategories)
+                .innerJoin(
+                  categories,
+                  and(eq(subcategories.categoryId, categories.id), eq(categories.ownerId, ownerId))
+                )
+                .where(eq(subcategories.id, item.subcategoryId))
+                .limit(1)
+            )[0];
+          const card = item.creditCardId
+            ? (
+                await connection.db
+                  .select()
+                  .from(creditCards)
+                  .where(
+                    and(eq(creditCards.ownerId, ownerId), eq(creditCards.id, item.creditCardId))
+                  )
+                  .limit(1)
+              )[0]
             : null;
           const informedBill = item.creditCardBillId
-            ? connection.db
-                .select()
-                .from(creditCardBills)
-                .where(eq(creditCardBills.id, item.creditCardBillId))
-                .get()
+            ? (
+                await connection.db
+                  .select()
+                  .from(creditCardBills)
+                  .where(eq(creditCardBills.id, item.creditCardBillId))
+                  .limit(1)
+              )[0]
             : null;
           if (
             (item.creditCardBillId && !informedBill) ||
@@ -160,7 +178,8 @@ export function createTransactionImportService(
             !categoryValid ||
             (item.creditCardId && !card) ||
             (informedBill &&
-              (informedBill.creditCardId !== item.creditCardId || billLocked(informedBill.id)))
+              (informedBill.creditCardId !== item.creditCardId ||
+                (await billLocked(informedBill.id))))
           ) {
             invalid++;
             continue;
@@ -172,16 +191,18 @@ export function createTransactionImportService(
           }
           let creditCardBillId = item.creditCardBillId ?? null;
           if (card && !creditCardBillId) {
-            let bill = connection.db
-              .select()
-              .from(creditCardBills)
-              .where(
-                and(
-                  eq(creditCardBills.creditCardId, card.id),
-                  eq(creditCardBills.billMonth, item.budgetMonth)
+            let bill = (
+              await connection.db
+                .select()
+                .from(creditCardBills)
+                .where(
+                  and(
+                    eq(creditCardBills.creditCardId, card.id),
+                    eq(creditCardBills.billMonth, item.budgetMonth)
+                  )
                 )
-              )
-              .get();
+                .limit(1)
+            )[0];
             if (!bill) {
               const dates = getCreditCardBillDates(item.budgetMonth, card.closingDay, card.dueDay);
               bill = {
@@ -196,25 +217,22 @@ export function createTransactionImportService(
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
               };
-              connection.db.insert(creditCardBills).values(bill).run();
+              await connection.db.insert(creditCardBills).values(bill);
             }
             creditCardBillId = bill.id;
-            if (billLocked(bill.id)) {
+            if (await billLocked(bill.id)) {
               invalid++;
               continue;
             }
           }
-          connection.db
-            .insert(transactions)
-            .values({
-              id: crypto.randomUUID(),
-              ownerId,
-              ...item,
-              accountId: item.creditCardId ? null : item.accountId,
-              paymentMethodId: item.creditCardId ? null : item.paymentMethodId,
-              creditCardBillId
-            })
-            .run();
+          await connection.db.insert(transactions).values({
+            id: crypto.randomUUID(),
+            ownerId,
+            ...item,
+            accountId: item.creditCardId ? null : item.accountId,
+            paymentMethodId: item.creditCardId ? null : item.paymentMethodId,
+            creditCardBillId
+          });
           seen.add(fingerprint);
           hooks.afterInsert?.(created);
           created++;

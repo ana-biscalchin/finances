@@ -23,11 +23,11 @@ const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle
 describe("canonical monthly views", () => {
   let dir: string;
   let connection: ReturnType<typeof createDatabaseConnection>;
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(resolve(tmpdir(), "monthly-overview-"));
     connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
-    seedTestOwner(connection);
+    await seedTestOwner(connection);
     connection.db
       .insert(accounts)
       .values({
@@ -62,7 +62,7 @@ describe("canonical monthly views", () => {
     connection.sqlite.close();
     rmSync(dir, { recursive: true, force: true });
   });
-  it("returns spending without counting transfer and exposes account risk", () => {
+  it("returns spending without counting transfer and exposes account risk", async () => {
     const service = createMonthlyOverviewService(connection, TEST_OWNER_ID);
     connection.db
       .insert(plannedExpenses)
@@ -106,14 +106,14 @@ describe("canonical monthly views", () => {
         }
       ])
       .run();
-    expect(service.overview("2026-07").summary).toEqual(
+    expect((await service.overview("2026-07")).summary).toEqual(
       expect.objectContaining({ spentCents: 30_000, abovePlannedCents: 10_000 })
     );
-    expect(service.cashPosition("2026-07")[0]).toEqual(
+    expect((await service.cashPosition("2026-07"))[0]).toEqual(
       expect.objectContaining({ currentBalanceCents: 80_000, atRisk: false })
     );
   });
-  it("includes account forecasts and only the unpaid principal of card bills", () => {
+  it("includes account forecasts and only the unpaid principal of card bills", async () => {
     const service = createMonthlyOverviewService(connection, TEST_OWNER_ID);
     connection.db
       .insert(creditCards)
@@ -222,10 +222,10 @@ describe("canonical monthly views", () => {
         principalCents: 10_000
       })
       .run();
-    expect(service.cashPosition("2026-07")[0]).toEqual(
+    expect((await service.cashPosition("2026-07"))[0]).toEqual(
       expect.objectContaining({ currentBalanceCents: 90_000, expectedBalanceCents: 30_000 })
     );
-    expect(service.cashPosition("2026-07")).toContainEqual(
+    expect(await service.cashPosition("2026-07")).toContainEqual(
       expect.objectContaining({
         accountId: "unassigned-credit-card-bills",
         outstandingBillsCents: 5_000,
@@ -249,7 +249,7 @@ describe("canonical monthly views", () => {
         status: "confirmed"
       })
       .run();
-    expect(service.cashPosition("2026-07")[0]).toEqual(
+    expect((await service.cashPosition("2026-07"))[0]).toEqual(
       expect.objectContaining({
         currentBalanceCents: 70_000,
         expectedBalanceCents: 30_000,

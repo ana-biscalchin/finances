@@ -33,26 +33,29 @@ export function createBillPaymentService(
 ) {
   const { db } = connection;
 
-  function ownedBill(billId: string) {
-    const bill = db
-      .select()
-      .from(creditCardBills)
-      .innerJoin(
-        creditCards,
-        and(eq(creditCardBills.creditCardId, creditCards.id), eq(creditCards.ownerId, ownerId))
-      )
-      .where(eq(creditCardBills.id, billId))
-      .get()?.credit_card_bills;
+  async function ownedBill(billId: string) {
+    const bill = (
+      await db
+        .select()
+        .from(creditCardBills)
+        .innerJoin(
+          creditCards,
+          and(eq(creditCardBills.creditCardId, creditCards.id), eq(creditCards.ownerId, ownerId))
+        )
+        .where(eq(creditCardBills.id, billId))
+        .limit(1)
+    )[0]?.credit_card_bills;
     if (!bill) throw new BillPaymentServiceError("Fatura não encontrada.", 404);
     return bill;
   }
 
-  function billTotal(billId: string): number {
-    return db
-      .select()
-      .from(transactions)
-      .where(and(eq(transactions.ownerId, ownerId), eq(transactions.creditCardBillId, billId)))
-      .all()
+  async function billTotal(billId: string): Promise<number> {
+    return (
+      await db
+        .select()
+        .from(transactions)
+        .where(and(eq(transactions.ownerId, ownerId), eq(transactions.creditCardBillId, billId)))
+    )
       .filter((row) => row.creditCardId && row.status !== "canceled")
       .reduce(
         (sum, row) =>
@@ -65,17 +68,16 @@ export function createBillPaymentService(
       );
   }
 
-  function summary(billId: string, asOfDate: string) {
-    const bill = ownedBill(billId);
-    const payments = db
+  async function summary(billId: string, asOfDate: string) {
+    const bill = await ownedBill(billId);
+    const payments = await db
       .select()
       .from(creditCardBillPayments)
       .where(
         and(eq(creditCardBillPayments.ownerId, ownerId), eq(creditCardBillPayments.billId, billId))
-      )
-      .all();
+      );
     return summarizeBillPayments({
-      totalCents: billTotal(billId),
+      totalCents: await billTotal(billId),
       minimumDueCents: bill.minimumDueCents,
       dueDate: bill.dueDate,
       asOfDate,
@@ -83,22 +85,24 @@ export function createBillPaymentService(
     });
   }
 
-  function resultFor(payment: typeof creditCardBillPayments.$inferSelect, asOfDate: string) {
-    const paymentTransaction = db
-      .select()
-      .from(transactions)
-      .where(
-        and(eq(transactions.ownerId, ownerId), eq(transactions.id, payment.paymentTransactionId))
-      )
-      .get();
+  async function resultFor(payment: typeof creditCardBillPayments.$inferSelect, asOfDate: string) {
+    const paymentTransaction = (
+      await db
+        .select()
+        .from(transactions)
+        .where(
+          and(eq(transactions.ownerId, ownerId), eq(transactions.id, payment.paymentTransactionId))
+        )
+        .limit(1)
+    )[0];
     if (!paymentTransaction) throw new Error(`Payment ${payment.id} has no cash movement`);
-    return { payment, paymentTransaction, summary: summary(payment.billId, asOfDate) };
+    return { payment, paymentTransaction, summary: await summary(payment.billId, asOfDate) };
   }
 
   return {
-    details(billId: string, asOfDate = new Date().toISOString().slice(0, 10)) {
-      ownedBill(billId);
-      const payments = db
+    async details(billId: string, asOfDate = new Date().toISOString().slice(0, 10)) {
+      await ownedBill(billId);
+      const payments = await db
         .select()
         .from(creditCardBillPayments)
         .where(
@@ -106,11 +110,10 @@ export function createBillPaymentService(
             eq(creditCardBillPayments.ownerId, ownerId),
             eq(creditCardBillPayments.billId, billId)
           )
-        )
-        .all();
-      return { payments, summary: summary(billId, asOfDate) };
+        );
+      return { payments, summary: await summary(billId, asOfDate) };
     },
-    pay(billId: string, idempotencyKey: string, input: unknown) {
+    async pay(billId: string, idempotencyKey: string, input: unknown) {
       if (!idempotencyKey.trim())
         throw new BillPaymentServiceError("Chave de idempotência é obrigatória.", 400);
       const parsedResult = billPaymentInputSchema.safeParse(input);
@@ -120,17 +123,19 @@ export function createBillPaymentService(
           400
         );
       const parsed: BillPaymentInput = parsedResult.data;
-      const bill = ownedBill(billId);
-      const existing = db
-        .select()
-        .from(creditCardBillPayments)
-        .where(
-          and(
-            eq(creditCardBillPayments.ownerId, ownerId),
-            eq(creditCardBillPayments.idempotencyKey, idempotencyKey)
+      const bill = await ownedBill(billId);
+      const existing = (
+        await db
+          .select()
+          .from(creditCardBillPayments)
+          .where(
+            and(
+              eq(creditCardBillPayments.ownerId, ownerId),
+              eq(creditCardBillPayments.idempotencyKey, idempotencyKey)
+            )
           )
-        )
-        .get();
+          .limit(1)
+      )[0];
       if (existing) {
         if (existing.billId !== billId)
           throw new BillPaymentServiceError("Chave de idempotência já utilizada.", 409);
@@ -146,124 +151,134 @@ export function createBillPaymentService(
             "Chave de idempotência reutilizada com pagamento diferente.",
             409
           );
-        return resultFor(existing, existing.paymentDate);
+        return await resultFor(existing, existing.paymentDate);
       }
-      const account = db
-        .select()
-        .from(accounts)
-        .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, parsed.accountId)))
-        .get();
+      const account = (
+        await db
+          .select()
+          .from(accounts)
+          .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, parsed.accountId)))
+          .limit(1)
+      )[0];
       if (!account) throw new BillPaymentServiceError("Conta de pagamento não encontrada.", 404);
       if (!account.isActive)
         throw new BillPaymentServiceError("Conta de pagamento está arquivada.", 409);
-      const before = summary(billId, parsed.paymentDate);
+      const before = await summary(billId, parsed.paymentDate);
       if (parsed.principalCents > before.remainingCents)
         throw new BillPaymentServiceError("Pagamento principal excede o saldo da fatura.", 409);
 
       const paymentId = crypto.randomUUID();
       const transactionId = crypto.randomUUID();
-      db.transaction(() => {
-        db.insert(transactions)
-          .values({
-            id: transactionId,
-            ownerId,
-            type: "expense",
-            description: `Pagamento de fatura ${bill.billMonth}`,
-            amountCents: parsed.amountCents,
-            eventDate: parsed.paymentDate,
-            budgetMonth: parsed.paymentDate.slice(0, 7),
-            accountId: parsed.accountId,
-            paymentMethodId: getDefaultAccountPaymentMethodId(connection, account.id),
-            creditCardBillId: billId,
-            status: "confirmed",
-            notes: `bill-payment:${paymentId}`
-          })
-          .run();
+      await connection.transaction(async () => {
+        await db.insert(transactions).values({
+          id: transactionId,
+          ownerId,
+          type: "expense",
+          description: `Pagamento de fatura ${bill.billMonth}`,
+          amountCents: parsed.amountCents,
+          eventDate: parsed.paymentDate,
+          budgetMonth: parsed.paymentDate.slice(0, 7),
+          accountId: parsed.accountId,
+          paymentMethodId: await getDefaultAccountPaymentMethodId(connection, account.id),
+          creditCardBillId: billId,
+          status: "confirmed",
+          notes: `bill-payment:${paymentId}`
+        });
         hooks.afterCashMovement?.();
-        db.insert(creditCardBillPayments)
-          .values({
-            id: paymentId,
-            ownerId,
-            idempotencyKey,
-            billId,
-            accountId: parsed.accountId,
-            paymentTransactionId: transactionId,
-            paymentDate: parsed.paymentDate,
-            principalCents: parsed.principalCents,
-            interestCents: parsed.interestCents,
-            penaltyCents: parsed.penaltyCents,
-            notes: parsed.notes
-          })
-          .run();
-        const after = summary(billId, parsed.paymentDate);
-        db.update(creditCardBills)
+        await db.insert(creditCardBillPayments).values({
+          id: paymentId,
+          ownerId,
+          idempotencyKey,
+          billId,
+          accountId: parsed.accountId,
+          paymentTransactionId: transactionId,
+          paymentDate: parsed.paymentDate,
+          principalCents: parsed.principalCents,
+          interestCents: parsed.interestCents,
+          penaltyCents: parsed.penaltyCents,
+          notes: parsed.notes
+        });
+        const after = await summary(billId, parsed.paymentDate);
+        await db
+          .update(creditCardBills)
           .set({
             status: after.status,
             paidAt: after.status === "paid" ? new Date().toISOString() : null
           })
-          .where(eq(creditCardBills.id, billId))
-          .run();
+          .where(eq(creditCardBills.id, billId));
       });
-      const payment = db
-        .select()
-        .from(creditCardBillPayments)
-        .where(
-          and(eq(creditCardBillPayments.ownerId, ownerId), eq(creditCardBillPayments.id, paymentId))
-        )
-        .get();
-      if (!payment) throw new Error(`Payment ${paymentId} was not persisted`);
-      return resultFor(payment, parsed.paymentDate);
-    },
-
-    reverse(billId: string, paymentId: string, reversedAt = new Date().toISOString()) {
-      ownedBill(billId);
-      const payment = db
-        .select()
-        .from(creditCardBillPayments)
-        .where(
-          and(
-            eq(creditCardBillPayments.ownerId, ownerId),
-            eq(creditCardBillPayments.id, paymentId),
-            eq(creditCardBillPayments.billId, billId)
-          )
-        )
-        .get();
-      if (!payment) throw new BillPaymentServiceError("Pagamento não encontrado.", 404);
-      if (payment.reversedAt) return resultFor(payment, reversedAt.slice(0, 10));
-      db.transaction(() => {
-        db.update(creditCardBillPayments)
-          .set({ reversedAt })
+      const payment = (
+        await db
+          .select()
+          .from(creditCardBillPayments)
           .where(
             and(
               eq(creditCardBillPayments.ownerId, ownerId),
               eq(creditCardBillPayments.id, paymentId)
             )
           )
-          .run();
-        db.update(transactions)
+          .limit(1)
+      )[0];
+      if (!payment) throw new Error(`Payment ${paymentId} was not persisted`);
+      return await resultFor(payment, parsed.paymentDate);
+    },
+
+    async reverse(billId: string, paymentId: string, reversedAt = new Date().toISOString()) {
+      await ownedBill(billId);
+      const payment = (
+        await db
+          .select()
+          .from(creditCardBillPayments)
+          .where(
+            and(
+              eq(creditCardBillPayments.ownerId, ownerId),
+              eq(creditCardBillPayments.id, paymentId),
+              eq(creditCardBillPayments.billId, billId)
+            )
+          )
+          .limit(1)
+      )[0];
+      if (!payment) throw new BillPaymentServiceError("Pagamento não encontrado.", 404);
+      if (payment.reversedAt) return await resultFor(payment, reversedAt.slice(0, 10));
+      await connection.transaction(async () => {
+        await db
+          .update(creditCardBillPayments)
+          .set({ reversedAt })
+          .where(
+            and(
+              eq(creditCardBillPayments.ownerId, ownerId),
+              eq(creditCardBillPayments.id, paymentId)
+            )
+          );
+        await db
+          .update(transactions)
           .set({ status: "canceled" })
           .where(
             and(
               eq(transactions.ownerId, ownerId),
               eq(transactions.id, payment.paymentTransactionId)
             )
-          )
-          .run();
-        const after = summary(billId, reversedAt.slice(0, 10));
-        db.update(creditCardBills)
+          );
+        const after = await summary(billId, reversedAt.slice(0, 10));
+        await db
+          .update(creditCardBills)
           .set({ status: after.status, paidAt: null })
-          .where(eq(creditCardBills.id, billId))
-          .run();
+          .where(eq(creditCardBills.id, billId));
       });
-      const reversed = db
-        .select()
-        .from(creditCardBillPayments)
-        .where(
-          and(eq(creditCardBillPayments.ownerId, ownerId), eq(creditCardBillPayments.id, paymentId))
-        )
-        .get();
+      const reversed = (
+        await db
+          .select()
+          .from(creditCardBillPayments)
+          .where(
+            and(
+              eq(creditCardBillPayments.ownerId, ownerId),
+              eq(creditCardBillPayments.id, paymentId)
+            )
+          )
+          .limit(1)
+      )[0];
       if (!reversed) throw new Error(`Payment ${paymentId} disappeared during reversal`);
-      return resultFor(reversed, reversedAt.slice(0, 10));
+      return await resultFor(reversed, reversedAt.slice(0, 10));
     }
   };
 }

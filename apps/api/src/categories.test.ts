@@ -12,11 +12,11 @@ describe("categories API", () => {
   let tempDir: string;
   let app: ReturnType<typeof buildServer>;
   let connection: ReturnType<typeof createDatabaseConnection>;
-  beforeEach(() => {
+  beforeEach(async () => {
     tempDir = mkdtempSync(resolve(tmpdir(), "finances-categories-test-"));
     connection = createDatabaseConnection(resolve(tempDir, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
-    seedTestOwner(connection);
+    await seedTestOwner(connection);
     app = buildServer({
       connection,
       logger: false,

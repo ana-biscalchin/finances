@@ -20,7 +20,7 @@ export function registerTransferRoutes(app: FastifyInstance, connection: Databas
   const serviceFor = (request: Parameters<typeof requestContextFrom>[0]) =>
     createTransferService(connection, requestContextFrom(request).ownerId);
   app.post("/transfers", async (request, reply) =>
-    reply.code(201).send(serviceFor(request).create(parse(transferInputSchema, request.body)))
+    reply.code(201).send(await serviceFor(request).create(parse(transferInputSchema, request.body)))
   );
   app.put("/transfers/:id", async (request) =>
     serviceFor(request).update(
@@ -35,7 +35,7 @@ export function registerTransferRoutes(app: FastifyInstance, connection: Databas
     )
   );
   app.delete("/transfers/:id", async (request, reply) => {
-    serviceFor(request).remove(parse(paramsSchema, request.params).id);
+    await serviceFor(request).remove(parse(paramsSchema, request.params).id);
     return reply.code(204).send();
   });
 }

@@ -8,20 +8,16 @@ import { and, eq, inArray } from "drizzle-orm";
 import { ValidationError } from "../../http.js";
 
 type Connection = ReturnType<typeof createDatabaseConnection>;
-type Transaction = Parameters<Parameters<Connection["db"]["transaction"]>[0]>[0];
+type Transaction = Parameters<Parameters<Connection["transaction"]>[0]>[0];
 
-export function validateAccountPaymentMethods(
+export async function validateAccountPaymentMethods(
   connection: Connection,
   associations: AccountPaymentMethodInput[]
 ) {
   if (!associations.length) return;
   const ids = associations.map((item) => item.paymentMethodId);
   const activeIds = new Set(
-    connection.db
-      .select()
-      .from(paymentMethods)
-      .where(inArray(paymentMethods.id, ids))
-      .all()
+    (await connection.db.select().from(paymentMethods).where(inArray(paymentMethods.id, ids)))
       .filter((item) => item.isActive)
       .map((item) => item.id)
   );
@@ -29,18 +25,19 @@ export function validateAccountPaymentMethods(
     throw new ValidationError("Forma de pagamento ativa não encontrada.");
 }
 
-export function replaceAccountPaymentMethods(
+export async function replaceAccountPaymentMethods(
   tx: Transaction,
   accountId: string,
   associations: AccountPaymentMethodInput[],
   now: string
 ) {
-  tx.update(accountPaymentMethods)
+  await tx
+    .update(accountPaymentMethods)
     .set({ isActive: false, isDefault: false, archivedAt: now, updatedAt: now })
-    .where(eq(accountPaymentMethods.accountId, accountId))
-    .run();
+    .where(eq(accountPaymentMethods.accountId, accountId));
   for (const association of associations) {
-    tx.insert(accountPaymentMethods)
+    await tx
+      .insert(accountPaymentMethods)
       .values({
         id: crypto.randomUUID(),
         accountId,
@@ -52,59 +49,57 @@ export function replaceAccountPaymentMethods(
       .onConflictDoUpdate({
         target: [accountPaymentMethods.accountId, accountPaymentMethods.paymentMethodId],
         set: { isDefault: association.isDefault, isActive: true, archivedAt: null, updatedAt: now }
-      })
-      .run();
+      });
   }
 }
 
-export function listAccountPaymentMethods(
+export async function listAccountPaymentMethods(
   connection: Connection,
   accountId: string,
   includeInactive = false
 ) {
   const methods = new Map(
-    connection.db
-      .select()
-      .from(paymentMethods)
-      .all()
-      .map((item) => [item.id, item])
+    (await connection.db.select().from(paymentMethods)).map((item) => [item.id, item])
   );
-  return connection.db
-    .select()
-    .from(accountPaymentMethods)
-    .where(eq(accountPaymentMethods.accountId, accountId))
-    .all()
+  return (
+    await connection.db
+      .select()
+      .from(accountPaymentMethods)
+      .where(eq(accountPaymentMethods.accountId, accountId))
+  )
     .filter((item) => includeInactive || item.isActive)
     .map((association) => ({ ...association, method: methods.get(association.paymentMethodId) }))
     .sort((left, right) => (left.method?.sortOrder ?? 0) - (right.method?.sortOrder ?? 0));
 }
 
-export function getDefaultAccountPaymentMethodId(connection: Connection, accountId: string) {
+export async function getDefaultAccountPaymentMethodId(connection: Connection, accountId: string) {
   return (
-    connection.db
-      .select()
-      .from(accountPaymentMethods)
-      .where(eq(accountPaymentMethods.accountId, accountId))
-      .all()
-      .find((item) => item.isActive && item.isDefault)?.paymentMethodId ?? null
+    (
+      await connection.db
+        .select()
+        .from(accountPaymentMethods)
+        .where(eq(accountPaymentMethods.accountId, accountId))
+    ).find((item) => item.isActive && item.isDefault)?.paymentMethodId ?? null
   );
 }
 
-export function validateActiveAccountPaymentMethod(
+export async function validateActiveAccountPaymentMethod(
   connection: Connection,
   accountId: string,
   paymentMethodId: string
 ) {
-  const association = connection.db
-    .select()
-    .from(accountPaymentMethods)
-    .where(
-      and(
-        eq(accountPaymentMethods.accountId, accountId),
-        eq(accountPaymentMethods.paymentMethodId, paymentMethodId)
+  const association = (
+    await connection.db
+      .select()
+      .from(accountPaymentMethods)
+      .where(
+        and(
+          eq(accountPaymentMethods.accountId, accountId),
+          eq(accountPaymentMethods.paymentMethodId, paymentMethodId)
+        )
       )
-    )
-    .get();
+      .limit(1)
+  )[0];
   if (!association?.isActive) {
     throw new ValidationError("A forma de pagamento não está ativa para esta conta.");
   }

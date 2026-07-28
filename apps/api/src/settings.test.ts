@@ -26,7 +26,7 @@ describe("Settings and Google Drive API", () => {
     migrate(connection.db, {
       migrationsFolder: "../../packages/database/drizzle"
     });
-    seedTestOwner(connection);
+    await seedTestOwner(connection);
 
     app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });

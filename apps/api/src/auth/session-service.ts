@@ -16,19 +16,16 @@ export function createSessionService(
   const tokenHash = (token: string) =>
     createHmac("sha256", config.secret).update(token).digest("hex");
 
-  function createSession(userId: string) {
+  async function createSession(userId: string) {
     const token = randomBytes(32).toString("base64url");
     const current = now();
-    connection.db
-      .insert(sessions)
-      .values({
-        id: randomUUID(),
-        userId,
-        tokenHash: tokenHash(token),
-        expiresAt: new Date(current.getTime() + config.absoluteTtlSeconds * 1000).toISOString(),
-        lastSeenAt: current.toISOString()
-      })
-      .run();
+    await connection.db.insert(sessions).values({
+      id: randomUUID(),
+      userId,
+      tokenHash: tokenHash(token),
+      expiresAt: new Date(current.getTime() + config.absoluteTtlSeconds * 1000).toISOString(),
+      lastSeenAt: current.toISOString()
+    });
     return token;
   }
 
@@ -37,77 +34,78 @@ export function createSessionService(
 
   async function authenticate(username: string, password: string) {
     const normalized = username.trim().toLocaleLowerCase("pt-BR");
-    const user = connection.db.select().from(users).where(eq(users.username, normalized)).get();
+    const user = (
+      await connection.db.select().from(users).where(eq(users.username, normalized)).limit(1)
+    )[0];
     const passwordMatches = await verifyPassword(user?.passwordHash ?? dummyPasswordHash, password);
     if (!user || !user.isActive || !passwordMatches) return null;
     return {
       user: { id: user.id, username: user.username, role: "owner" as const },
-      token: createSession(user.id)
+      token: await createSession(user.id)
     };
   }
 
-  function resolve(token: string | undefined): AuthenticatedUser | null {
+  async function resolve(token: string | undefined): Promise<AuthenticatedUser | null> {
     if (!token) return null;
     const current = now();
-    const row = connection.db
-      .select({ session: sessions, user: users })
-      .from(sessions)
-      .innerJoin(users, eq(sessions.userId, users.id))
-      .where(
-        and(
-          eq(sessions.tokenHash, tokenHash(token)),
-          isNull(sessions.revokedAt),
-          gt(sessions.expiresAt, current.toISOString()),
-          eq(users.isActive, true)
+    const row = (
+      await connection.db
+        .select({ session: sessions, user: users })
+        .from(sessions)
+        .innerJoin(users, eq(sessions.userId, users.id))
+        .where(
+          and(
+            eq(sessions.tokenHash, tokenHash(token)),
+            isNull(sessions.revokedAt),
+            gt(sessions.expiresAt, current.toISOString()),
+            eq(users.isActive, true)
+          )
         )
-      )
-      .get();
+        .limit(1)
+    )[0];
     if (!row) return null;
     if (
       current.getTime() - new Date(row.session.lastSeenAt).getTime() >
       config.idleTtlSeconds * 1000
     ) {
-      connection.db
+      await connection.db
         .update(sessions)
         .set({ revokedAt: current.toISOString(), updatedAt: current.toISOString() })
-        .where(eq(sessions.id, row.session.id))
-        .run();
+        .where(eq(sessions.id, row.session.id));
       return null;
     }
-    connection.db
+    await connection.db
       .update(sessions)
       .set({ lastSeenAt: current.toISOString(), updatedAt: current.toISOString() })
-      .where(eq(sessions.id, row.session.id))
-      .run();
+      .where(eq(sessions.id, row.session.id));
     return { id: row.user.id, username: row.user.username, role: "owner" };
   }
 
-  function revoke(token: string | undefined) {
+  async function revoke(token: string | undefined) {
     if (!token) return;
     const current = now().toISOString();
-    connection.db
+    await connection.db
       .update(sessions)
       .set({ revokedAt: current, updatedAt: current })
-      .where(and(eq(sessions.tokenHash, tokenHash(token)), isNull(sessions.revokedAt)))
-      .run();
+      .where(and(eq(sessions.tokenHash, tokenHash(token)), isNull(sessions.revokedAt)));
   }
 
   async function changePassword(userId: string, currentPassword: string, newPassword: string) {
-    const user = connection.db.select().from(users).where(eq(users.id, userId)).get();
+    const user = (await connection.db.select().from(users).where(eq(users.id, userId)).limit(1))[0];
     if (!user || !(await verifyPassword(user.passwordHash, currentPassword))) return null;
     const current = now().toISOString();
     const passwordHash = await hashPassword(newPassword);
-    connection.db.transaction((tx) => {
-      tx.update(users)
+    await connection.transaction(async (tx) => {
+      await tx
+        .update(users)
         .set({ passwordHash, passwordChangedAt: current, updatedAt: current })
-        .where(eq(users.id, userId))
-        .run();
-      tx.update(sessions)
+        .where(eq(users.id, userId));
+      await tx
+        .update(sessions)
         .set({ revokedAt: current, updatedAt: current })
-        .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)))
-        .run();
+        .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
     });
-    return createSession(userId);
+    return await createSession(userId);
   }
 
   return { authenticate, changePassword, createSession, resolve, revoke };

@@ -150,6 +150,8 @@ T12,T13,T14 → T15 → T16
 
 ### T6: Adicionar propriedade financeira ao schema
 
+**Execução:** concluída em 2026-07-27 no PR 23, com propriedade direta nas raízes financeiras e herança validada nos filhos.
+
 - **O quê:** referenciar a usuária criada em T5, adicionar `ownerId` às raízes financeiras, converter unicidades/índices e definir herança de propriedade dos filhos.
 - **Onde:** `packages/database/src/schema.ts`, migrations Drizzle, seeds e testes do banco.
 - **Depende de:** T5.
@@ -165,6 +167,8 @@ T12,T13,T14 → T15 → T16
 - **Commit:** `feat(database): scope financial data by owner`
 
 ### T7: Criar repositórios e serviços obrigatoriamente escopados
+
+**Execução:** concluída em 2026-07-27 no PR 23. Todas as rotas e serviços financeiros propagam `ownerId`, incluindo referências cruzadas e idempotência.
 
 - **O quê:** propagar `RequestContext` e `ownerId` por todas as consultas, comandos, agregações e validações de referências.
 - **Onde:** `apps/api/src/application/`, `apps/api/src/modules/`, camada de repositórios a criar e testes da API.
@@ -182,6 +186,8 @@ T12,T13,T14 → T15 → T16
 - **Commit:** `feat(api): enforce owner scoped data access`
 
 ### T8: Adaptar a persistência ao banco hospedado
+
+**Execução:** implementação concluída em 2026-07-27 no PR 23. Schema, migration, pool, readiness, shutdown e bootstrap PostgreSQL foram validados no branch temporário Neon `br-misty-base-avviu9j0`; a promoção ao branch principal de staging depende de confirmação operacional explícita.
 
 - **O quê:** implementar conexão, schema, migrations e comportamento transacional no banco aprovado, mantendo SQLite somente onde decidido.
 - **Onde:** `packages/database/`, configuração da API, migrations e testes de integração.

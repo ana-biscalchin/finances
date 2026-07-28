@@ -22,11 +22,11 @@ const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle
 describe("recurrence service", () => {
   let dir: string;
   let connection: ReturnType<typeof createDatabaseConnection>;
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(resolve(tmpdir(), "finances-recurrence-test-"));
     connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
-    seedTestOwner(connection);
+    await seedTestOwner(connection);
     connection.db
       .insert(accounts)
       .values({ id: "account-1", ownerId: "test-owner", name: "Conta", type: "checking" })
@@ -60,9 +60,9 @@ describe("recurrence service", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("forecasts without materializing and confirms one account occurrence per month", () => {
+  it("forecasts without materializing and confirms one account occurrence per month", async () => {
     const service = createRecurrenceService(connection, TEST_OWNER_ID);
-    const rule = service.create({
+    const rule = await service.create({
       kind: "expense",
       description: "Aluguel",
       amountCents: 100_000,
@@ -73,19 +73,19 @@ describe("recurrence service", () => {
       dayOfMonth: 31,
       startMonth: "2026-01"
     });
-    expect(service.forecast("2026-02")[0]).toEqual(
+    expect((await service.forecast("2026-02"))[0]).toEqual(
       expect.objectContaining({ eventDate: "2026-02-28", budgetMonth: "2026-02" })
     );
     expect(connection.db.select().from(transactions).all()).toEqual([]);
-    const first = service.confirm(rule.id, "2026-02");
-    const retry = service.confirm(rule.id, "2026-02");
+    const first = await service.confirm(rule.id, "2026-02");
+    const retry = await service.confirm(rule.id, "2026-02");
     expect(retry.id).toBe(first.id);
     expect(connection.db.select().from(transactions).all()).toHaveLength(1);
   });
 
-  it("places a confirmed card occurrence in its calculated bill", () => {
+  it("places a confirmed card occurrence in its calculated bill", async () => {
     const service = createRecurrenceService(connection, TEST_OWNER_ID);
-    const rule = service.create({
+    const rule = await service.create({
       kind: "expense",
       description: "Assinatura",
       amountCents: 5_000,
@@ -95,15 +95,15 @@ describe("recurrence service", () => {
       dayOfMonth: 15,
       startMonth: "2026-07"
     });
-    const occurrence = service.confirm(rule.id, "2026-07");
+    const occurrence = await service.confirm(rule.id, "2026-07");
     expect(occurrence).toEqual(
       expect.objectContaining({ budgetMonth: "2026-08", creditCardBillId: expect.any(String) })
     );
   });
 
-  it("pause, resume, end, and this-and-future changes preserve confirmed facts", () => {
+  it("pause, resume, end, and this-and-future changes preserve confirmed facts", async () => {
     const service = createRecurrenceService(connection, TEST_OWNER_ID);
-    const rule = service.create({
+    const rule = await service.create({
       kind: "expense",
       description: "Aluguel",
       amountCents: 100_000,
@@ -114,23 +114,23 @@ describe("recurrence service", () => {
       dayOfMonth: 5,
       startMonth: "2026-01"
     });
-    service.confirm(rule.id, "2026-06");
-    service.pause(rule.id);
-    expect(service.forecast("2026-07")).toEqual([]);
-    service.resume(rule.id);
-    const next = service.changeFrom(rule.id, "2026-07", { amountCents: 120_000 });
+    await service.confirm(rule.id, "2026-06");
+    await service.pause(rule.id);
+    expect(await service.forecast("2026-07")).toEqual([]);
+    await service.resume(rule.id);
+    const next = await service.changeFrom(rule.id, "2026-07", { amountCents: 120_000 });
     expect(next.startMonth).toBe("2026-07");
     expect(connection.db.select().from(transactions).all()).toHaveLength(1);
-    service.end(next.id);
-    expect(service.forecast("2026-08")).toEqual([]);
+    await service.end(next.id);
+    expect(await service.forecast("2026-08")).toEqual([]);
     expect(connection.db.select().from(recurrenceRules).all()).toHaveLength(2);
   });
 
-  it("rejects invalid or unavailable rules and exposes persisted rules", () => {
+  it("rejects invalid or unavailable rules and exposes persisted rules", async () => {
     const service = createRecurrenceService(connection, TEST_OWNER_ID);
-    expect(() => service.create({})).toThrow();
-    expect(() => service.pause("missing")).toThrow("não encontrada");
-    const rule = service.create({
+    await expect(service.create({})).rejects.toThrow();
+    await expect(service.pause("missing")).rejects.toThrow("não encontrada");
+    const rule = await service.create({
       kind: "expense",
       description: "Conta",
       amountCents: 1_000,
@@ -141,11 +141,11 @@ describe("recurrence service", () => {
       dayOfMonth: 1,
       startMonth: "2026-07"
     });
-    expect(service.list()).toHaveLength(1);
-    service.pause(rule.id);
-    expect(() => service.confirm(rule.id, "2026-07")).toThrow("inativa");
+    expect(await service.list()).toHaveLength(1);
+    await service.pause(rule.id);
+    await expect(service.confirm(rule.id, "2026-07")).rejects.toThrow("inativa");
   });
-  it("does not expose or mutate recurrence rules from another owner", () => {
+  it("does not expose or mutate recurrence rules from another owner", async () => {
     connection.db
       .insert(users)
       .values({
@@ -168,7 +168,7 @@ describe("recurrence service", () => {
       .values({ id: "other-subcategory", categoryId: "other-category", name: "Privada" })
       .run();
     const otherService = createRecurrenceService(connection, "other-owner");
-    const privateRule = otherService.create({
+    const privateRule = await otherService.create({
       kind: "income",
       description: "Privada",
       amountCents: 1000,
@@ -180,9 +180,9 @@ describe("recurrence service", () => {
     });
     const service = createRecurrenceService(connection, TEST_OWNER_ID);
 
-    expect(service.list()).toEqual([]);
-    expect(() => service.pause(privateRule.id)).toThrow("não encontrada");
-    expect(() =>
+    expect(await service.list()).toEqual([]);
+    await expect(service.pause(privateRule.id)).rejects.toThrow("não encontrada");
+    await expect(
       service.create({
         kind: "income",
         description: "Invasão",
@@ -193,8 +193,8 @@ describe("recurrence service", () => {
         dayOfMonth: 1,
         startMonth: "2026-07"
       })
-    ).toThrow("não encontrado");
-    expect(otherService.list()[0]).toEqual(
+    ).rejects.toThrow("não encontrado");
+    expect((await otherService.list())[0]).toEqual(
       expect.objectContaining({ id: privateRule.id, ownerId: "other-owner", status: "active" })
     );
   });

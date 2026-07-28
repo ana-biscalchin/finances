@@ -18,10 +18,13 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 export function registerMonthlyOverviewRoutes(app: FastifyInstance, connection: Connection) {
   const serviceFor = (request: Parameters<typeof requestContextFrom>[0]) =>
     createMonthlyOverviewService(connection, requestContextFrom(request).ownerId);
-  app.get("/monthly-overview", async (request) =>
-    serviceFor(request).overview(parse(querySchema, request.query).month)
+  app.get(
+    "/monthly-overview",
+    async (request) => await serviceFor(request).overview(parse(querySchema, request.query).month)
   );
-  app.get("/cash-position", async (request) =>
-    serviceFor(request).cashPosition(parse(querySchema, request.query).month)
+  app.get(
+    "/cash-position",
+    async (request) =>
+      await serviceFor(request).cashPosition(parse(querySchema, request.query).month)
   );
 }

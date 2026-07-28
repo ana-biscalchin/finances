@@ -8,10 +8,10 @@ const argon2idOptions: Options = {
   outputLen: 32
 };
 
-export function hashPassword(password: string) {
-  return hash(password, argon2idOptions);
+export async function hashPassword(password: string) {
+  return await hash(password, argon2idOptions);
 }
 
-export function verifyPassword(passwordHash: string, password: string) {
-  return verify(passwordHash, password, argon2idOptions);
+export async function verifyPassword(passwordHash: string, password: string) {
+  return await verify(passwordHash, password, argon2idOptions);
 }

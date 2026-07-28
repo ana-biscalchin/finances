@@ -18,17 +18,19 @@ export function registerPlannedExpenseRoutes(app: FastifyInstance, connection: C
   const serviceFor = (request: Parameters<typeof requestContextFrom>[0]) =>
     createPlannedExpenseService(connection, requestContextFrom(request).ownerId);
   app.post("/planned-expenses", async (request, reply) =>
-    reply.code(201).send(serviceFor(request).create(request.body))
+    reply.code(201).send(await serviceFor(request).create(request.body))
   );
-  app.put("/planned-expenses/:id", async (request) =>
-    serviceFor(request).update((request.params as { id: string }).id, request.body)
+  app.put(
+    "/planned-expenses/:id",
+    async (request) =>
+      await serviceFor(request).update((request.params as { id: string }).id, request.body)
   );
   app.delete("/planned-expenses/:id", async (request, reply) => {
-    serviceFor(request).remove((request.params as { id: string }).id);
+    await serviceFor(request).remove((request.params as { id: string }).id);
     return reply.code(204).send();
   });
   app.post("/planned-expenses/copy", async (request) => {
     const body = parse(copySchema, request.body);
-    return serviceFor(request).copy(body.sourceMonth, body.targetMonth);
+    return await serviceFor(request).copy(body.sourceMonth, body.targetMonth);
   });
 }

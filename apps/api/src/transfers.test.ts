@@ -24,12 +24,12 @@ describe("atomic account transfers", () => {
   let connection: ReturnType<typeof createDatabaseConnection>;
   let app: ReturnType<typeof buildServer>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tempDir = mkdtempSync(resolve(tmpdir(), "finances-transfer-test-"));
     databasePath = resolve(tempDir, "test.sqlite");
     connection = createDatabaseConnection(databasePath);
     migrate(connection.db, { migrationsFolder });
-    seedTestOwner(connection);
+    await seedTestOwner(connection);
     connection.db
       .insert(accounts)
       .values([
@@ -127,14 +127,14 @@ describe("atomic account transfers", () => {
     expect(connection.db.select().from(transactions).all()).toHaveLength(0);
   });
 
-  it("rolls back the aggregate and outgoing leg when the incoming insert fails", () => {
+  it("rolls back the aggregate and outgoing leg when the incoming insert fails", async () => {
     const service = createTransferService(connection, TEST_OWNER_ID, {
       afterOutgoingInsert() {
         throw new Error("simulated incoming failure");
       }
     });
 
-    expect(() =>
+    await expect(
       service.create({
         sourceAccountId: "account-source",
         destinationAccountId: "account-destination",
@@ -142,7 +142,7 @@ describe("atomic account transfers", () => {
         eventDate: "2026-07-13",
         description: "Falha"
       })
-    ).toThrow("simulated incoming failure");
+    ).rejects.toThrow("simulated incoming failure");
     expect(connection.db.select().from(accountTransfers).all()).toHaveLength(0);
     expect(connection.db.select().from(transactions).all()).toHaveLength(0);
   });
@@ -164,9 +164,9 @@ describe("atomic account transfers", () => {
       .set({ amountCents: 999 })
       .where(eq(transactions.id, created.json().legs[0].id))
       .run();
-    expect(() =>
+    await expect(
       createTransferService(connection, TEST_OWNER_ID).get(created.json().transfer.id)
-    ).toThrow("equivalent");
+    ).rejects.toThrow("equivalent");
   });
 
   it("returns explicit validation, absence, and conflict responses", async () => {
@@ -209,14 +209,14 @@ describe("atomic account transfers", () => {
 
   it("does not leave orphan legs after deletion", async () => {
     const service = createTransferService(connection, TEST_OWNER_ID);
-    const created = service.create({
+    const created = await service.create({
       sourceAccountId: "account-source",
       destinationAccountId: "account-destination",
       amountCents: 5_000,
       eventDate: "2026-07-13",
       description: "Temporária"
     });
-    service.remove(created.transfer.id);
+    await service.remove(created.transfer.id);
 
     expect(
       connection.db

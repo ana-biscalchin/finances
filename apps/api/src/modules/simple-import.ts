@@ -23,6 +23,6 @@ export function registerSimpleImportRoutes(
     serviceFor(request).preview(parse(request.body).transactions)
   );
   app.post("/simple-import/confirm", async (request, reply) =>
-    reply.code(201).send(serviceFor(request).confirm(parse(request.body).transactions))
+    reply.code(201).send(await serviceFor(request).confirm(parse(request.body).transactions))
   );
 }

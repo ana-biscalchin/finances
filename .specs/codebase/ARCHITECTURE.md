@@ -21,9 +21,9 @@ flowchart LR
 | Interface    | `apps/web`          | Navegação, formulários e visualizações mensais                 |
 | API          | `apps/api`          | Contratos HTTP, serviços de aplicação e transações             |
 | Domínio      | `packages/domain`   | Dinheiro, datas e classificação financeira puramente testáveis |
-| Persistência | `packages/database` | Schema, migrations, conexão, integridade e backup SQLite       |
+| Persistência | `packages/database` | Schemas, migrations e conexões SQLite/PostgreSQL               |
 
-O diagrama representa o alvo decidido no ADR 002. Os planos gratuitos e seus limites precisam ser confirmados pela prova de implantação antes da implementação; o protótipo continua usando SQLite local.
+O diagrama representa a topologia do ADR 002. SQLite permanece no desenvolvimento; staging e produção selecionam PostgreSQL por configuração validada, com migration executada fora do startup.
 
 ## Fronteiras da arquitetura online
 
@@ -55,7 +55,7 @@ O diagrama representa o alvo decidido no ADR 002. Os planos gratuitos e seus lim
 ### Transferência atômica
 
 1. A interface envia origem, destino, valor e data a `POST /transfers`.
-2. `transfer-service` grava `account_transfers` e duas pernas em uma transação SQLite.
+2. `transfer-service` grava `account_transfers` e duas pernas em uma transação atômica no dialeto configurado.
 3. As pernas carregam `transferId`; edição e exclusão atualizam o agregado inteiro.
 4. Classificadores excluem ambas do consumo econômico.
 

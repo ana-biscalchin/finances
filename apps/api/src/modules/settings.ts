@@ -14,34 +14,38 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
 
   // Helper to get a setting value
   async function getSetting(ownerId: string, key: string): Promise<string | null> {
-    const row = db
-      .select()
-      .from(dbSettings)
-      .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)))
-      .get();
+    const row = (
+      await db
+        .select()
+        .from(dbSettings)
+        .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)))
+        .limit(1)
+    )[0];
     return row?.value ?? null;
   }
 
   // Helper to save a setting value
   async function setSetting(ownerId: string, key: string, value: string | null) {
     if (value === null) {
-      db.delete(dbSettings)
-        .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)))
-        .run();
+      await db
+        .delete(dbSettings)
+        .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)));
       return;
     }
-    const existing = db
-      .select()
-      .from(dbSettings)
-      .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)))
-      .get();
-    if (existing) {
-      db.update(dbSettings)
-        .set({ value, updatedAt: new Date().toISOString() })
+    const existing = (
+      await db
+        .select()
+        .from(dbSettings)
         .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)))
-        .run();
+        .limit(1)
+    )[0];
+    if (existing) {
+      await db
+        .update(dbSettings)
+        .set({ value, updatedAt: new Date().toISOString() })
+        .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)));
     } else {
-      db.insert(dbSettings).values({ ownerId, key, value }).run();
+      await db.insert(dbSettings).values({ ownerId, key, value });
     }
   }
 

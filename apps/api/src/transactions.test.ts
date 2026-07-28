@@ -23,11 +23,11 @@ describe("canonical transactions API", () => {
   let dir: string;
   let app: ReturnType<typeof buildServer>;
   let connection: ReturnType<typeof createDatabaseConnection>;
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(resolve(tmpdir(), "transactions-test-"));
     connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
-    seedTestOwner(connection);
+    await seedTestOwner(connection);
     connection.db
       .insert(accounts)
       .values({ id: "account", ownerId: "test-owner", name: "Conta", type: "checking" })

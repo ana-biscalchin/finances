@@ -23,11 +23,11 @@ describe("credit card bill payment service", () => {
   let tempDir: string;
   let connection: ReturnType<typeof createDatabaseConnection>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tempDir = mkdtempSync(resolve(tmpdir(), "finances-bill-payment-test-"));
     connection = createDatabaseConnection(resolve(tempDir, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
-    seedTestOwner(connection);
+    await seedTestOwner(connection);
     connection.db
       .insert(accounts)
       .values({
@@ -81,9 +81,9 @@ describe("credit card bill payment service", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("records partial, minimum, and final payments using the informed date", () => {
+  it("records partial, minimum, and final payments using the informed date", async () => {
     const service = createBillPaymentService(connection, TEST_OWNER_ID);
-    const partial = service.pay("bill-1", "payment-key-1", {
+    const partial = await service.pay("bill-1", "payment-key-1", {
       accountId: "account-1",
       paymentDate: "2026-07-18",
       amountCents: 10_000,
@@ -96,7 +96,7 @@ describe("credit card bill payment service", () => {
     );
     expect(partial.paymentTransaction.eventDate).toBe("2026-07-18");
 
-    const final = service.pay("bill-1", "payment-key-2", {
+    const final = await service.pay("bill-1", "payment-key-2", {
       accountId: "account-1",
       paymentDate: "2026-07-20",
       amountCents: 90_000,
@@ -108,7 +108,7 @@ describe("credit card bill payment service", () => {
     expect(connection.db.select().from(creditCardBillPayments).all()).toHaveLength(2);
   });
 
-  it("is idempotent and keeps interest and penalty in one decomposed cash movement", () => {
+  it("is idempotent and keeps interest and penalty in one decomposed cash movement", async () => {
     const service = createBillPaymentService(connection, TEST_OWNER_ID);
     const input = {
       accountId: "account-1",
@@ -118,8 +118,8 @@ describe("credit card bill payment service", () => {
       interestCents: 1_000,
       penaltyCents: 500
     };
-    const first = service.pay("bill-1", "same-key", input);
-    const retry = service.pay("bill-1", "same-key", input);
+    const first = await service.pay("bill-1", "same-key", input);
+    const retry = await service.pay("bill-1", "same-key", input);
 
     expect(retry.payment.id).toBe(first.payment.id);
     expect(connection.db.select().from(creditCardBillPayments).all()).toHaveLength(1);
@@ -128,9 +128,9 @@ describe("credit card bill payment service", () => {
     expect(first.paymentTransaction.amountCents).toBe(11_500);
   });
 
-  it("reverses without deleting history and restores the derived bill state", () => {
+  it("reverses without deleting history and restores the derived bill state", async () => {
     const service = createBillPaymentService(connection, TEST_OWNER_ID);
-    const paid = service.pay("bill-1", "payment-key", {
+    const paid = await service.pay("bill-1", "payment-key", {
       accountId: "account-1",
       paymentDate: "2026-07-20",
       amountCents: 100_000,
@@ -138,7 +138,7 @@ describe("credit card bill payment service", () => {
       interestCents: 0,
       penaltyCents: 0
     });
-    const reversed = service.reverse("bill-1", paid.payment.id, "2026-07-21T10:00:00Z");
+    const reversed = await service.reverse("bill-1", paid.payment.id, "2026-07-21T10:00:00Z");
 
     expect(reversed.summary.status).toBe("overdue");
     expect(
@@ -157,13 +157,13 @@ describe("credit card bill payment service", () => {
     ).toBe("canceled");
   });
 
-  it("rolls back all records when an intermediate write fails", () => {
+  it("rolls back all records when an intermediate write fails", async () => {
     const service = createBillPaymentService(connection, TEST_OWNER_ID, {
       afterCashMovement() {
         throw new Error("simulated failure");
       }
     });
-    expect(() =>
+    await expect(
       service.pay("bill-1", "failure-key", {
         accountId: "account-1",
         paymentDate: "2026-07-20",
@@ -172,7 +172,7 @@ describe("credit card bill payment service", () => {
         interestCents: 0,
         penaltyCents: 0
       })
-    ).toThrow("simulated failure");
+    ).rejects.toThrow("simulated failure");
     expect(connection.db.select().from(creditCardBillPayments).all()).toEqual([]);
     expect(connection.db.select().from(transactions).all()).toHaveLength(1);
   });
@@ -199,7 +199,7 @@ describe("credit card bill payment service", () => {
     await app.close();
   });
 
-  it("rejects invalid, missing, conflicting, and excessive payment requests", () => {
+  it("rejects invalid, missing, conflicting, and excessive payment requests", async () => {
     const service = createBillPaymentService(connection, TEST_OWNER_ID);
     const valid = {
       accountId: "account-1",
@@ -207,36 +207,38 @@ describe("credit card bill payment service", () => {
       amountCents: 10_000,
       principalCents: 10_000
     };
-    expect(() => service.pay("bill-1", "", valid)).toThrow("idempotência");
-    expect(() => service.pay("bill-1", "invalid", { ...valid, amountCents: -1 })).toThrow();
-    expect(() => service.pay("missing", "missing-bill", valid)).toThrow("Fatura não encontrada");
-    expect(() =>
+    await expect(service.pay("bill-1", "", valid)).rejects.toThrow("idempotência");
+    await expect(service.pay("bill-1", "invalid", { ...valid, amountCents: -1 })).rejects.toThrow();
+    await expect(service.pay("missing", "missing-bill", valid)).rejects.toThrow(
+      "Fatura não encontrada"
+    );
+    await expect(
       service.pay("bill-1", "missing-account", { ...valid, accountId: "missing" })
-    ).toThrow("Conta de pagamento");
+    ).rejects.toThrow("Conta de pagamento");
     connection.db
       .update(accounts)
       .set({ isActive: false })
       .where(eq(accounts.id, "account-1"))
       .run();
-    expect(() => service.pay("bill-1", "inactive-account", valid)).toThrow("arquivada");
+    await expect(service.pay("bill-1", "inactive-account", valid)).rejects.toThrow("arquivada");
     connection.db
       .update(accounts)
       .set({ isActive: true })
       .where(eq(accounts.id, "account-1"))
       .run();
-    expect(() =>
+    await expect(
       service.pay("bill-1", "excess", { ...valid, amountCents: 100_001, principalCents: 100_001 })
-    ).toThrow("excede");
-    expect(() => service.reverse("bill-1", "missing")).toThrow("Pagamento não encontrado");
+    ).rejects.toThrow("excede");
+    await expect(service.reverse("bill-1", "missing")).rejects.toThrow("Pagamento não encontrado");
 
-    const paid = service.pay("bill-1", "reversal-key", valid);
-    expect(() =>
+    const paid = await service.pay("bill-1", "reversal-key", valid);
+    await expect(
       service.pay("bill-1", "reversal-key", { ...valid, paymentDate: "2026-07-21" })
-    ).toThrow("pagamento diferente");
-    service.reverse("bill-1", paid.payment.id, "2026-07-21T10:00:00Z");
-    expect(service.reverse("bill-1", paid.payment.id, "2026-07-22T10:00:00Z").payment.id).toBe(
-      paid.payment.id
-    );
+    ).rejects.toThrow("pagamento diferente");
+    await service.reverse("bill-1", paid.payment.id, "2026-07-21T10:00:00Z");
+    expect(
+      (await service.reverse("bill-1", paid.payment.id, "2026-07-22T10:00:00Z")).payment.id
+    ).toBe(paid.payment.id);
 
     connection.db
       .insert(creditCardBills)
@@ -247,10 +249,10 @@ describe("credit card bill payment service", () => {
         dueDate: "2026-08-20"
       })
       .run();
-    expect(() => service.pay("bill-2", "reversal-key", valid)).toThrow("já utilizada");
+    await expect(service.pay("bill-2", "reversal-key", valid)).rejects.toThrow("já utilizada");
   });
 
-  it("subtracts card refunds and chargebacks while ignoring unrelated transaction types", () => {
+  it("subtracts card refunds and chargebacks while ignoring unrelated transaction types", async () => {
     connection.db
       .insert(transactions)
       .values([
@@ -292,23 +294,31 @@ describe("credit card bill payment service", () => {
         }
       ])
       .run();
-    const result = createBillPaymentService(connection, TEST_OWNER_ID).pay("bill-1", "refund-key", {
-      accountId: "account-1",
-      paymentDate: "2026-07-20",
-      amountCents: 10_000,
-      principalCents: 10_000
-    });
+    const result = await createBillPaymentService(connection, TEST_OWNER_ID).pay(
+      "bill-1",
+      "refund-key",
+      {
+        accountId: "account-1",
+        paymentDate: "2026-07-20",
+        amountCents: 10_000,
+        principalCents: 10_000
+      }
+    );
     expect(result.summary.remainingCents).toBe(88_000);
   });
 
   it("locks financial fields after payment but keeps metadata editable until reversal", async () => {
     const app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
-    const paid = createBillPaymentService(connection, TEST_OWNER_ID).pay("bill-1", "lock-key", {
-      accountId: "account-1",
-      paymentDate: "2026-07-20",
-      amountCents: 10_000,
-      principalCents: 10_000
-    });
+    const paid = await createBillPaymentService(connection, TEST_OWNER_ID).pay(
+      "bill-1",
+      "lock-key",
+      {
+        accountId: "account-1",
+        paymentDate: "2026-07-20",
+        amountCents: 10_000,
+        principalCents: 10_000
+      }
+    );
     const financialPayload = {
       type: "expense",
       description: "Compra alterada",
@@ -341,7 +351,7 @@ describe("credit card bill payment service", () => {
       })
     );
 
-    createBillPaymentService(connection, TEST_OWNER_ID).reverse(
+    await createBillPaymentService(connection, TEST_OWNER_ID).reverse(
       "bill-1",
       paid.payment.id,
       "2026-07-21T10:00:00Z"
@@ -499,7 +509,7 @@ describe("credit card bill payment service", () => {
     expect(connection.db.select().from(creditCardBillPayments).all()).toEqual([]);
     await app.close();
   });
-  it("allows the same idempotency key independently for two owners", () => {
+  it("allows the same idempotency key independently for two owners", async () => {
     connection.db
       .insert(users)
       .values({
@@ -549,11 +559,11 @@ describe("credit card bill payment service", () => {
       .run();
     const input = { paymentDate: "2026-07-20", amountCents: 1000, principalCents: 1000 };
 
-    createBillPaymentService(connection, TEST_OWNER_ID).pay("bill-1", "shared-key", {
+    await createBillPaymentService(connection, TEST_OWNER_ID).pay("bill-1", "shared-key", {
       ...input,
       accountId: "account-1"
     });
-    createBillPaymentService(connection, "other-owner").pay("other-bill", "shared-key", {
+    await createBillPaymentService(connection, "other-owner").pay("other-bill", "shared-key", {
       ...input,
       accountId: "other-account"
     });

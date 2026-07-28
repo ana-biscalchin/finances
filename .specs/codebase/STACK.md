@@ -49,11 +49,12 @@
 
 ### Persistência
 
-- SQLite local no protótipo e no desenvolvimento
+- SQLite local no desenvolvimento e PostgreSQL hospedado em staging/produção
 - `better-sqlite3`
+- `postgres` como cliente PostgreSQL com pool limitado
 - Drizzle ORM e Drizzle Kit
 - Banco padrão em `data/financas.sqlite`
-- Neon PostgreSQL no plano gratuito para produção inicial, sujeito à validação dos limites vigentes na prova de implantação
+- Neon PostgreSQL no plano gratuito para produção inicial, validado com dados sintéticos
 
 ## Organização do código
 
@@ -62,10 +63,10 @@ O repositório é um monorepo pnpm separado nas seguintes unidades:
 - `apps/web`: interface React, páginas e componentes compartilhados.
 - `apps/api`: servidor Fastify e módulos de rotas por área funcional.
 - `packages/domain`: tipos, validações e regras financeiras puras reutilizáveis.
-- `packages/database`: conexão SQLite, schema Drizzle, migrations, seeds e operações de integridade/restauração.
+- `packages/database`: conexões SQLite/PostgreSQL, schemas e migrations por dialeto, seeds e operações locais de integridade/restauração.
 - `packages/shared`: pacote compartilhado ainda mínimo.
 
-A API registra módulos funcionais diretamente no servidor. O domínio concentra regras puras como dinheiro em centavos, datas de negócio, classificação de lançamentos, cálculo de faturas e conciliação. O acesso ao SQLite fica isolado em `packages/database`, embora parte relevante das agregações e regras de aplicação ainda esteja dentro dos módulos de rota da API.
+A API registra módulos funcionais diretamente no servidor. O domínio concentra regras puras como dinheiro em centavos, datas de negócio, classificação de lançamentos, cálculo de faturas e conciliação. O acesso a SQLite/PostgreSQL fica isolado em `packages/database`, embora parte relevante das agregações e regras de aplicação ainda esteja dentro dos módulos de rota da API.
 
 ## Comandos principais
 
@@ -83,6 +84,8 @@ Banco de dados:
 
 ```bash
 pnpm db:generate
+pnpm --filter @finances/database db:generate:postgres
+DATABASE_URL=... pnpm --filter @finances/database db:migrate:postgres
 pnpm db:migrate
 pnpm db:seed
 pnpm db:setup

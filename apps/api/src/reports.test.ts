@@ -24,12 +24,12 @@ describe("reports API", () => {
   let databasePath: string;
   let app: ReturnType<typeof buildServer>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tempDir = mkdtempSync(resolve(tmpdir(), "finances-reports-test-"));
     databasePath = resolve(tempDir, "test.sqlite");
     const connection = createDatabaseConnection(databasePath);
     migrate(connection.db, { migrationsFolder });
-    seedTestOwner(connection);
+    await seedTestOwner(connection);
     connection.db
       .insert(paymentMethods)
       .values({ id: "pm-pix", name: "Pix", kind: "pix" })

@@ -22,11 +22,11 @@ describe("account payment method associations", () => {
   let connection: ReturnType<typeof createDatabaseConnection>;
   let app: ReturnType<typeof buildServer>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     directory = mkdtempSync(resolve(tmpdir(), "finances-account-methods-"));
     connection = createDatabaseConnection(resolve(directory, "test.sqlite"));
     migrate(connection.db, { migrationsFolder });
-    seedTestOwner(connection);
+    await seedTestOwner(connection);
     connection.db
       .insert(paymentMethods)
       .values([

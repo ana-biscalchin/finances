@@ -46,7 +46,7 @@ export function registerSessionRoutes(
       return reply.code(403).send({ message: "Origem não permitida." });
   });
   app.get("/session", async (request) => {
-    const user = service.resolve(request.cookies[config.auth.cookieName]);
+    const user = await service.resolve(request.cookies[config.auth.cookieName]);
     return user ? { authenticated: true, user } : { authenticated: false };
   });
   app.post(
@@ -69,12 +69,12 @@ export function registerSessionRoutes(
     }
   );
   app.post("/session/logout", async (request, reply) => {
-    service.revoke(request.cookies[config.auth.cookieName]);
+    await service.revoke(request.cookies[config.auth.cookieName]);
     reply.clearCookie(config.auth.cookieName, sessionCookieOptions(config));
     return reply.code(204).send();
   });
   app.post("/session/change-password", async (request, reply) => {
-    const user = service.resolve(request.cookies[config.auth.cookieName]);
+    const user = await service.resolve(request.cookies[config.auth.cookieName]);
     if (!user) return reply.code(401).send({ message: "Autenticação necessária." });
     const parsed = passwordChangeSchema.safeParse(request.body);
     if (!parsed.success)

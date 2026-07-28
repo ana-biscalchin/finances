@@ -17,7 +17,7 @@ unset BOOTSTRAP_PASSWORD
 4. Execute o backfill com a mesma identidade explícita: `MIGRATION_OWNER_USERNAME=ana pnpm db:migrate`.
 5. Execute os seeds, se necessários, com `SEED_OWNER_USERNAME=ana pnpm db:seed`.
 
-O comando é idempotente: se a usuária já existir, não altera senha ou sessões. A senha nunca deve ser colocada em argumento, arquivo versionado ou log. O bootstrap hospedado será habilitado sobre PostgreSQL na T8; até lá, este comando opera somente no SQLite local configurado por `DATABASE_PATH`.
+O comando é idempotente: se a usuária já existir, não altera senha ou sessões. A senha nunca deve ser colocada em argumento, arquivo versionado ou log. No ambiente hospedado, configure `DATABASE_DIALECT=postgres` e `DATABASE_URL`; localmente, o comando usa o SQLite definido por `DATABASE_PATH`.
 
 ## Sessão e resposta a incidente
 

@@ -58,7 +58,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
 
   app.post("/credit-cards/:id/bills/:billId/payments", async (request, reply) => {
     const { id, billId } = request.params as { id: string; billId: string };
-    const bill = findOwnedCreditCardBill(
+    const bill = await findOwnedCreditCardBill(
       connection,
       requestContextFrom(request).ownerId,
       id,
@@ -70,7 +70,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     const idempotencyKey = Array.isArray(key) ? (key[0] ?? "") : (key ?? "");
     return reply
       .code(201)
-      .send(billPaymentServiceFor(request).pay(billId, idempotencyKey, request.body));
+      .send(await billPaymentServiceFor(request).pay(billId, idempotencyKey, request.body));
   });
 
   app.post(
@@ -81,7 +81,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         billId: string;
         paymentId: string;
       };
-      const bill = findOwnedCreditCardBill(
+      const bill = await findOwnedCreditCardBill(
         connection,
         requestContextFrom(request).ownerId,
         id,
@@ -89,13 +89,13 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       );
       if (!bill || bill.creditCardId !== id)
         return reply.code(404).send({ message: "Fatura não encontrada." });
-      return billPaymentServiceFor(request).reverse(billId, paymentId);
+      return await billPaymentServiceFor(request).reverse(billId, paymentId);
     }
   );
 
   app.patch("/credit-cards/:id/bills/:billId/minimum", async (request, reply) => {
     const { id, billId } = request.params as { id: string; billId: string };
-    const bill = findOwnedCreditCardBill(
+    const bill = await findOwnedCreditCardBill(
       connection,
       requestContextFrom(request).ownerId,
       id,
@@ -103,7 +103,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     );
     if (!bill || bill.creditCardId !== id)
       return reply.code(404).send({ message: "Fatura não encontrada." });
-    if (isBillFinanciallyLocked(db, billId))
+    if (await isBillFinanciallyLocked(db, billId))
       return reply
         .code(409)
         .send({ message: "O mínimo não pode mudar após fechamento ou pagamento." });
@@ -111,16 +111,17 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     try {
       const minimumDueCents = parseRequiredInteger(body.minimumDueCents, "minimumDueCents");
       if (minimumDueCents < 0) throw new ValidationError("minimumDueCents não pode ser negativo.");
-      const totalCents = db
-        .select()
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.ownerId, requestContextFrom(request).ownerId),
-            eq(transactions.creditCardBillId, billId)
+      const totalCents = (
+        await db
+          .select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.ownerId, requestContextFrom(request).ownerId),
+              eq(transactions.creditCardBillId, billId)
+            )
           )
-        )
-        .all()
+      )
         .filter((item) => item.creditCardId && ["confirmed", "reconciled"].includes(item.status))
         .reduce(
           (sum, item) => sum + (item.type === "expense" ? item.amountCents : -item.amountCents),
@@ -128,11 +129,13 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         );
       if (minimumDueCents > totalCents)
         throw new ValidationError("Pagamento mínimo não pode superar o total da fatura.");
-      db.update(creditCardBills)
+      await db
+        .update(creditCardBills)
         .set({ minimumDueCents, updatedAt: new Date().toISOString() })
-        .where(eq(creditCardBills.id, billId))
-        .run();
-      return db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).get();
+        .where(eq(creditCardBills.id, billId));
+      return (
+        await db.select().from(creditCardBills).where(eq(creditCardBills.id, billId)).limit(1)
+      )[0];
     } catch (error) {
       return sendPayloadError(error, reply, "Mínimo inválido.");
     }
@@ -144,19 +147,18 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     const includeInactive = query.includeInactive === "true";
 
     const result = includeInactive
-      ? db.select().from(creditCards).where(eq(creditCards.ownerId, ownerId)).all()
-      : db
+      ? await db.select().from(creditCards).where(eq(creditCards.ownerId, ownerId))
+      : await db
           .select()
           .from(creditCards)
-          .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.isActive, true)))
-          .all();
+          .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.isActive, true)));
 
     return result;
   });
 
   app.get("/credit-cards/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const card = findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+    const card = await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
 
     if (!card) {
       return reply.code(404).send({ message: "Cartão não encontrado." });
@@ -170,7 +172,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     const payload = parseCreditCardPayloadOrReply(request.body, reply);
     if (!payload) return reply;
 
-    if (!ensurePaymentAccountOrReply(connection, ownerId, payload.paymentAccountId, reply))
+    if (!(await ensurePaymentAccountOrReply(connection, ownerId, payload.paymentAccountId, reply)))
       return reply;
 
     const card = {
@@ -179,14 +181,14 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       ...payload
     };
 
-    db.insert(creditCards).values(card).run();
+    await db.insert(creditCards).values(card);
     return reply.code(201).send(card);
   });
 
   app.put("/credit-cards/:id", async (request, reply) => {
     const { ownerId } = requestContextFrom(request);
     const { id } = request.params as { id: string };
-    const current = findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+    const current = await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
 
     if (!current) {
       return reply.code(404).send({ message: "Cartão não encontrado." });
@@ -195,76 +197,76 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     const payload = parseCreditCardPayloadOrReply(request.body, reply);
     if (!payload) return reply;
 
-    if (!ensurePaymentAccountOrReply(connection, ownerId, payload.paymentAccountId, reply))
+    if (!(await ensurePaymentAccountOrReply(connection, ownerId, payload.paymentAccountId, reply)))
       return reply;
 
-    db.update(creditCards)
+    await db
+      .update(creditCards)
       .set({ ...payload, updatedAt: new Date().toISOString() })
       .where(
         and(eq(creditCards.ownerId, requestContextFrom(request).ownerId), eq(creditCards.id, id))
-      )
-      .run();
+      );
 
-    return findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+    return await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
   });
 
   app.patch("/credit-cards/:id/archive", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const current = findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+    const current = await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
 
     if (!current) {
       return reply.code(404).send({ message: "Cartão não encontrado." });
     }
 
-    db.update(creditCards)
+    await db
+      .update(creditCards)
       .set({ isActive: false, updatedAt: new Date().toISOString() })
       .where(
         and(eq(creditCards.ownerId, requestContextFrom(request).ownerId), eq(creditCards.id, id))
-      )
-      .run();
+      );
 
     return reply.code(204).send();
   });
 
   app.patch("/credit-cards/:id/restore", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const current = findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+    const current = await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
 
     if (!current) {
       return reply.code(404).send({ message: "Cartão não encontrado." });
     }
 
-    db.update(creditCards)
+    await db
+      .update(creditCards)
       .set({ isActive: true, updatedAt: new Date().toISOString() })
       .where(
         and(eq(creditCards.ownerId, requestContextFrom(request).ownerId), eq(creditCards.id, id))
-      )
-      .run();
+      );
 
     return reply.code(204).send();
   });
 
   app.patch("/credit-cards/:id/set-default", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const current = findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+    const current = await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
 
     if (!current) {
       return reply.code(404).send({ message: "Cartão não encontrado." });
     }
 
-    db.update(creditCards)
+    await db
+      .update(creditCards)
       .set({ isDefault: false, updatedAt: new Date().toISOString() })
-      .where(eq(creditCards.ownerId, requestContextFrom(request).ownerId))
-      .run();
+      .where(eq(creditCards.ownerId, requestContextFrom(request).ownerId));
 
-    db.update(creditCards)
+    await db
+      .update(creditCards)
       .set({ isDefault: true, updatedAt: new Date().toISOString() })
       .where(
         and(eq(creditCards.ownerId, requestContextFrom(request).ownerId), eq(creditCards.id, id))
-      )
-      .run();
+      );
 
-    return findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+    return await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
   });
 
   // ─── Bills ───────────────────────────────────────────────────────────
@@ -276,7 +278,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
   app.get("/credit-cards/:id/bills", async (request, reply) => {
     const { id } = request.params as { id: string };
     const query = request.query as Record<string, unknown>;
-    const card = findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+    const card = await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
 
     if (!card) {
       return reply.code(404).send({ message: "Cartão não encontrado." });
@@ -288,11 +290,13 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         : new Date().toISOString().slice(0, 7);
 
     // Find or create the bill for this month
-    let bill = db
-      .select()
-      .from(creditCardBills)
-      .where(and(eq(creditCardBills.creditCardId, id), eq(creditCardBills.billMonth, billMonth)))
-      .get();
+    let bill = (
+      await db
+        .select()
+        .from(creditCardBills)
+        .where(and(eq(creditCardBills.creditCardId, id), eq(creditCardBills.billMonth, billMonth)))
+        .limit(1)
+    )[0];
 
     if (!bill) {
       const { closingDate, dueDate } = getCreditCardBillDates(
@@ -315,11 +319,11 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         updatedAt: new Date().toISOString()
       };
 
-      db.insert(creditCardBills).values(bill).run();
+      await db.insert(creditCardBills).values(bill);
     }
 
     // Load transactions for this bill
-    const billTransactions = db
+    const billTransactions = await db
       .select()
       .from(transactions)
       .where(
@@ -329,12 +333,11 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           eq(transactions.creditCardId, id)
         )
       )
-      .orderBy(desc(transactions.eventDate), asc(transactions.description))
-      .all();
+      .orderBy(desc(transactions.eventDate), asc(transactions.description));
 
     // Also load transactions associated with the card and this budget month
     // (ones added via creditCardId but potentially before bill assignment)
-    const cardTransactions = db
+    const cardTransactions = await db
       .select()
       .from(transactions)
       .where(
@@ -344,8 +347,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           eq(transactions.budgetMonth, billMonth)
         )
       )
-      .orderBy(desc(transactions.eventDate), asc(transactions.description))
-      .all();
+      .orderBy(desc(transactions.eventDate), asc(transactions.description));
 
     // Merge and deduplicate
     const seen = new Set<string>();
@@ -358,11 +360,10 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     const transactionIds = allTransactions.map((transaction) => transaction.id);
     const installmentRows =
       transactionIds.length > 0
-        ? db
+        ? await db
             .select()
             .from(installments)
             .where(inArray(installments.purchaseTransactionId, transactionIds))
-            .all()
         : [];
     const installmentsByTransactionId = new Map(
       installmentRows.map((installment) => [installment.purchaseTransactionId, installment])
@@ -397,7 +398,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       bill,
       transactions: transactionsWithInstallments,
       totalCents,
-      ...billPaymentServiceFor(request).details(bill.id)
+      ...(await billPaymentServiceFor(request).details(bill.id))
     };
   });
 
@@ -407,13 +408,13 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
    */
   app.post("/credit-cards/:id/bills/:billId/transactions", async (request, reply) => {
     const { id, billId } = request.params as { id: string; billId: string };
-    const card = findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+    const card = await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
 
     if (!card) {
       return reply.code(404).send({ message: "Cartão não encontrado." });
     }
 
-    const bill = findOwnedCreditCardBill(
+    const bill = await findOwnedCreditCardBill(
       connection,
       requestContextFrom(request).ownerId,
       id,
@@ -424,7 +425,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       return reply.code(404).send({ message: "Fatura não encontrada." });
     }
 
-    if (isBillFinanciallyLocked(db, billId)) {
+    if (await isBillFinanciallyLocked(db, billId)) {
       return reply.code(400).send({
         message: "Não é possível alterar financeiramente uma fatura com pagamento ativo."
       });
@@ -470,7 +471,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       }
 
       const budgetMonth = getCreditCardBillMonth(eventDate, card.closingDay);
-      const targetBill = getOrCreateCreditCardBill(connection, card, budgetMonth);
+      const targetBill = await getOrCreateCreditCardBill(connection, card, budgetMonth);
 
       const transactionData: TransactionData = {
         type,
@@ -488,7 +489,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       };
 
       if (installmentCount > 1) {
-        const created = buildCreditCardInstallmentTransactions(
+        const created = await buildCreditCardInstallmentTransactions(
           connection,
           requestContextFrom(request).ownerId,
           transactionData,
@@ -496,7 +497,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         );
 
         for (const t of created) {
-          if (t.creditCardBillId && isBillFinanciallyLocked(db, t.creditCardBillId)) {
+          if (t.creditCardBillId && (await isBillFinanciallyLocked(db, t.creditCardBillId))) {
             return reply.code(400).send({
               message: "Não é possível alterar financeiramente uma fatura com pagamento ativo."
             });
@@ -504,12 +505,12 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         }
 
         for (const t of created) {
-          db.insert(transactions)
-            .values({ ...t, ownerId: requestContextFrom(request).ownerId })
-            .run();
+          await db
+            .insert(transactions)
+            .values({ ...t, ownerId: requestContextFrom(request).ownerId });
         }
 
-        createInstallmentMetadataForTransactions(connection, {
+        await createInstallmentMetadataForTransactions(connection, {
           creditCardId: id,
           originalDescription: description,
           originalEventDate: eventDate,
@@ -525,7 +526,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         return reply.code(201).send(created);
       }
 
-      if (isBillFinanciallyLocked(db, targetBill.id)) {
+      if (await isBillFinanciallyLocked(db, targetBill.id)) {
         return reply.code(400).send({
           message: "Não é possível alterar financeiramente uma fatura com pagamento ativo."
         });
@@ -538,9 +539,9 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         updatedAt: new Date().toISOString()
       };
 
-      db.insert(transactions)
-        .values({ ...transaction, ownerId: requestContextFrom(request).ownerId })
-        .run();
+      await db
+        .insert(transactions)
+        .values({ ...transaction, ownerId: requestContextFrom(request).ownerId });
       return reply.code(201).send(transaction);
     } catch (error) {
       return sendPayloadError(error, reply, "Erro ao salvar lançamento de cartão.");
@@ -558,10 +559,10 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       transactionId: string;
     };
 
-    const card = findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+    const card = await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
     if (!card) return reply.code(404).send({ message: "Cartão não encontrado." });
 
-    const bill = findOwnedCreditCardBill(
+    const bill = await findOwnedCreditCardBill(
       connection,
       requestContextFrom(request).ownerId,
       id,
@@ -570,16 +571,18 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     if (!bill || bill.creditCardId !== id)
       return reply.code(404).send({ message: "Fatura não encontrada." });
 
-    const current = db
-      .select()
-      .from(transactions)
-      .where(
-        and(
-          eq(transactions.ownerId, requestContextFrom(request).ownerId),
-          eq(transactions.id, transactionId)
+    const current = (
+      await db
+        .select()
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.ownerId, requestContextFrom(request).ownerId),
+            eq(transactions.id, transactionId)
+          )
         )
-      )
-      .get();
+        .limit(1)
+    )[0];
     const belongsToBill =
       current?.creditCardBillId === billId ||
       (current?.creditCardId === id && current.budgetMonth === bill.billMonth);
@@ -587,7 +590,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     if (!current || !belongsToBill) {
       return reply.code(404).send({ message: "Lançamento não encontrado nesta fatura." });
     }
-    if (isBillFinanciallyLocked(db, billId))
+    if (await isBillFinanciallyLocked(db, billId))
       return reply
         .code(400)
         .send({ message: "Fatura com pagamento ativo permite apenas renomear ou recategorizar." });
@@ -630,7 +633,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       const budgetMonth = preserveBillMonth
         ? assertYearMonth(current.budgetMonth)
         : getCreditCardBillMonth(eventDate, card.closingDay);
-      const targetBill = getOrCreateCreditCardBill(connection, card, budgetMonth);
+      const targetBill = await getOrCreateCreditCardBill(connection, card, budgetMonth);
 
       const transactionData: TransactionData = {
         type,
@@ -648,24 +651,31 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       };
 
       if (installmentCount > 1 && !preserveBillMonth) {
-        const created = buildCreditCardInstallmentTransactions(
+        const created = await buildCreditCardInstallmentTransactions(
           connection,
           requestContextFrom(request).ownerId,
           transactionData,
           installmentCount
         );
         if (
-          created.some(
-            (item) => item.creditCardBillId && isBillFinanciallyLocked(db, item.creditCardBillId)
-          )
+          (
+            await Promise.all(
+              created.map(
+                async (item) =>
+                  item.creditCardBillId &&
+                  (await isBillFinanciallyLocked(db, item.creditCardBillId))
+              )
+            )
+          ).some(Boolean)
         )
           return reply.code(400).send({
             message: "Uma das faturas das parcelas está fechada ou possui pagamento ativo."
           });
 
         const [first, ...rest] = created;
-        db.transaction(() => {
-          db.update(transactions)
+        await connection.transaction(async () => {
+          await db
+            .update(transactions)
             .set({
               description: first.description,
               amountCents: first.amountCents,
@@ -683,15 +693,14 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
                 eq(transactions.ownerId, requestContextFrom(request).ownerId),
                 eq(transactions.id, transactionId)
               )
-            )
-            .run();
+            );
 
           for (const t of rest)
-            db.insert(transactions)
-              .values({ ...t, ownerId: requestContextFrom(request).ownerId })
-              .run();
+            await db
+              .insert(transactions)
+              .values({ ...t, ownerId: requestContextFrom(request).ownerId });
 
-          createInstallmentMetadataForTransactions(connection, {
+          await createInstallmentMetadataForTransactions(connection, {
             creditCardId: id,
             originalDescription: description,
             originalEventDate: eventDate,
@@ -705,19 +714,22 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
           });
         });
 
-        return db
-          .select()
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.ownerId, requestContextFrom(request).ownerId),
-              eq(transactions.id, transactionId)
+        return (
+          await db
+            .select()
+            .from(transactions)
+            .where(
+              and(
+                eq(transactions.ownerId, requestContextFrom(request).ownerId),
+                eq(transactions.id, transactionId)
+              )
             )
-          )
-          .get();
+            .limit(1)
+        )[0];
       }
 
-      db.update(transactions)
+      await db
+        .update(transactions)
         .set({
           ...transactionData,
           updatedAt: new Date().toISOString()
@@ -727,19 +739,20 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
             eq(transactions.ownerId, requestContextFrom(request).ownerId),
             eq(transactions.id, transactionId)
           )
-        )
-        .run();
+        );
 
-      return db
-        .select()
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.ownerId, requestContextFrom(request).ownerId),
-            eq(transactions.id, transactionId)
+      return (
+        await db
+          .select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.ownerId, requestContextFrom(request).ownerId),
+              eq(transactions.id, transactionId)
+            )
           )
-        )
-        .get();
+          .limit(1)
+      )[0];
     } catch (error) {
       return sendPayloadError(error, reply, "Erro ao atualizar lançamento.");
     }
@@ -757,10 +770,10 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         transactionId: string;
       };
 
-      const card = findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
+      const card = await findOwnedCreditCard(connection, requestContextFrom(request).ownerId, id);
       if (!card) return reply.code(404).send({ message: "Cartão não encontrado." });
 
-      const bill = findOwnedCreditCardBill(
+      const bill = await findOwnedCreditCardBill(
         connection,
         requestContextFrom(request).ownerId,
         id,
@@ -769,22 +782,24 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
       if (!bill || bill.creditCardId !== id)
         return reply.code(404).send({ message: "Fatura não encontrada." });
 
-      if (isBillFinanciallyLocked(db, billId)) {
+      if (await isBillFinanciallyLocked(db, billId)) {
         return reply.code(400).send({
           message: "Não é possível excluir lançamentos de uma fatura com pagamento ativo."
         });
       }
 
-      const current = db
-        .select()
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.ownerId, requestContextFrom(request).ownerId),
-            eq(transactions.id, transactionId)
+      const current = (
+        await db
+          .select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.ownerId, requestContextFrom(request).ownerId),
+              eq(transactions.id, transactionId)
+            )
           )
-        )
-        .get();
+          .limit(1)
+      )[0];
       const belongsToBill =
         current?.creditCardBillId === billId ||
         (current?.creditCardId === id && current.budgetMonth === bill.billMonth);
@@ -793,22 +808,22 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
         return reply.code(404).send({ message: "Lançamento não encontrado nesta fatura." });
       }
 
-      if (current.creditCardBillId && isBillPaid(db, current.creditCardBillId)) {
+      if (current.creditCardBillId && (await isBillPaid(db, current.creditCardBillId))) {
         return reply
           .code(400)
           .send({ message: "Não é possível excluir lançamentos de uma fatura paga." });
       }
 
-      db.transaction((tx) => {
-        tx.delete(installments).where(eq(installments.purchaseTransactionId, transactionId)).run();
-        tx.delete(transactions)
+      await connection.transaction(async (tx) => {
+        await tx.delete(installments).where(eq(installments.purchaseTransactionId, transactionId));
+        await tx
+          .delete(transactions)
           .where(
             and(
               eq(transactions.ownerId, requestContextFrom(request).ownerId),
               eq(transactions.id, transactionId)
             )
-          )
-          .run();
+          );
       });
       return reply.code(204).send();
     }
@@ -855,29 +870,33 @@ function parseCreditCardPayloadOrReply(body: unknown, reply: FastifyReply) {
   }
 }
 
-function findOwnedCreditCard(connection: DatabaseConnection, ownerId: string, id: string) {
-  return connection.db
-    .select()
-    .from(creditCards)
-    .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.id, id)))
-    .get();
+async function findOwnedCreditCard(connection: DatabaseConnection, ownerId: string, id: string) {
+  return (
+    await connection.db
+      .select()
+      .from(creditCards)
+      .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.id, id)))
+      .limit(1)
+  )[0];
 }
 
-function findOwnedCreditCardBill(
+async function findOwnedCreditCardBill(
   connection: DatabaseConnection,
   ownerId: string,
   cardId: string,
   billId: string
 ) {
-  if (!findOwnedCreditCard(connection, ownerId, cardId)) return undefined;
-  return connection.db
-    .select()
-    .from(creditCardBills)
-    .where(and(eq(creditCardBills.id, billId), eq(creditCardBills.creditCardId, cardId)))
-    .get();
+  if (!(await findOwnedCreditCard(connection, ownerId, cardId))) return undefined;
+  return (
+    await connection.db
+      .select()
+      .from(creditCardBills)
+      .where(and(eq(creditCardBills.id, billId), eq(creditCardBills.creditCardId, cardId)))
+      .limit(1)
+  )[0];
 }
 
-function ensurePaymentAccountOrReply(
+async function ensurePaymentAccountOrReply(
   connection: DatabaseConnection,
   ownerId: string,
   paymentAccountId: string | null,
@@ -885,11 +904,13 @@ function ensurePaymentAccountOrReply(
 ) {
   if (!paymentAccountId) return true;
 
-  const account = connection.db
-    .select()
-    .from(accounts)
-    .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, paymentAccountId)))
-    .get();
+  const account = (
+    await connection.db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, paymentAccountId)))
+      .limit(1)
+  )[0];
 
   if (!account) {
     reply.code(400).send({ message: "Conta de pagamento não encontrada." });
@@ -920,21 +941,23 @@ function parseInstallmentMarker(description: string) {
   return { installmentNumber, installmentCount };
 }
 
-export function getOrCreateCreditCardBill(
+export async function getOrCreateCreditCardBill(
   connection: DatabaseConnection,
   card: typeof creditCards.$inferSelect,
   billMonth: string
 ) {
-  const existingBill = connection.db
-    .select()
-    .from(creditCardBills)
-    .where(
-      and(
-        eq(creditCardBills.creditCardId, card.id),
-        eq(creditCardBills.billMonth, assertYearMonth(billMonth))
+  const existingBill = (
+    await connection.db
+      .select()
+      .from(creditCardBills)
+      .where(
+        and(
+          eq(creditCardBills.creditCardId, card.id),
+          eq(creditCardBills.billMonth, assertYearMonth(billMonth))
+        )
       )
-    )
-    .get();
+      .limit(1)
+  )[0];
 
   if (existingBill) {
     return existingBill;
@@ -954,7 +977,7 @@ export function getOrCreateCreditCardBill(
     updatedAt: now
   };
 
-  connection.db.insert(creditCardBills).values(bill).run();
+  await connection.db.insert(creditCardBills).values(bill);
 
   return bill;
 }
