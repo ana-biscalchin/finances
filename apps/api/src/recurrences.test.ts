@@ -139,7 +139,7 @@ describePostgres("recurrence service", () => {
     await expect(service.confirm(rule.id, "2026-07")).rejects.toThrow("inativa");
   });
   it("does not expose or mutate recurrence rules from another owner", async () => {
-    connection.db
+    await connection.db
       .insert(users)
       .values({
         id: "other-owner",
@@ -148,11 +148,11 @@ describePostgres("recurrence service", () => {
         passwordChangedAt: new Date().toISOString()
       })
       .execute();
-    connection.db
+    await connection.db
       .insert(accounts)
       .values({ id: "other-account", ownerId: "other-owner", name: "Outra", type: "checking" })
       .execute();
-    connection.db
+    await connection.db
       .insert(categories)
       .values({ id: "other-category", ownerId: "other-owner", name: "Outra", nature: "expense" })
       .execute();
