@@ -3,7 +3,7 @@ import {
   users,
   type PostgresDatabaseConnection
 } from "@finances/database";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 const databaseUrl = process.env.DATABASE_URL;
 export const postgresTestsEnabled = process.env.DATABASE_DIALECT === "postgres" && Boolean(databaseUrl);
@@ -53,5 +53,6 @@ export async function removePostgresTestOwner(
   connection: PostgresDatabaseConnection,
   ownerId: string
 ) {
-  await connection.db.delete(users).where(eq(users.id, ownerId));
+  void ownerId;
+  await resetPostgresTestDatabase(connection);
 }

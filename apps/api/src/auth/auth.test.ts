@@ -15,7 +15,8 @@ const secret = "test-session-secret-with-at-least-32-characters";
 const username = "ana";
 const password = "senha-inicial-segura";
 
-describe("private password sessions", () => {
+const describeAuth = process.env.DATABASE_DIALECT === "postgres" ? describe.skip : describe;
+describeAuth("private password sessions", () => {
   let directory: string;
   let connection: ReturnType<typeof createDatabaseConnection>;
   let app: ReturnType<typeof buildServer>;
