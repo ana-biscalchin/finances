@@ -1,36 +1,26 @@
 import {
   accountTransfers,
   accounts,
-  createDatabaseConnection,
   transactions,
   users
 } from "@finances/database";
 import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createTransferService } from "./application/transfer-service.js";
-import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
+import { createPostgresTestConnection, postgresTestsEnabled, removePostgresTestOwner, seedPostgresTestOwner } from "./test-support/postgres.js";
 import { buildServer } from "./server.js";
 
-const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
-
-describe("atomic account transfers", () => {
-  let tempDir: string;
-  let databasePath: string;
-  let connection: ReturnType<typeof createDatabaseConnection>;
+const TEST_OWNER_ID = "test-owner";
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
+describePostgres("atomic account transfers", () => {
+  let connection: ReturnType<typeof createPostgresTestConnection>;
   let app: ReturnType<typeof buildServer>;
 
   beforeEach(async () => {
-    tempDir = mkdtempSync(resolve(tmpdir(), "finances-transfer-test-"));
-    databasePath = resolve(tempDir, "test.sqlite");
-    connection = createDatabaseConnection(databasePath);
-    migrate(connection.db, { migrationsFolder });
-    await seedTestOwner(connection);
-    connection.db
+    connection = createPostgresTestConnection();
+    await seedPostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.db
       .insert(accounts)
       .values([
         {
@@ -58,13 +48,14 @@ describe("atomic account transfers", () => {
           isActive: false
         }
       ])
-      .run();
+      .execute();
     app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });
 
   afterEach(async () => {
     await app.close();
-    rmSync(tempDir, { recursive: true, force: true });
+    await removePostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.close();
   });
 
   it("creates, edits, and deletes both cash legs atomically", async () => {
@@ -83,8 +74,8 @@ describe("atomic account transfers", () => {
     expect(createdResponse.statusCode).toBe(201);
     const created = createdResponse.json();
     expect(created.legs).toHaveLength(2);
-    expect(connection.db.select().from(accountTransfers).all()).toHaveLength(1);
-    expect(connection.db.select().from(transactions).all()).toHaveLength(2);
+    expect(await connection.db.select().from(accountTransfers).execute()).toHaveLength(1);
+    expect(await connection.db.select().from(transactions).execute()).toHaveLength(2);
 
     const sourceAfterCreate = await app.inject({ method: "GET", url: "/accounts/account-source" });
     const destinationAfterCreate = await app.inject({
@@ -123,12 +114,12 @@ describe("atomic account transfers", () => {
       url: `/transfers/${created.transfer.id}`
     });
     expect(deletedResponse.statusCode).toBe(204);
-    expect(connection.db.select().from(accountTransfers).all()).toHaveLength(0);
-    expect(connection.db.select().from(transactions).all()).toHaveLength(0);
+    expect(await connection.db.select().from(accountTransfers).execute()).toHaveLength(0);
+    expect(await connection.db.select().from(transactions).execute()).toHaveLength(0);
   });
 
   it("rolls back the aggregate and outgoing leg when the incoming insert fails", async () => {
-    const service = createTransferService(connection, TEST_OWNER_ID, {
+    const service = createTransferService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID, {
       afterOutgoingInsert() {
         throw new Error("simulated incoming failure");
       }
@@ -143,8 +134,8 @@ describe("atomic account transfers", () => {
         description: "Falha"
       })
     ).rejects.toThrow("simulated incoming failure");
-    expect(connection.db.select().from(accountTransfers).all()).toHaveLength(0);
-    expect(connection.db.select().from(transactions).all()).toHaveLength(0);
+    expect(await connection.db.select().from(accountTransfers).execute()).toHaveLength(0);
+    expect(await connection.db.select().from(transactions).execute()).toHaveLength(0);
   });
 
   it("exposes corrupted transfer legs instead of reconstructing a valid aggregate", async () => {
@@ -159,13 +150,13 @@ describe("atomic account transfers", () => {
         description: "Mover"
       }
     });
-    connection.db
+    await connection.db
       .update(transactions)
       .set({ amountCents: 999 })
       .where(eq(transactions.id, created.json().legs[0].id))
-      .run();
+      .execute();
     await expect(
-      createTransferService(connection, TEST_OWNER_ID).get(created.json().transfer.id)
+      createTransferService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID).get(created.json().transfer.id)
     ).rejects.toThrow("equivalent");
   });
 
@@ -208,7 +199,7 @@ describe("atomic account transfers", () => {
   });
 
   it("does not leave orphan legs after deletion", async () => {
-    const service = createTransferService(connection, TEST_OWNER_ID);
+    const service = createTransferService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     const created = await service.create({
       sourceAccountId: "account-source",
       destinationAccountId: "account-destination",
@@ -219,16 +210,16 @@ describe("atomic account transfers", () => {
     await service.remove(created.transfer.id);
 
     expect(
-      connection.db
+      (await connection.db
         .select()
         .from(transactions)
         .where(eq(transactions.transferId, created.transfer.id))
-        .all()
+        .execute())
     ).toEqual([]);
   });
 
   it("does not access or mutate transfers owned by another identity", async () => {
-    connection.db
+    await connection.db
       .insert(users)
       .values({
         id: "other-owner",
@@ -236,15 +227,15 @@ describe("atomic account transfers", () => {
         passwordHash: "argon2id-test-only",
         passwordChangedAt: new Date().toISOString()
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(accounts)
       .values([
         { id: "other-source", ownerId: "other-owner", name: "Outra origem", type: "checking" },
         { id: "other-destination", ownerId: "other-owner", name: "Outro destino", type: "checking" }
       ])
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(accountTransfers)
       .values({
         id: "other-transfer",
@@ -255,8 +246,8 @@ describe("atomic account transfers", () => {
         eventDate: "2026-07-20",
         description: "Privada"
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(transactions)
       .values([
         {
@@ -284,7 +275,7 @@ describe("atomic account transfers", () => {
           status: "confirmed"
         }
       ])
-      .run();
+      .execute();
 
     expect(
       (await app.inject({ method: "DELETE", url: "/transfers/other-transfer" })).statusCode
@@ -305,18 +296,18 @@ describe("atomic account transfers", () => {
       ).statusCode
     ).toBe(404);
     expect(
-      connection.db
+      (await connection.db
         .select()
         .from(accountTransfers)
         .where(eq(accountTransfers.id, "other-transfer"))
-        .get()
+        .execute())[0]
     ).toEqual(expect.objectContaining({ description: "Privada", ownerId: "other-owner" }));
     expect(
-      connection.db
+      await connection.db
         .select()
         .from(transactions)
         .where(eq(transactions.transferId, "other-transfer"))
-        .all()
+        .execute()
     ).toHaveLength(2);
   });
 });
