@@ -2,7 +2,6 @@ import {
   accountPaymentMethods,
   accounts,
   categories,
-  createDatabaseConnection,
   creditCards,
   paymentMethods,
   recurrenceRules,
@@ -10,29 +9,23 @@ import {
   transactions,
   users
 } from "@finances/database";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
+import { createPostgresTestConnection, postgresTestsEnabled, removePostgresTestOwner, seedPostgresTestOwner } from "./test-support/postgres.js";
 import { createRecurrenceService } from "./application/recurrence-service.js";
 
-const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
-describe("recurrence service", () => {
-  let dir: string;
-  let connection: ReturnType<typeof createDatabaseConnection>;
+const TEST_OWNER_ID = "test-owner";
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
+describePostgres("recurrence service", () => {
+  let connection: ReturnType<typeof createPostgresTestConnection>;
   beforeEach(async () => {
-    dir = mkdtempSync(resolve(tmpdir(), "finances-recurrence-test-"));
-    connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
-    migrate(connection.db, { migrationsFolder });
-    await seedTestOwner(connection);
-    connection.db
+    connection = createPostgresTestConnection();
+    await seedPostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.db
       .insert(accounts)
       .values({ id: "account-1", ownerId: "test-owner", name: "Conta", type: "checking" })
-      .run();
-    connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).run();
-    connection.db
+      .execute();
+    await connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).execute();
+    await connection.db
       .insert(accountPaymentMethods)
       .values({
         id: "account-pix",
@@ -41,27 +34,27 @@ describe("recurrence service", () => {
         isActive: true,
         isDefault: true
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCards)
       .values({ id: "card-1", ownerId: "test-owner", name: "Cartão", closingDay: 10, dueDay: 20 })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(categories)
       .values({ ownerId: "test-owner", id: "category-1", nature: "expense", name: "Casa" })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(subcategories)
       .values({ id: "subcategory-1", categoryId: "category-1", name: "Aluguel" })
-      .run();
+      .execute();
   });
-  afterEach(() => {
-    connection.sqlite.close();
-    rmSync(dir, { recursive: true, force: true });
+  afterEach(async () => {
+    await removePostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.close();
   });
 
   it("forecasts without materializing and confirms one account occurrence per month", async () => {
-    const service = createRecurrenceService(connection, TEST_OWNER_ID);
+    const service = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     const rule = await service.create({
       kind: "expense",
       description: "Aluguel",
@@ -76,15 +69,15 @@ describe("recurrence service", () => {
     expect((await service.forecast("2026-02"))[0]).toEqual(
       expect.objectContaining({ eventDate: "2026-02-28", budgetMonth: "2026-02" })
     );
-    expect(connection.db.select().from(transactions).all()).toEqual([]);
+    expect(await connection.db.select().from(transactions).execute()).toEqual([]);
     const first = await service.confirm(rule.id, "2026-02");
     const retry = await service.confirm(rule.id, "2026-02");
     expect(retry.id).toBe(first.id);
-    expect(connection.db.select().from(transactions).all()).toHaveLength(1);
+    expect(await connection.db.select().from(transactions).execute()).toHaveLength(1);
   });
 
   it("places a confirmed card occurrence in its calculated bill", async () => {
-    const service = createRecurrenceService(connection, TEST_OWNER_ID);
+    const service = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     const rule = await service.create({
       kind: "expense",
       description: "Assinatura",
@@ -102,7 +95,7 @@ describe("recurrence service", () => {
   });
 
   it("pause, resume, end, and this-and-future changes preserve confirmed facts", async () => {
-    const service = createRecurrenceService(connection, TEST_OWNER_ID);
+    const service = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     const rule = await service.create({
       kind: "expense",
       description: "Aluguel",
@@ -120,14 +113,14 @@ describe("recurrence service", () => {
     await service.resume(rule.id);
     const next = await service.changeFrom(rule.id, "2026-07", { amountCents: 120_000 });
     expect(next.startMonth).toBe("2026-07");
-    expect(connection.db.select().from(transactions).all()).toHaveLength(1);
+    expect(await connection.db.select().from(transactions).execute()).toHaveLength(1);
     await service.end(next.id);
     expect(await service.forecast("2026-08")).toEqual([]);
-    expect(connection.db.select().from(recurrenceRules).all()).toHaveLength(2);
+    expect(await connection.db.select().from(recurrenceRules).execute()).toHaveLength(2);
   });
 
   it("rejects invalid or unavailable rules and exposes persisted rules", async () => {
-    const service = createRecurrenceService(connection, TEST_OWNER_ID);
+    const service = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     await expect(service.create({})).rejects.toThrow();
     await expect(service.pause("missing")).rejects.toThrow("não encontrada");
     const rule = await service.create({
@@ -154,20 +147,20 @@ describe("recurrence service", () => {
         passwordHash: "test",
         passwordChangedAt: new Date().toISOString()
       })
-      .run();
+      .execute();
     connection.db
       .insert(accounts)
       .values({ id: "other-account", ownerId: "other-owner", name: "Outra", type: "checking" })
-      .run();
+      .execute();
     connection.db
       .insert(categories)
       .values({ id: "other-category", ownerId: "other-owner", name: "Outra", nature: "expense" })
-      .run();
+      .execute();
     connection.db
       .insert(subcategories)
       .values({ id: "other-subcategory", categoryId: "other-category", name: "Privada" })
-      .run();
-    const otherService = createRecurrenceService(connection, "other-owner");
+      .execute();
+    const otherService = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, "other-owner");
     const privateRule = await otherService.create({
       kind: "income",
       description: "Privada",
@@ -178,7 +171,7 @@ describe("recurrence service", () => {
       dayOfMonth: 1,
       startMonth: "2026-07"
     });
-    const service = createRecurrenceService(connection, TEST_OWNER_ID);
+    const service = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
 
     expect(await service.list()).toEqual([]);
     await expect(service.pause(privateRule.id)).rejects.toThrow("não encontrada");
