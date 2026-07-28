@@ -2,7 +2,6 @@ import {
   accountPaymentMethods,
   accounts,
   categories,
-  createDatabaseConnection,
   creditCards,
   installments,
   paymentMethods,
@@ -11,29 +10,23 @@ import {
   users
 } from "@finances/database";
 import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
+import { createPostgresTestConnection, postgresTestsEnabled, removePostgresTestOwner, seedPostgresTestOwner } from "./test-support/postgres.js";
 import { buildServer } from "./server.js";
-const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
-describe("canonical transactions API", () => {
-  let dir: string;
+const TEST_OWNER_ID = "test-owner";
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
+describePostgres("canonical transactions API", () => {
   let app: ReturnType<typeof buildServer>;
-  let connection: ReturnType<typeof createDatabaseConnection>;
+  let connection: ReturnType<typeof createPostgresTestConnection>;
   beforeEach(async () => {
-    dir = mkdtempSync(resolve(tmpdir(), "transactions-test-"));
-    connection = createDatabaseConnection(resolve(dir, "test.sqlite"));
-    migrate(connection.db, { migrationsFolder });
-    await seedTestOwner(connection);
-    connection.db
+    connection = createPostgresTestConnection();
+    await seedPostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.db
       .insert(accounts)
       .values({ id: "account", ownerId: "test-owner", name: "Conta", type: "checking" })
-      .run();
-    connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).run();
-    connection.db
+      .execute();
+    await connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).execute();
+    await connection.db
       .insert(accountPaymentMethods)
       .values({
         id: "account-pix",
@@ -42,24 +35,25 @@ describe("canonical transactions API", () => {
         isActive: true,
         isDefault: true
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(categories)
       .values({ ownerId: "test-owner", id: "category", nature: "expense", name: "Casa" })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(subcategories)
       .values({ id: "subcategory", categoryId: "category", name: "Mercado" })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(creditCards)
       .values({ id: "card", ownerId: "test-owner", name: "Cartão", closingDay: 10, dueDay: 20 })
-      .run();
+      .execute();
     app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });
   afterEach(async () => {
     await app.close();
-    rmSync(dir, { recursive: true, force: true });
+    await removePostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.close();
   });
   it("creates, lists, edits metadata, and definitively deletes a cash expense", async () => {
     const created = await app.inject({
@@ -92,7 +86,7 @@ describe("canonical transactions API", () => {
     expect((await app.inject({ method: "DELETE", url: `/transactions/${id}` })).statusCode).toBe(
       204
     );
-    expect(connection.db.select().from(transactions).all()).toEqual([]);
+    expect(await connection.db.select().from(transactions).execute()).toEqual([]);
   });
   it("requires an active payment method associated with the selected account", async () => {
     const payload = {
@@ -106,11 +100,11 @@ describe("canonical transactions API", () => {
     expect((await app.inject({ method: "POST", url: "/transactions", payload })).statusCode).toBe(
       400
     );
-    connection.db
+    await connection.db
       .update(accountPaymentMethods)
       .set({ isActive: false })
       .where(eq(accountPaymentMethods.id, "account-pix"))
-      .run();
+      .execute();
     expect(
       (
         await app.inject({
@@ -255,18 +249,18 @@ describe("canonical transactions API", () => {
       (await app.inject({ method: "DELETE", url: `/transactions/${firstId}` })).statusCode
     ).toBe(204);
     expect(
-      connection.db.select().from(transactions).where(eq(transactions.id, firstId)).get()
+      (await connection.db.select().from(transactions).where(eq(transactions.id, firstId)).execute())[0]
     ).toBeUndefined();
     expect(
-      connection.db
+      await connection.db
         .select()
         .from(installments)
         .where(eq(installments.purchaseTransactionId, firstId))
-        .all()
+        .execute()
     ).toEqual([]);
   });
   it("does not expose, mutate, or reference transactions owned by another identity", async () => {
-    connection.db
+    await connection.db
       .insert(users)
       .values({
         id: "other-owner",
@@ -274,8 +268,8 @@ describe("canonical transactions API", () => {
         passwordHash: "argon2id-test-only",
         passwordChangedAt: new Date().toISOString()
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(accounts)
       .values({
         id: "other-account",
@@ -283,8 +277,8 @@ describe("canonical transactions API", () => {
         name: "Outra conta",
         type: "checking"
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(transactions)
       .values({
         id: "other-transaction",
@@ -297,7 +291,7 @@ describe("canonical transactions API", () => {
         budgetMonth: "2026-07",
         status: "confirmed"
       })
-      .run();
+      .execute();
 
     const listed = await app.inject({ method: "GET", url: "/transactions?budgetMonth=2026-07" });
     expect(listed.json()).toEqual([]);
@@ -332,11 +326,11 @@ describe("canonical transactions API", () => {
       ).statusCode
     ).toBe(400);
     expect(
-      connection.db
+      (await connection.db
         .select()
         .from(transactions)
         .where(eq(transactions.id, "other-transaction"))
-        .get()
+        .execute())[0]
     ).toEqual(expect.objectContaining({ description: "Privada", ownerId: "other-owner" }));
   });
 });
