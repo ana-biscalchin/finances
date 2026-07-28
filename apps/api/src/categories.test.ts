@@ -1,31 +1,25 @@
-import { categories, createDatabaseConnection, subcategories, users } from "@finances/database";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { categories, subcategories, users } from "@finances/database";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "./server.js";
-import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
+import { createPostgresTestConnection, postgresTestsEnabled, removePostgresTestOwner, seedPostgresTestOwner } from "./test-support/postgres.js";
 
-const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
-describe("categories API", () => {
-  let tempDir: string;
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
+describePostgres("categories API", () => {
   let app: ReturnType<typeof buildServer>;
-  let connection: ReturnType<typeof createDatabaseConnection>;
+  let connection: ReturnType<typeof createPostgresTestConnection>;
   beforeEach(async () => {
-    tempDir = mkdtempSync(resolve(tmpdir(), "finances-categories-test-"));
-    connection = createDatabaseConnection(resolve(tempDir, "test.sqlite"));
-    migrate(connection.db, { migrationsFolder });
-    await seedTestOwner(connection);
+    connection = createPostgresTestConnection();
+    await seedPostgresTestOwner(connection, "test-owner");
     app = buildServer({
       connection,
       logger: false,
-      testOwnerId: TEST_OWNER_ID
+      testOwnerId: "test-owner"
     });
   });
   afterEach(async () => {
     await app.close();
-    rmSync(tempDir, { recursive: true, force: true });
+    await removePostgresTestOwner(connection, "test-owner");
+    await connection.close();
   });
 
   it("creates and lists categories and subcategories", async () => {
