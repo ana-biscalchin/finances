@@ -157,11 +157,11 @@ T12,T13,T14 → T15 → T16
 - **Depende de:** T5.
 - **Reusa:** IDs, timestamps, FKs e padrões de migration existentes.
 - **Pronto quando:**
-  - [ ] Todas as entidades da matriz do design possuem propriedade direta ou herdada documentada.
-  - [ ] Constraints compostas permitem os mesmos nomes/chaves para proprietárias diferentes.
-  - [ ] Nenhum registro financeiro novo aceita `ownerId` nulo.
-  - [ ] Migration local atribui somente a proprietária bootstrap explicitamente configurada.
-  - [ ] Testes cobrem FK, unicidade por proprietária e rollback de falha.
+  - [x] Todas as entidades da matriz do design possuem propriedade direta ou herdada documentada.
+  - [x] Constraints compostas permitem os mesmos nomes/chaves para proprietárias diferentes.
+  - [x] Nenhum registro financeiro novo aceita `ownerId` nulo.
+  - [x] Migration local atribui somente a proprietária bootstrap explicitamente configurada.
+  - [x] Testes cobrem FK, unicidade por proprietária e rollback de falha.
 - **Testes:** integração database em banco efêmero para ambos os dialetos suportados.
 - **Gate:** `pnpm --filter @finances/database test` e revisão do plano de migration.
 - **Commit:** `feat(database): scope financial data by owner`
@@ -175,30 +175,30 @@ T12,T13,T14 → T15 → T16
 - **Depende de:** T6.
 - **Reusa:** services existentes e transações Drizzle/SQLite.
 - **Pronto quando:**
-  - [ ] Não existe método de repositório de negócio com `ownerId` opcional.
-  - [ ] Listar, ler, alterar e excluir sempre incluem escopo da sessão.
-  - [ ] Conta, cartão, categoria e outras referências cruzadas são validadas dentro da mesma propriedade.
-  - [ ] IDs de outra proprietária retornam resposta não enumerável e não sofrem mutação.
-  - [ ] Chaves de idempotência são únicas por proprietária.
-  - [ ] Testes percorrem todos os módulos com Ana e uma segunda identidade.
+  - [x] Não existe método de repositório de negócio com `ownerId` opcional.
+  - [x] Listar, ler, alterar e excluir sempre incluem escopo da sessão.
+  - [x] Conta, cartão, categoria e outras referências cruzadas são validadas dentro da mesma propriedade.
+  - [x] IDs de outra proprietária retornam resposta não enumerável e não sofrem mutação.
+  - [x] Chaves de idempotência são únicas por proprietária.
+  - [x] Testes percorrem todos os módulos com Ana e uma segunda identidade.
 - **Testes:** integração API + banco, matriz automatizada de IDOR.
 - **Gate:** suíte completa da API e revisão de query/authorization.
 - **Commit:** `feat(api): enforce owner scoped data access`
 
 ### T8: Adaptar a persistência ao banco hospedado
 
-**Execução:** implementação concluída em 2026-07-28 no PR 23. Schema, migration repetível, pool, readiness do schema completo, shutdown, bootstrap e workflow financeiro PostgreSQL foram validados na CI e no branch temporário Neon `br-misty-base-avviu9j0`; a promoção ao branch principal de staging depende de confirmação operacional explícita.
+**Execução:** concluída em 2026-07-28 no PR 23. Schema, migration repetível, pool, readiness do schema completo, shutdown, bootstrap e workflow financeiro PostgreSQL foram validados na CI e no Neon. A migration versionada foi aplicada e reaplicada com sucesso no branch principal de staging `br-bold-hill-avumh96d`; o smoke financeiro passou 4/4 e o Render permaneceu saudável. Produção não foi alterada.
 
 - **O quê:** implementar conexão, schema, migrations e comportamento transacional no banco aprovado, mantendo SQLite somente onde decidido.
 - **Onde:** `packages/database/`, configuração da API, migrations e testes de integração.
 - **Depende de:** T6 e T7.
 - **Reusa:** Drizzle schema, conexão atual, services e testes de integridade.
 - **Pronto quando:**
-  - [ ] Datas, centavos, enums, FKs, unicidades e transações têm comportamento equivalente.
-  - [ ] Pool possui limites, timeout e shutdown gracioso.
-  - [ ] API não inicia pronta antes de conectar e verificar o schema compatível.
-  - [ ] Migrations são repetíveis em banco vazio e upgrade suportado.
-  - [ ] Suíte financeira passa contra o banco-alvo em CI.
+  - [x] Datas, centavos, enums, FKs, unicidades e transações têm comportamento equivalente.
+  - [x] Pool possui limites, timeout e shutdown gracioso.
+  - [x] API não inicia pronta antes de conectar e verificar o schema compatível.
+  - [x] Migrations são repetíveis em banco vazio e upgrade suportado.
+  - [x] Suíte financeira passa contra o banco-alvo em CI.
 - **Testes:** integração database/API no banco-alvo e testes de concorrência essenciais.
 - **Gate:** suíte completa com serviço de banco real no CI.
 - **Commit:** `feat(database): support hosted production database`

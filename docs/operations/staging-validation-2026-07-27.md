@@ -25,6 +25,13 @@
 - `/api/accounts`: alcançou a fronteira `/api`, mas ainda retorna `500` porque o adapter financeiro
   PostgreSQL pertence à T8. Nenhum dado pessoal foi colocado em staging.
 
+### Revalidação após T8 — 2026-07-28
+
+- A migration PostgreSQL versionada foi aplicada no branch principal do Neon staging.
+- A matriz financeira de integração passou 4/4 cenários com dados sintéticos e limpeza ao final.
+- `/`, `/health/live` e `/health/ready` responderam `200`.
+- O marcador `platform_proof` permaneceu no banco após a migration.
+
 ## Persistência
 
 Um marcador sintético `staging-deploy-persistence=synthetic-ok` foi gravado no Neon. O valor
@@ -43,6 +50,5 @@ depende do filesystem do Render.
 ## Gates restantes de T4
 
 - A promoção atual do Render recompila o commit; o artefato da CI ainda não é consumido diretamente.
-- O job de migration PostgreSQL só pode ser implementado quando T8 fornecer migrations do dialeto
-  hospedado.
+- O job de migration PostgreSQL e a baseline hospedada foram implementados em T8.
 - Produção não será publicada para contornar esses itens nem antes de autenticação e ownership.
