@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @finances/database build && pnpm --filter @finances/domain build && pnpm --filter @finances/shared build && pnpm --parallel --filter @finances/web --filter @finances/api dev",
+    "dev:postgres": "DATABASE_DIALECT=postgres AUTH_ENABLED=true pnpm dev",
     "dev:web": "pnpm --filter @finances/web dev",
     "dev:api": "pnpm --filter @finances/api dev",
     "typecheck": "pnpm -r typecheck",
@@ -18,6 +19,7 @@
     "build": "pnpm -r build",
     "db:generate": "pnpm --filter @finances/database db:generate",
     "db:migrate": "pnpm --filter @finances/database db:migrate",
+    "db:migrate:postgres": "pnpm --filter @finances/database db:migrate:postgres",
     "db:migrate:identity": "pnpm --filter @finances/database db:migrate:identity",
     "db:seed": "pnpm --filter @finances/database db:seed",
     "db:seed:demo": "pnpm --filter @finances/database db:seed:demo",

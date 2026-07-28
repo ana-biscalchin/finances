@@ -2,6 +2,24 @@
 
 As migrations PostgreSQL são um job controlado e nunca rodam no startup da API.
 
+## Desenvolvimento local
+
+O desenvolvimento local usa PostgreSQL para manter o mesmo comportamento do staging. Defina a
+`DATABASE_URL` de uma branch Neon exclusiva para desenvolvimento e um `SESSION_SECRET` local; não
+aponte a aplicação para o branch compartilhado de staging. Depois execute:
+
+```bash
+export DATABASE_DIALECT=postgres
+export DATABASE_URL='postgresql://...'
+export SESSION_SECRET='uma-chave-local-com-pelo-menos-32-caracteres'
+export AUTH_ENABLED=true
+pnpm db:migrate:postgres
+pnpm dev:postgres
+```
+
+O SQLite continua no repositório apenas como origem legada de importação e fixture de testes. Ele não
+é mais o banco recomendado para executar a aplicação local.
+
 ## Aplicação
 
 1. Confirme o projeto, branch e banco de destino; staging e produção nunca compartilham o mesmo projeto Neon.
