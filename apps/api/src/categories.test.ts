@@ -104,7 +104,7 @@ describePostgres("categories API", () => {
   });
 
   it("does not enumerate or mutate categories owned by another identity", async () => {
-    connection.db
+    await connection.db
       .insert(users)
       .values({
         id: "other-owner",
@@ -112,15 +112,15 @@ describePostgres("categories API", () => {
         passwordHash: "test",
         passwordChangedAt: new Date().toISOString()
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(categories)
       .values({ id: "other-category", ownerId: "other-owner", nature: "expense", name: "Casa" })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(subcategories)
       .values({ id: "other-subcategory", categoryId: "other-category", name: "Privada" })
-      .run();
+      .execute();
 
     const created = await app.inject({
       method: "POST",
@@ -146,10 +146,10 @@ describePostgres("categories API", () => {
         .statusCode
     ).toBe(404);
     expect(
-      connection.db
+      (await connection.db
         .select()
         .from(categories)
-        .all()
+        .execute())
         .find((item) => item.id === "other-category")?.name
     ).toBe("Casa");
   });

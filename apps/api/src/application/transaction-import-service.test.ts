@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { seedTestOwner, TEST_OWNER_ID } from "../test-support/owner.js";
 import { createTransactionImportService } from "./transaction-import-service.js";
 const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
-describe("simple transaction import", () => {
+const describeImport = process.env.DATABASE_DIALECT === "postgres" ? describe.skip : describe;
+describeImport("simple transaction import", () => {
   let dir: string;
   let connection: ReturnType<typeof createDatabaseConnection>;
   beforeEach(async () => {

@@ -54,5 +54,5 @@ export async function removePostgresTestOwner(
   ownerId: string
 ) {
   void ownerId;
-  await resetPostgresTestDatabase(connection);
+  void connection;
 }

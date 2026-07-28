@@ -74,8 +74,8 @@ describePostgres("account payment method associations", () => {
     });
 
     expect(response.statusCode).toBe(400);
-    expect(connection.db.select().from(accounts).all()).toEqual([]);
-    expect(connection.db.select().from(accountPaymentMethods).all()).toEqual([]);
+    expect(await connection.db.select().from(accounts).execute()).toEqual([]);
+    expect(await connection.db.select().from(accountPaymentMethods).execute()).toEqual([]);
   });
 
   it("rejects inactive or missing payment methods", async () => {
@@ -92,7 +92,7 @@ describePostgres("account payment method associations", () => {
   });
 
   it("does not enumerate or mutate an account owned by another identity", async () => {
-    connection.db
+    await connection.db
       .insert(users)
       .values({
         id: "other-owner",
@@ -100,8 +100,8 @@ describePostgres("account payment method associations", () => {
         passwordHash: "argon2id-test-only",
         passwordChangedAt: new Date().toISOString()
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(accounts)
       .values({
         id: "other-account",
@@ -110,8 +110,8 @@ describePostgres("account payment method associations", () => {
         type: "checking",
         isPrimary: true
       })
-      .run();
-    connection.db
+      .execute();
+    await connection.db
       .insert(accountPaymentMethods)
       .values({
         id: "other-account-pix",
@@ -120,7 +120,7 @@ describePostgres("account payment method associations", () => {
         isActive: true,
         isDefault: true
       })
-      .run();
+      .execute();
 
     expect((await app.inject({ method: "GET", url: "/accounts" })).json()).toEqual([]);
     expect((await app.inject({ method: "GET", url: "/accounts/other-account" })).statusCode).toBe(
@@ -149,7 +149,7 @@ describePostgres("account payment method associations", () => {
       expect.objectContaining({ ownerId: TEST_OWNER_ID, sortOrder: 0 })
     );
     expect(
-      connection.db.select().from(accounts).where(eq(accounts.id, "other-account")).get()
+      (await connection.db.select().from(accounts).where(eq(accounts.id, "other-account")).execute())[0]
     ).toEqual(expect.objectContaining({ name: "Conta privada", isActive: true, isPrimary: true }));
   });
 });
