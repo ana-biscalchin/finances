@@ -38,6 +38,8 @@ export function createApiClient(
           body: body === undefined ? undefined : JSON.stringify(body)
         });
         if (!response.ok) {
+          if (response.status === 401 && typeof window !== "undefined")
+            window.dispatchEvent(new CustomEvent("finances:unauthorized"));
           if (method === "GET" && response.status >= 500 && attempt + 1 < attempts) continue;
           throw new ApiClientError(
             (await response.text()) || `HTTP ${response.status}`,

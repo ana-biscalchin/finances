@@ -19,11 +19,13 @@ import {
   IconChevronRight,
   IconCreditCard,
   IconListDetails,
+  IconLogout,
   IconPigMoney,
   IconSettings,
   IconTags
 } from "@tabler/icons-react";
 import { useState } from "react";
+import { useSession } from "./session/SessionProvider";
 
 import { AccountsPage } from "./accounts/AccountsPage";
 import { BillsPage } from "./cards/BillsPage";
@@ -114,6 +116,7 @@ const SIDEBAR_WIDTH = 280;
 const SIDEBAR_COLLAPSED_WIDTH = 56;
 
 export function App() {
+  const { state, logout } = useSession();
   const [activePage, setActivePage] = useState<PageKey>("monthly-control");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     return localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
@@ -153,7 +156,13 @@ export function App() {
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
-          <Title order={4}>Carteira da Ana</Title>
+          <Group gap="md">
+            <Title order={4}>Carteira da Ana</Title>
+            <Text size="sm" c="dimmed">{state.user.username}</Text>
+          </Group>
+          <Tooltip label="Sair">
+            <ActionIcon aria-label="Sair" variant="subtle" onClick={() => void logout()}><IconLogout size={18} /></ActionIcon>
+          </Tooltip>
         </Group>
       </AppShell.Header>
 

@@ -69,4 +69,15 @@ describe("shared API client", () => {
     });
     await expect(client.delete("/item", z.unknown())).resolves.toBeUndefined();
   });
+  it("broadcasts unauthorized responses so the session gate can clear access", async () => {
+    const target = new EventTarget();
+    Object.defineProperty(globalThis, "window", { configurable: true, value: target });
+    const onUnauthorized = vi.fn();
+    target.addEventListener("finances:unauthorized", onUnauthorized);
+    const client = createApiClient({ fetcher: vi.fn().mockResolvedValue(new Response("expired", { status: 401 })) });
+    await expect(client.get("/private", z.unknown())).rejects.toThrow();
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    target.removeEventListener("finances:unauthorized", onUnauthorized);
+    delete (globalThis as { window?: unknown }).window;
+  });
 });

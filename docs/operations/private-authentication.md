@@ -4,6 +4,12 @@ A T5 introduz login próprio sem cadastro público. Senhas usam Argon2id; tokens
 
 ## Bootstrap local
 
+Com `AUTH_ENABLED=true`, o frontend local mostra a tela de acesso e usa a sessão persistida pelo
+backend. Para habilitar esse fluxo, mantenha o mesmo `DATABASE_PATH` do servidor e um
+`SESSION_SECRET` local com pelo menos 32 caracteres; depois crie a primeira identidade com o
+procedimento abaixo. Em staging/produção, configure os mesmos valores como secrets no Render e
+execute o bootstrap uma única vez contra o PostgreSQL correspondente.
+
 1. Em banco local antigo, aplique primeiro `pnpm db:migrate:identity` para criar somente a estrutura de identidade. Em banco vazio, esta etapa também é segura e idempotente.
 2. Defina somente o identificador não secreto: `export BOOTSTRAP_USERNAME=ana`.
 3. Leia a senha sem eco e envie pela entrada padrão:

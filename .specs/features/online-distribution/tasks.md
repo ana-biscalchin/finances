@@ -209,16 +209,18 @@ T12,T13,T14 → T15 → T16
 
 ### T9: Adicionar bootstrap de sessão ao frontend
 
+**Execução:** implementação concluída em 2026-07-28 no branch de trabalho. O frontend agora resolve a sessão antes de montar qualquer tela financeira, oferece acesso, carregamento, indisponibilidade, expiração por `401` e logout, com credenciais mantidas em cookie HttpOnly pela API.
+
 - **O quê:** criar provider de sessão, telas de acesso/carregamento/expiração/indisponibilidade e proteger o carregamento dos dados financeiros.
 - **Onde:** `apps/web/src/app/session/`, `apps/web/src/app/App.tsx`, cliente HTTP e testes web.
 - **Depende de:** T5 e T7.
 - **Reusa:** estrutura atual de `App`, Mantine, tratamento de erro compartilhado e navegação existente.
 - **Pronto quando:**
-  - [ ] Nenhuma página financeira consulta a API antes de resolver a sessão.
-  - [ ] `401` limpa estado sensível e leva ao acesso sem loop.
-  - [ ] Refresh preserva sessão válida e logout remove acesso.
-  - [ ] Estados possuem mensagens acessíveis e não exibem detalhes internos.
-  - [ ] Testes cobrem loading, autenticada, expirada e indisponível.
+  - [x] Nenhuma página financeira consulta a API antes de resolver a sessão.
+  - [x] `401` limpa estado sensível e leva ao acesso sem loop.
+  - [x] Refresh preserva sessão válida e logout remove acesso.
+  - [x] Estados possuem mensagens acessíveis e não exibem detalhes internos.
+  - [x] Testes cobrem loading, autenticada, expirada e indisponível.
 - **Testes:** unit/component e E2E do bootstrap.
 - **Gate:** testes, typecheck, lint, build e revisão visual responsiva.
 - **Commit:** `feat(web): add authenticated application shell`
