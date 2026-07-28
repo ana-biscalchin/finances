@@ -16,6 +16,7 @@
     "db:migrate": "tsx src/migrate.ts",
     "db:migrate:postgres": "tsx src/migrate-postgres.ts",
     "db:migrate:identity": "tsx src/migrate-identity.ts",
+    "db:import:sqlite": "tsx src/migration/import-sqlite.ts",
     "db:seed": "tsx src/seed.ts",
     "db:seed:demo": "tsx src/seed-demo.ts",
     "db:reset:dev": "tsx src/reset-development.ts",

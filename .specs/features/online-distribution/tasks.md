@@ -227,18 +227,20 @@ T12,T13,T14 → T15 → T16
 
 ### T10: Implementar a migração reconciliada do SQLite
 
+**Execução:** ferramenta implementada em 2026-07-28 no branch de trabalho. O importador abre o SQLite em modo somente leitura, valida integridade, força a proprietária por parâmetro, executa lote transacional, suporta dry-run/idempotência e gera relatório agregado. O ensaio com cópia sanitizada no staging fica para depois do bootstrap da identidade, que será validado pela usuária.
+
 - **O quê:** criar ferramenta idempotente de leitura do SQLite, importação para a proprietária de destino e relatório de reconciliação.
 - **Onde:** `packages/database/src/migration/` ou workspace de tooling dedicado, fixtures e runbook.
 - **Depende de:** T8.
 - **Reusa:** schema legado, migrations, helpers de integridade e regras de classificação do domínio.
 - **Pronto quando:**
-  - [ ] Origem é aberta read-only e nunca alterada.
-  - [ ] `ownerId` vem de parâmetro operacional validado, não do legado.
-  - [ ] Segunda execução não duplica registros.
-  - [ ] Contagens, FKs, totais por mês/tipo, transferências e faturas são reconciliados.
-  - [ ] Falha intermediária não deixa lote publicável incompleto.
-  - [ ] Relatório omite descrições e valores sensíveis dos logs gerais.
-  - [ ] Runbook cobre backup, dry-run, execução, aceite e rollback.
+  - [x] Origem é aberta read-only e nunca alterada.
+  - [x] `ownerId` vem de parâmetro operacional validado, não do legado.
+  - [x] Segunda execução não duplica registros.
+  - [x] Contagens, FKs, totais por mês/tipo, transferências e faturas são reconciliados.
+  - [x] Falha intermediária não deixa lote publicável incompleto.
+  - [x] Relatório omite descrições e valores sensíveis dos logs gerais.
+  - [x] Runbook cobre backup, dry-run, execução, aceite e rollback.
 - **Testes:** fixtures legadas, dry-run, idempotência, falha injetada e reconciliação.
 - **Gate:** ensaio completo em staging com cópia sanitizada/segura.
 - **Commit:** `feat(database): migrate local portfolio online`
