@@ -1,45 +1,38 @@
 import {
   accountPaymentMethods,
   accounts,
-  createDatabaseConnection,
   paymentMethods,
   users
 } from "@finances/database";
 import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildServer } from "./server.js";
-import { seedTestOwner, TEST_OWNER_ID } from "./test-support/owner.js";
+import { createPostgresTestConnection, postgresTestsEnabled, removePostgresTestOwner, seedPostgresTestOwner } from "./test-support/postgres.js";
+const TEST_OWNER_ID = "test-owner";
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
 
-const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
-
-describe("account payment method associations", () => {
-  let directory: string;
-  let connection: ReturnType<typeof createDatabaseConnection>;
+describePostgres("account payment method associations", () => {
+  let connection: ReturnType<typeof createPostgresTestConnection>;
   let app: ReturnType<typeof buildServer>;
 
   beforeEach(async () => {
-    directory = mkdtempSync(resolve(tmpdir(), "finances-account-methods-"));
-    connection = createDatabaseConnection(resolve(directory, "test.sqlite"));
-    migrate(connection.db, { migrationsFolder });
-    await seedTestOwner(connection);
-    connection.db
+    connection = createPostgresTestConnection();
+    await seedPostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.db
       .insert(paymentMethods)
       .values([
         { id: "pm-pix", name: "Pix", kind: "instant_transfer" },
         { id: "pm-debit", name: "Débito", kind: "debit_card" }
       ])
-      .run();
+      .execute();
     app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });
 
   afterEach(async () => {
     await app.close();
-    rmSync(directory, { recursive: true, force: true });
+    await removePostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.close();
   });
 
   it("creates and returns an account with independently configured methods", async () => {
