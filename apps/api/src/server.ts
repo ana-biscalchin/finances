@@ -61,7 +61,10 @@ export function buildServer(options: BuildServerOptions = {}) {
                 "req.headers.cookie",
                 "req.body.password",
                 "req.body.currentPassword",
-                "req.body.newPassword"
+                "req.body.newPassword",
+                "req.body.csvContent",
+                "req.body.transactions",
+                "res.headers.set-cookie"
               ],
               censor: "[REDACTED]"
             }
@@ -101,7 +104,21 @@ export function buildServer(options: BuildServerOptions = {}) {
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
   });
-  app.register(helmet, { contentSecurityPolicy: false });
+  app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", "data:"]
+      }
+    }
+  });
 
   app.setErrorHandler(async (error, request, reply) => {
     const apiError = normalizeApiError(error);

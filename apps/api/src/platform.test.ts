@@ -55,6 +55,15 @@ describePostgres("production HTTP boundary", () => {
     await app.close();
   });
 
+  it("sets security headers and a restrictive CSP", async () => {
+    const app = testApp();
+    const response = await app.inject({ url: "/health/live" });
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    expect(response.headers["content-security-policy"]).toContain("default-src 'self'");
+    await app.close();
+  });
+
   it("rejects payloads over one MiB", async () => {
     const app = testApp();
     const response = await app.inject({

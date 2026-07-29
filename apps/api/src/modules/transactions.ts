@@ -413,10 +413,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         return "";
       }
       const str = String(val);
-      if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
-        return `"${str.replace(/"/g, '""')}"`;
+      const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+      if (safe.includes(",") || safe.includes('"') || safe.includes("\n") || safe.includes("\r")) {
+        return `"${safe.replace(/"/g, '""')}"`;
       }
-      return str;
+      return safe;
     };
 
     const headers = [

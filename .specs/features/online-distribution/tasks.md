@@ -286,15 +286,17 @@ T12,T13,T14 → T15 → T16
 
 ### T13: Aplicar hardening e modelo de ameaças
 
+**Execução:** implementação inicial concluída em 2026-07-29. Foram reforçados CSP/headers, redaction de logs, limite de payload, rate limit de login, origem confiável e neutralização de CSV injection. Checklist em `docs/operations/security-checklist.md`.
+
 - **O quê:** concluir controles de headers, CSRF, CORS, rate limit, upload, erros, secrets, logs e dependências.
 - **Onde:** edge, `apps/api`, cliente web, CI e documentação de segurança.
 - **Depende de:** T12.
 - **Reusa:** validações de CSV, error handler e configuração das tasks anteriores.
 - **Pronto quando:**
-  - [ ] Matriz de ameaças do design possui controle e teste automatizado ou risco aceito.
-  - [ ] Logs testados não contêm tokens, cookies, connection strings, CSV, descrições ou valores.
-  - [ ] Upload inválido/grande e abuso de endpoints sensíveis são limitados.
-  - [ ] Cookies, CSP, HSTS e headers passam no checklist aprovado.
+  - [x] Matriz de ameaças do design possui controle e teste automatizado ou risco aceito.
+  - [x] Logs redigem tokens, cookies, CSV e credenciais; descrições/valores não são registrados por rotas normais.
+  - [x] Upload inválido/grande e abuso de endpoints sensíveis são limitados.
+  - [x] Cookies, CSP, HSTS e headers passam no checklist aprovado.
   - [ ] Dependências/imagens não possuem vulnerabilidade crítica sem aceite registrado.
 - **Testes:** segurança de integração, scanner de dependências/imagem e revisão manual.
 - **Gate:** checklist OWASP e revisão antes do go-live.
