@@ -820,16 +820,17 @@ export function AccountsPage() {
                     <Checkbox
                       label={method.name}
                       checked={selected}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const { checked } = event.currentTarget;
                         setForm((current) => ({
                           ...current,
                           paymentMethods: togglePaymentMethod(
                             current.paymentMethods,
                             method.id,
-                            event.currentTarget.checked
+                            checked
                           )
-                        }))
-                      }
+                        }));
+                      }}
                     />
                     <Button
                       size="compact-xs"
