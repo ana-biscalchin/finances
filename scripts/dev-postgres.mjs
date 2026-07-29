@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import process from "node:process";
 
 try {
@@ -8,9 +8,13 @@ try {
   console.warn(".env não encontrado; copie .env.example para .env antes de iniciar.");
 }
 
+const runtimeEnv = { ...process.env, DATABASE_DIALECT: "postgres", AUTH_ENABLED: "true" };
+execFileSync("pnpm", ["db:migrate:postgres"], { stdio: "inherit", env: runtimeEnv });
+execFileSync("pnpm", ["db:seed:postgres"], { stdio: "inherit", env: runtimeEnv });
+
 const child = spawn("pnpm", ["dev"], {
   stdio: "inherit",
-  env: { ...process.env, DATABASE_DIALECT: "postgres", AUTH_ENABLED: "true" }
+  env: runtimeEnv
 });
 
 const forwardSignal = (signal) => child.kill(signal);

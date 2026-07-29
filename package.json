@@ -20,6 +20,7 @@
     "db:generate": "pnpm --filter @finances/database db:generate",
     "db:migrate": "pnpm --filter @finances/database db:migrate",
     "db:migrate:postgres": "pnpm --filter @finances/database db:migrate:postgres",
+    "db:seed:postgres": "pnpm --filter @finances/database db:seed:postgres",
     "db:migrate:identity": "pnpm --filter @finances/database db:migrate:identity",
     "db:seed": "pnpm --filter @finances/database db:seed",
     "db:seed:demo": "pnpm --filter @finances/database db:seed:demo",
