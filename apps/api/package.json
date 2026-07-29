@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -b",
     "start": "node dist/server.js",
-    "auth:bootstrap": "node --env-file=../../.env --import=tsx/esm src/auth/bootstrap-user.ts",
+    "auth:bootstrap": "node --env-file-if-exists=../../.env --import=tsx/esm src/auth/bootstrap-user.ts",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "vitest run src/ --passWithNoTests --no-file-parallelism --maxWorkers=1"
