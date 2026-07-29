@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @finances/database build && pnpm --filter @finances/domain build && pnpm --filter @finances/shared build && pnpm --parallel --filter @finances/web --filter @finances/api dev",
-    "dev:postgres": "DATABASE_DIALECT=postgres AUTH_ENABLED=true pnpm dev",
+    "dev:postgres": "node scripts/dev-postgres.mjs",
     "dev:web": "pnpm --filter @finances/web dev",
     "dev:api": "pnpm --filter @finances/api dev",
     "typecheck": "pnpm -r typecheck",
