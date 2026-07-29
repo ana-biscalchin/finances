@@ -12,3 +12,8 @@
 
 Antes do go-live, executar `pnpm check`, revisar `pnpm audit --prod` e confirmar o
 checklist de dependências/imagem no provedor.
+
+Em 2026-07-29, a auditoria ficou com uma vulnerabilidade alta transitiva em
+`react-router` (o advisory informa correção somente em uma versão 8.x ainda não
+publicada para `react-router-dom`). O projeto está em `7.18.1`, a versão mais recente
+disponível; acompanhar a publicação da correção antes do go-live.

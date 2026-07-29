@@ -297,7 +297,7 @@ T12,T13,T14 → T15 → T16
   - [x] Logs redigem tokens, cookies, CSV e credenciais; descrições/valores não são registrados por rotas normais.
   - [x] Upload inválido/grande e abuso de endpoints sensíveis são limitados.
   - [x] Cookies, CSP, HSTS e headers passam no checklist aprovado.
-  - [ ] Dependências/imagens não possuem vulnerabilidade crítica sem aceite registrado.
+  - [ ] Dependências/imagens não possuem vulnerabilidade crítica sem aceite registrado (há uma vulnerabilidade alta transitiva de React Router sem versão corrigida disponível para o pacote usado; risco registrado em `docs/operations/security-checklist.md`).
 - **Testes:** segurança de integração, scanner de dependências/imagem e revisão manual.
 - **Gate:** checklist OWASP e revisão antes do go-live.
 - **Commit:** `security: harden hosted financial application`
