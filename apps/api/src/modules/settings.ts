@@ -1,9 +1,10 @@
 import { settings as dbSettings } from "@finances/database";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { createDatabaseConnection } from "@finances/database";
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { requestContextFrom } from "../application/request-context.js";
 import { parseOptionalString, isRecord } from "../http.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
@@ -12,35 +13,47 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
   const { db } = connection;
 
   // Helper to get a setting value
-  async function getSetting(key: string): Promise<string | null> {
-    const row = db.select().from(dbSettings).where(eq(dbSettings.key, key)).get();
+  async function getSetting(ownerId: string, key: string): Promise<string | null> {
+    const row = (
+      await db
+        .select()
+        .from(dbSettings)
+        .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)))
+        .limit(1)
+    )[0];
     return row?.value ?? null;
   }
 
   // Helper to save a setting value
-  async function setSetting(key: string, value: string | null) {
+  async function setSetting(ownerId: string, key: string, value: string | null) {
     if (value === null) {
-      db.delete(dbSettings).where(eq(dbSettings.key, key)).run();
+      await db
+        .delete(dbSettings)
+        .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)));
       return;
     }
-    const existing = db.select().from(dbSettings).where(eq(dbSettings.key, key)).get();
+    const existing = (
+      await db
+        .select()
+        .from(dbSettings)
+        .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)))
+        .limit(1)
+    )[0];
     if (existing) {
-      db.update(dbSettings)
+      await db
+        .update(dbSettings)
         .set({ value, updatedAt: new Date().toISOString() })
-        .where(eq(dbSettings.key, key))
-        .run();
+        .where(and(eq(dbSettings.ownerId, ownerId), eq(dbSettings.key, key)));
     } else {
-      db.insert(dbSettings)
-        .values({ key, value })
-        .run();
+      await db.insert(dbSettings).values({ ownerId, key, value });
     }
   }
 
   // Helper to refresh and get a valid Google access token
-  async function getValidAccessToken(): Promise<string> {
-    const clientId = await getSetting("google_client_id");
-    const clientSecret = await getSetting("google_client_secret");
-    const refreshToken = await getSetting("google_refresh_token");
+  async function getValidAccessToken(ownerId: string): Promise<string> {
+    const clientId = await getSetting(ownerId, "google_client_id");
+    const clientSecret = await getSetting(ownerId, "google_client_secret");
+    const refreshToken = await getSetting(ownerId, "google_refresh_token");
 
     if (!clientId || !clientSecret || !refreshToken) {
       throw new Error("Google Drive não está conectado ou configurado.");
@@ -63,16 +76,21 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
     }
 
     const data = (await tokenRes.json()) as { access_token: string };
-    await setSetting("google_access_token", data.access_token);
+    await setSetting(ownerId, "google_access_token", data.access_token);
     return data.access_token;
   }
 
   // Helper to find or create the Google Drive backup folder
   async function getOrCreateFolder(accessToken: string): Promise<string> {
-    const query = encodeURIComponent("name = 'Carteira da Ana' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
-    const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
+    const query = encodeURIComponent(
+      "name = 'Carteira da Ana' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+    );
+    const listRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      }
+    );
 
     if (!listRes.ok) {
       throw new Error("Falha ao buscar pasta no Google Drive.");
@@ -104,12 +122,13 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
   }
 
   // 1. GET Settings state
-  app.get("/settings", async () => {
-    const clientId = await getSetting("google_client_id");
-    const clientSecret = await getSetting("google_client_secret");
-    const syncEnabled = (await getSetting("google_sync_enabled")) === "true";
-    const refreshToken = await getSetting("google_refresh_token");
-    const accountEmail = await getSetting("google_account_email");
+  app.get("/settings", async (request) => {
+    const ownerId = requestContextFrom(request).ownerId;
+    const clientId = await getSetting(ownerId, "google_client_id");
+    const clientSecret = await getSetting(ownerId, "google_client_secret");
+    const syncEnabled = (await getSetting(ownerId, "google_sync_enabled")) === "true";
+    const refreshToken = await getSetting(ownerId, "google_refresh_token");
+    const accountEmail = await getSetting(ownerId, "google_account_email");
 
     return {
       googleClientId: clientId || "",
@@ -123,6 +142,7 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
 
   // 2. POST Save Settings
   app.post("/settings", async (req, reply) => {
+    const ownerId = requestContextFrom(req).ownerId;
     const body = req.body;
     if (!isRecord(body)) {
       reply.code(400).send({ message: "Payload inválido" });
@@ -131,18 +151,19 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
 
     const clientId = parseOptionalString(body.googleClientId, "googleClientId");
     const clientSecret = parseOptionalString(body.googleClientSecret, "googleClientSecret");
-    const syncEnabled = body.googleSyncEnabled !== undefined ? String(body.googleSyncEnabled === true) : undefined;
+    const syncEnabled =
+      body.googleSyncEnabled !== undefined ? String(body.googleSyncEnabled === true) : undefined;
 
     if (clientId !== undefined) {
-      await setSetting("google_client_id", clientId);
+      await setSetting(ownerId, "google_client_id", clientId);
     }
     if (clientSecret !== undefined && clientSecret !== "********" && clientSecret !== "") {
-      await setSetting("google_client_secret", clientSecret);
+      await setSetting(ownerId, "google_client_secret", clientSecret);
     } else if (clientSecret === "") {
-      await setSetting("google_client_secret", null);
+      await setSetting(ownerId, "google_client_secret", null);
     }
     if (syncEnabled !== undefined) {
-      await setSetting("google_sync_enabled", syncEnabled);
+      await setSetting(ownerId, "google_sync_enabled", syncEnabled);
     }
 
     return { success: true };
@@ -150,14 +171,16 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
 
   // 3. POST Generate Google Auth URL
   app.post("/auth/google/url", async (req, reply) => {
-    const clientId = await getSetting("google_client_id");
+    const ownerId = requestContextFrom(req).ownerId;
+    const clientId = await getSetting(ownerId, "google_client_id");
     if (!clientId) {
       reply.code(400).send({ message: "Google Client ID não configurado nas configurações." });
       return;
     }
 
     const redirectUri = "http://localhost:3000/auth/google/callback";
-    const scope = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email";
+    const scope =
+      "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email";
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
 
     return { url: authUrl };
@@ -165,6 +188,7 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
 
   // 4. GET Google OAuth Callback
   app.get("/auth/google/callback", async (req, reply) => {
+    const ownerId = requestContextFrom(req).ownerId;
     const query = req.query as Record<string, unknown>;
     const code = typeof query.code === "string" ? query.code : "";
     if (!code) {
@@ -172,8 +196,8 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
       return;
     }
 
-    const clientId = await getSetting("google_client_id");
-    const clientSecret = await getSetting("google_client_secret");
+    const clientId = await getSetting(ownerId, "google_client_id");
+    const clientSecret = await getSetting(ownerId, "google_client_secret");
     if (!clientId || !clientSecret) {
       reply.code(400).send({ message: "Configurações do Google OAuth incompletas." });
       return;
@@ -205,9 +229,9 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
         expires_in: number;
       };
 
-      await setSetting("google_access_token", tokens.access_token);
+      await setSetting(ownerId, "google_access_token", tokens.access_token);
       if (tokens.refresh_token) {
-        await setSetting("google_refresh_token", tokens.refresh_token);
+        await setSetting(ownerId, "google_refresh_token", tokens.refresh_token);
       }
 
       const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
@@ -217,7 +241,7 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
       if (userInfoRes.ok) {
         const userInfo = (await userInfoRes.json()) as { email?: string };
         if (userInfo.email) {
-          await setSetting("google_account_email", userInfo.email);
+          await setSetting(ownerId, "google_account_email", userInfo.email);
         }
       }
 
@@ -225,28 +249,35 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
     } catch (error) {
       app.log.error({ err: error }, "Erro no callback do Google OAuth");
       const message = error instanceof Error ? error.message : "Erro desconhecido.";
-      reply.redirect(`http://localhost:5173/?googleAuth=error&message=${encodeURIComponent(message)}`);
+      reply.redirect(
+        `http://localhost:5173/?googleAuth=error&message=${encodeURIComponent(message)}`
+      );
     }
   });
 
   // 5. POST Disconnect Google Drive
-  app.post("/auth/google/disconnect", async () => {
-    await setSetting("google_access_token", null);
-    await setSetting("google_refresh_token", null);
-    await setSetting("google_account_email", null);
+  app.post("/auth/google/disconnect", async (request) => {
+    const ownerId = requestContextFrom(request).ownerId;
+    await setSetting(ownerId, "google_access_token", null);
+    await setSetting(ownerId, "google_refresh_token", null);
+    await setSetting(ownerId, "google_account_email", null);
     return { success: true };
   });
 
   // 6. GET Google Drive Backups List
   app.get("/backups/gdrive", async (req, reply) => {
+    const ownerId = requestContextFrom(req).ownerId;
     try {
-      const accessToken = await getValidAccessToken();
+      const accessToken = await getValidAccessToken(ownerId);
       const folderId = await getOrCreateFolder(accessToken);
 
       const query = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
-      const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,size,createdTime)&orderBy=createdTime desc`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      const listRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,size,createdTime)&orderBy=createdTime desc`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        }
+      );
 
       if (!listRes.ok) {
         const errText = await listRes.text();
@@ -272,9 +303,16 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
 
   // 7. POST Upload Backup to Google Drive
   app.post("/backups/:name/upload-gdrive", async (req, reply) => {
+    const ownerId = requestContextFrom(req).ownerId;
     const params = req.params as Record<string, unknown>;
     const name = params.name;
-    if (!name || typeof name !== "string" || name.includes("/") || name.includes("\\") || name.startsWith(".")) {
+    if (
+      !name ||
+      typeof name !== "string" ||
+      name.includes("/") ||
+      name.includes("\\") ||
+      name.startsWith(".")
+    ) {
       reply.code(400).send({ message: "Nome de arquivo de backup inválido." });
       return;
     }
@@ -287,15 +325,20 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
     }
 
     try {
-      const accessToken = await getValidAccessToken();
+      const accessToken = await getValidAccessToken(ownerId);
       const folderId = await getOrCreateFolder(accessToken);
 
       // Check if file with same name already exists in folder to avoid duplicates
       const escapedName = name.replace(/'/g, "\\'");
-      const checkQuery = encodeURIComponent(`'${folderId}' in parents and name = '${escapedName}' and trashed = false`);
-      const checkRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${checkQuery}&fields=files(id)`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      const checkQuery = encodeURIComponent(
+        `'${folderId}' in parents and name = '${escapedName}' and trashed = false`
+      );
+      const checkRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${checkQuery}&fields=files(id)`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        }
+      );
 
       let existingFileId: string | null = null;
       if (checkRes.ok) {
@@ -332,14 +375,17 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
 
       // Upload content
       const fileBuffer = readFileSync(backupFilePath);
-      const uploadRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/x-sqlite3"
-        },
-        body: fileBuffer
-      });
+      const uploadRes = await fetch(
+        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/x-sqlite3"
+          },
+          body: fileBuffer
+        }
+      );
 
       if (!uploadRes.ok) {
         const errText = await uploadRes.text();
@@ -356,6 +402,7 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
 
   // 8. POST Download Backup from Google Drive
   app.post("/backups/gdrive/:id/download", async (req, reply) => {
+    const ownerId = requestContextFrom(req).ownerId;
     const params = req.params as Record<string, unknown>;
     const fileId = params.id;
     if (!fileId || typeof fileId !== "string") {
@@ -364,12 +411,15 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
     }
 
     try {
-      const accessToken = await getValidAccessToken();
+      const accessToken = await getValidAccessToken(ownerId);
 
       // Get file metadata to know the filename
-      const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=name`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      const metaRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=name`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        }
+      );
 
       if (!metaRes.ok) {
         const errText = await metaRes.text();
@@ -385,9 +435,12 @@ export function registerSettingsRoutes(app: FastifyInstance, connection: Databas
       }
 
       // Download content
-      const downloadRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      const downloadRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        }
+      );
 
       if (!downloadRes.ok) {
         const errText = await downloadRes.text();

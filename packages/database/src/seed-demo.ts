@@ -1,5 +1,6 @@
 import { createDatabaseConnection } from "./connection.js";
 import { buildDemoSeedData } from "./demo-seed-data.js";
+import { resolveMigrationOwnerId } from "./migration-owner.js";
 import {
   accountTransfers,
   accountPaymentMethods,
@@ -14,14 +15,16 @@ import {
 
 const month = process.env.DEMO_MONTH ?? new Date().toISOString().slice(0, 7);
 const seed = buildDemoSeedData(month);
-const { db, sqlite } = createDatabaseConnection();
+const connection = createDatabaseConnection();
+const { db, sqlite } = connection;
+const ownerId = resolveMigrationOwnerId(connection, process.env.SEED_OWNER_USERNAME);
 const now = new Date().toISOString();
 
 try {
   sqlite.transaction(() => {
     for (const item of seed.accounts) {
       db.insert(accounts)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: accounts.id,
           set: { ...item, isActive: true, updatedAt: now }
@@ -41,7 +44,7 @@ try {
 
     for (const item of seed.creditCards) {
       db.insert(creditCards)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: creditCards.id,
           set: { ...item, isActive: true, updatedAt: now }
@@ -61,7 +64,7 @@ try {
 
     for (const item of seed.transfers) {
       db.insert(accountTransfers)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: accountTransfers.id,
           set: { ...item, updatedAt: now }
@@ -71,17 +74,17 @@ try {
 
     for (const item of seed.recurrenceRules) {
       db.insert(recurrenceRules)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: recurrenceRules.id,
-          set: { ...item, updatedAt: now }
+          set: { ...item, ownerId, updatedAt: now }
         })
         .run();
     }
 
     for (const item of seed.transactions) {
       db.insert(transactions)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: transactions.id,
           set: { ...item, updatedAt: now }
@@ -91,19 +94,22 @@ try {
 
     for (const item of seed.billPayments) {
       db.insert(creditCardBillPayments)
-        .values(item)
+        .values({ ...item, ownerId })
         .onConflictDoUpdate({
           target: creditCardBillPayments.id,
-          set: { ...item, reversedAt: null, updatedAt: now }
+          set: { ...item, ownerId, reversedAt: null, updatedAt: now }
         })
         .run();
     }
 
     for (const item of seed.plannedExpenses) {
-      db.insert(plannedExpenses).values(item).onConflictDoUpdate({
-        target: plannedExpenses.id,
-        set: { ...item, updatedAt: now }
-      }).run();
+      db.insert(plannedExpenses)
+        .values({ ...item, ownerId })
+        .onConflictDoUpdate({
+          target: plannedExpenses.id,
+          set: { ...item, ownerId, updatedAt: now }
+        })
+        .run();
     }
   })();
 

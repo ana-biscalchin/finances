@@ -1,3 +1,4 @@
+import { apiClient } from "../shared/api-client.js";
 import {
   Alert,
   ActionIcon,
@@ -58,8 +59,6 @@ import { CategoryMultiSelect, CategorySelect, QuickCategoryEdit } from "../share
 import { MonthSelector } from "../shared/MonthSelector";
 import { QuickAmountEdit, QuickDateEdit, QuickTextEdit } from "../shared/QuickEditFields";
 import { SortableTableHeader } from "../shared/SortableTableHeader";
-
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 type CreditCard = {
   id: string;
@@ -159,7 +158,14 @@ type BillData = {
   transactions: CardTransaction[];
   totalCents: number;
   summary: { status: string; remainingCents: number; minimumMet: boolean };
-  payments: Array<{ id: string; paymentDate: string; principalCents: number; interestCents: number; penaltyCents: number; reversedAt: string | null }>;
+  payments: Array<{
+    id: string;
+    paymentDate: string;
+    principalCents: number;
+    interestCents: number;
+    penaltyCents: number;
+    reversedAt: string | null;
+  }>;
 };
 
 type SortDirection = "asc" | "desc";
@@ -218,7 +224,7 @@ function FaturasView() {
     setIsLoadingCards(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/credit-cards`);
+      const res = await apiClient.raw(`/credit-cards`);
       if (!res.ok) throw new Error("Não foi possível carregar os cartões.");
       setCards(await res.json());
     } catch (e) {
@@ -231,7 +237,7 @@ function FaturasView() {
 
   async function loadCategories() {
     try {
-      const res = await fetch(`${apiBaseUrl}/categories?includeInactive=true`);
+      const res = await apiClient.raw(`/categories?includeInactive=true`);
       if (!res.ok) throw new Error("Não foi possível carregar as categorias.");
       setCategories(await res.json());
     } catch (e) {
@@ -243,7 +249,7 @@ function FaturasView() {
 
   async function loadAccounts() {
     try {
-      const res = await fetch(`${apiBaseUrl}/accounts`);
+      const res = await apiClient.raw(`/accounts`);
       if (!res.ok) throw new Error("Não foi possível carregar as contas.");
       setAccounts(await res.json());
     } catch (e) {
@@ -255,7 +261,7 @@ function FaturasView() {
   async function loadBillForCard(cardId: string, month: string) {
     setLoadingBills((prev) => ({ ...prev, [cardId]: true }));
     try {
-      const res = await fetch(`${apiBaseUrl}/credit-cards/${cardId}/bills?month=${month}`);
+      const res = await apiClient.raw(`/credit-cards/${cardId}/bills?month=${month}`);
       if (!res.ok) throw new Error("Erro ao carregar fatura.");
       const data = (await res.json()) as BillData;
       setBillData((prev) => ({ ...prev, [cardId]: data }));
@@ -434,7 +440,9 @@ Texto da fatura a ser convertido:
 [Cole o texto da sua fatura aqui]`;
   }, [categories]);
 
-  const isPaid = billData?.bill.status === "paid" || Boolean(billData?.payments.some((payment) => !payment.reversedAt));
+  const isPaid =
+    billData?.bill.status === "paid" ||
+    Boolean(billData?.payments.some((payment) => !payment.reversedAt));
   const isClosed = billData?.bill.closingDate ? today >= billData.bill.closingDate : false;
 
   let statusLabel = "Aberta";
@@ -672,24 +680,33 @@ Texto da fatura a ser convertido:
       throw new Error("Fatura não carregada.");
     }
 
-    const response = await fetch(
-      isPaid ? `${apiBaseUrl}/transactions/${transaction.id}/metadata` : `${apiBaseUrl}/credit-cards/${card.id}/bills/${billData.bill.id}/transactions/${transaction.id}`,
+    const response = await apiClient.raw(
+      isPaid
+        ? `/transactions/${transaction.id}/metadata`
+        : `/credit-cards/${card.id}/bills/${billData.bill.id}/transactions/${transaction.id}`,
       {
         method: isPaid ? "PATCH" : "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...(isPaid ? {} : { type: changes.type ?? transaction.type,
+          ...(isPaid
+            ? {}
+            : {
+                type: changes.type ?? transaction.type,
+                description: changes.description ?? transaction.description,
+                amountCents: changes.amountCents ?? transaction.amountCents,
+                eventDate: changes.eventDate ?? transaction.eventDate,
+                subcategoryId:
+                  changes.subcategoryId === undefined
+                    ? transaction.subcategoryId
+                    : changes.subcategoryId,
+                notes: changes.notes === undefined ? transaction.notes : changes.notes,
+                status: changes.status ?? transaction.status,
+                installmentCount: changes.installmentCount,
+                preserveBillMonth: changes.preserveBillMonth
+              }),
           description: changes.description ?? transaction.description,
-          amountCents: changes.amountCents ?? transaction.amountCents,
-          eventDate: changes.eventDate ?? transaction.eventDate,
           subcategoryId:
             changes.subcategoryId === undefined ? transaction.subcategoryId : changes.subcategoryId,
-          notes: changes.notes === undefined ? transaction.notes : changes.notes,
-          status: changes.status ?? transaction.status,
-          installmentCount: changes.installmentCount,
-          preserveBillMonth: changes.preserveBillMonth }),
-          description: changes.description ?? transaction.description,
-          subcategoryId: changes.subcategoryId === undefined ? transaction.subcategoryId : changes.subcategoryId,
           notes: changes.notes === undefined ? transaction.notes : changes.notes
         })
       }
@@ -728,8 +745,8 @@ Texto da fatura a ser convertido:
     setPanelError(null);
 
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/credit-cards/${card.id}/bills/${billData.bill.id}/transactions`,
+      const response = await apiClient.raw(
+        `/credit-cards/${card.id}/bills/${billData.bill.id}/transactions`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -771,8 +788,8 @@ Texto da fatura a ser convertido:
     setPanelError(null);
 
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/credit-cards/${card.id}/bills/${billData.bill.id}/transactions/${transaction.id}`,
+      const response = await apiClient.raw(
+        `/credit-cards/${card.id}/bills/${billData.bill.id}/transactions/${transaction.id}`,
         { method: "DELETE" }
       );
 
@@ -935,8 +952,8 @@ Texto da fatura a ser convertido:
 
     try {
       for (const transaction of selectedTransactions) {
-        const response = await fetch(
-          `${apiBaseUrl}/credit-cards/${card.id}/bills/${billData.bill.id}/transactions/${transaction.id}`,
+        const response = await apiClient.raw(
+          `/credit-cards/${card.id}/bills/${billData.bill.id}/transactions/${transaction.id}`,
           { method: "DELETE" }
         );
 
@@ -1045,7 +1062,7 @@ Texto da fatura a ser convertido:
     setImportModalError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/transactions/import-preview`, {
+      const response = await apiClient.raw(`/transactions/import-preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1096,7 +1113,7 @@ Texto da fatura a ser convertido:
     setImportModalError(null);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/transactions/import-confirm`, {
+      const response = await apiClient.raw(`/transactions/import-confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1210,7 +1227,19 @@ Texto da fatura a ser convertido:
       </Group>
 
       <Collapse in={!isCollapsed}>
-        {billData ? <BillPaymentPanel cardId={card.id} billId={billData.bill.id} accounts={accounts} remainingCents={billData.summary.remainingCents} minimumDueCents={billData.bill.minimumDueCents} minimumMet={billData.summary.minimumMet} status={billData.summary.status} payments={billData.payments} onChanged={onReload}/> : null}
+        {billData ? (
+          <BillPaymentPanel
+            cardId={card.id}
+            billId={billData.bill.id}
+            accounts={accounts}
+            remainingCents={billData.summary.remainingCents}
+            minimumDueCents={billData.bill.minimumDueCents}
+            minimumMet={billData.summary.minimumMet}
+            status={billData.summary.status}
+            payments={billData.payments}
+            onChanged={onReload}
+          />
+        ) : null}
         {panelError ? (
           <Alert color="red" variant="light" m="md">
             {panelError}

@@ -4,12 +4,20 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -p tsconfig.build.json",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
+    "db:generate:postgres": "drizzle-kit generate --config=drizzle.postgres.config.ts",
     "db:migrate": "tsx src/migrate.ts",
+    "db:migrate:postgres": "node --env-file-if-exists=../../.env --import=tsx/esm src/migrate-postgres.ts",
+    "db:seed:postgres": "node --env-file-if-exists=../../.env --import=tsx/esm src/seed-postgres.ts",
+    "db:migrate:identity": "tsx src/migrate-identity.ts",
+    "db:import:sqlite": "tsx src/migration/import-sqlite.ts",
     "db:seed": "tsx src/seed.ts",
     "db:seed:demo": "tsx src/seed-demo.ts",
     "db:reset:dev": "tsx src/reset-development.ts",
@@ -27,6 +35,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9"
   }
 }

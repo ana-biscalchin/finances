@@ -1,9 +1,23 @@
 import { createDatabaseConnection } from "./connection.js";
-import { accountPaymentMethods, accounts, categories, subcategories, paymentMethods } from "./schema.js";
-import { accountPaymentMethodSeeds, accountSeeds, categorySeeds, paymentMethodSeeds } from "./seed-data.js";
+import { resolveMigrationOwnerId } from "./migration-owner.js";
+import {
+  accountPaymentMethods,
+  accounts,
+  categories,
+  subcategories,
+  paymentMethods
+} from "./schema.js";
+import {
+  accountPaymentMethodSeeds,
+  accountSeeds,
+  categorySeeds,
+  paymentMethodSeeds
+} from "./seed-data.js";
 import { notInArray } from "drizzle-orm";
 
-const { db, sqlite } = createDatabaseConnection();
+const connection = createDatabaseConnection();
+const { db, sqlite } = connection;
+const ownerId = resolveMigrationOwnerId(connection, process.env.SEED_OWNER_USERNAME);
 const now = new Date().toISOString();
 const activePaymentMethodIds = paymentMethodSeeds.map((paymentMethod) => paymentMethod.id);
 
@@ -38,23 +52,30 @@ db.update(paymentMethods)
   .run();
 
 for (const account of accountSeeds) {
-  db.insert(accounts).values({ ...account, initialBalanceCents: 0 }).onConflictDoUpdate({
-    target: accounts.id,
-    set: { ...account, isActive: true, updatedAt: now }
-  }).run();
+  db.insert(accounts)
+    .values({ ...account, ownerId, initialBalanceCents: 0 })
+    .onConflictDoUpdate({
+      target: accounts.id,
+      set: { ...account, isActive: true, updatedAt: now }
+    })
+    .run();
 }
 
 for (const association of accountPaymentMethodSeeds) {
-  db.insert(accountPaymentMethods).values(association).onConflictDoUpdate({
-    target: accountPaymentMethods.id,
-    set: { ...association, isActive: true, archivedAt: null, updatedAt: now }
-  }).run();
+  db.insert(accountPaymentMethods)
+    .values(association)
+    .onConflictDoUpdate({
+      target: accountPaymentMethods.id,
+      set: { ...association, isActive: true, archivedAt: null, updatedAt: now }
+    })
+    .run();
 }
 
 for (const [categorySortOrder, category] of categorySeeds.entries()) {
   db.insert(categories)
     .values({
       id: category.id,
+      ownerId,
       nature: category.nature,
       name: category.name,
       sortOrder: categorySortOrder
@@ -75,7 +96,8 @@ for (const [categorySortOrder, category] of categorySeeds.entries()) {
 
     db.insert(subcategories)
       .values({
-        id: "id" in subcategory ? subcategory.id : `${category.id}-sub-${slugify(subcategory.name)}`,
+        id:
+          "id" in subcategory ? subcategory.id : `${category.id}-sub-${slugify(subcategory.name)}`,
         categoryId: category.id,
         name: subcategory.name,
         behavior: subcategory.behavior,

@@ -1,3 +1,4 @@
+import { apiClient } from "../shared/api-client.js";
 import {
   ActionIcon,
   Alert,
@@ -48,8 +49,6 @@ type GDriveBackup = {
   createdAt: string;
 };
 
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-
 function formatBytes(bytes: number) {
   if (bytes === 0) return "0 B";
   const k = 1024;
@@ -59,12 +58,14 @@ function formatBytes(bytes: number) {
 }
 
 export function SettingsPage() {
+  // Google Drive is intentionally excluded from the hosted release (T11).
+  const googleDriveReleased = false;
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
-  
+
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -93,7 +94,7 @@ export function SettingsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/backups`);
+      const response = await apiClient.raw(`/backups`);
       if (!response.ok) {
         throw new Error("Não foi possível carregar o histórico de backups.");
       }
@@ -109,7 +110,7 @@ export function SettingsPage() {
   async function loadSettings() {
     setIsLoadingSettings(true);
     try {
-      const res = await fetch(`${apiBaseUrl}/settings`);
+      const res = await apiClient.raw(`/settings`);
       if (res.ok) {
         const data = await res.json();
         setGoogleClientId(data.googleClientId);
@@ -129,7 +130,7 @@ export function SettingsPage() {
     if (!googleConnected) return;
     setIsLoadingGDriveBackups(true);
     try {
-      const res = await fetch(`${apiBaseUrl}/backups/gdrive`);
+      const res = await apiClient.raw(`/backups/gdrive`);
       if (res.ok) {
         setGdriveBackups(await res.json());
       }
@@ -170,7 +171,7 @@ export function SettingsPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/backups/create`, {
+      const response = await apiClient.raw(`/backups/create`, {
         method: "POST"
       });
       if (!response.ok) {
@@ -178,15 +179,19 @@ export function SettingsPage() {
       }
       const data = await response.json();
       setSuccessMessage(`Backup "${data.name}" criado com sucesso!`);
-      
+
       // Auto-Sync to Google Drive if active
       if (googleSyncEnabled && googleConnected) {
         try {
-          await fetch(`${apiBaseUrl}/backups/${data.name}/upload-gdrive`, { method: "POST" });
-          setSuccessMessage(`Backup "${data.name}" criado localmente e sincronizado no Google Drive!`);
+          await apiClient.raw(`/backups/${data.name}/upload-gdrive`, { method: "POST" });
+          setSuccessMessage(
+            `Backup "${data.name}" criado localmente e sincronizado no Google Drive!`
+          );
           void loadGDriveBackups();
         } catch {
-          setSuccessMessage(`Backup "${data.name}" criado localmente, mas falhou ao sincronizar no Google Drive.`);
+          setSuccessMessage(
+            `Backup "${data.name}" criado localmente, mas falhou ao sincronizar no Google Drive.`
+          );
         }
       }
 
@@ -199,6 +204,25 @@ export function SettingsPage() {
     }
   }
 
+  async function exportData() {
+    setError(null);
+    try {
+      const response = await apiClient.raw(`/export`);
+      if (!response.ok) throw new Error("Não foi possível exportar os dados.");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `carteira-export-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setSuccessMessage("Exportação criada com sucesso.");
+    } catch (exportError) {
+      reportClientError("settings.exportData", exportError);
+      setError(getErrorMessage(exportError));
+    }
+  }
+
   async function deleteBackup(name: string) {
     if (!window.confirm(`Excluir permanentemente o backup "${name}"?`)) {
       return;
@@ -207,7 +231,7 @@ export function SettingsPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/backups/${name}`, {
+      const response = await apiClient.raw(`/backups/${name}`, {
         method: "DELETE"
       });
       if (!response.ok) {
@@ -230,14 +254,14 @@ export function SettingsPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/backups/${restoreTarget.name}/restore`, {
+      const response = await apiClient.raw(`/backups/${restoreTarget.name}/restore`, {
         method: "POST"
       });
-      
+
       if (!response.ok) {
         throw new Error(await getResponseError(response, "Falha ao restaurar o banco de dados."));
       }
-      
+
       setSuccessMessage("Restaurado com sucesso! Os dados ativos foram atualizados.");
       setRestoreTarget(null);
       setConfirmText("");
@@ -255,7 +279,7 @@ export function SettingsPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/settings`, {
+      const res = await apiClient.raw(`/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -280,9 +304,11 @@ export function SettingsPage() {
   async function connectGoogleDrive() {
     setError(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/auth/google/url`, { method: "POST" });
+      const res = await apiClient.raw(`/auth/google/url`, { method: "POST" });
       if (!res.ok) {
-        throw new Error(await getResponseError(res, "Não foi possível gerar a URL de autorização do Google."));
+        throw new Error(
+          await getResponseError(res, "Não foi possível gerar a URL de autorização do Google.")
+        );
       }
       const data = await res.json();
       window.location.href = data.url;
@@ -297,7 +323,7 @@ export function SettingsPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/auth/google/disconnect`, { method: "POST" });
+      const res = await apiClient.raw(`/auth/google/disconnect`, { method: "POST" });
       if (!res.ok) {
         throw new Error("Falha ao desconectar.");
       }
@@ -315,7 +341,7 @@ export function SettingsPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/backups/${name}/upload-gdrive`, { method: "POST" });
+      const res = await apiClient.raw(`/backups/${name}/upload-gdrive`, { method: "POST" });
       if (!res.ok) {
         throw new Error(await getResponseError(res, "Falha ao enviar backup para o Google Drive."));
       }
@@ -334,7 +360,7 @@ export function SettingsPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/backups/gdrive/${id}/download`, { method: "POST" });
+      const res = await apiClient.raw(`/backups/gdrive/${id}/download`, { method: "POST" });
       if (!res.ok) {
         throw new Error(await getResponseError(res, "Falha ao baixar backup do Google Drive."));
       }
@@ -362,7 +388,13 @@ export function SettingsPage() {
       </Paper>
 
       {error && (
-        <Alert color="red" variant="light" title="Erro" withCloseButton onClose={() => setError(null)}>
+        <Alert
+          color="red"
+          variant="light"
+          title="Erro"
+          withCloseButton
+          onClose={() => setError(null)}
+        >
           {error}
         </Alert>
       )}
@@ -385,9 +417,11 @@ export function SettingsPage() {
           <Tabs.Tab value="backups" leftSection={<IconDatabase size={16} />}>
             Backups Locais
           </Tabs.Tab>
-          <Tabs.Tab value="gdrive" leftSection={<IconBrandGoogle size={16} />}>
-            Google Drive
-          </Tabs.Tab>
+          {googleDriveReleased && (
+            <Tabs.Tab value="gdrive" leftSection={<IconBrandGoogle size={16} />}>
+              Google Drive
+            </Tabs.Tab>
+          )}
         </Tabs.List>
 
         <Tabs.Panel value="backups">
@@ -401,16 +435,21 @@ export function SettingsPage() {
                   <Box>
                     <Text fw={600}>Banco de Dados Ativo</Text>
                     <Text size="xs" c="dimmed">
-                      SQLite local: <span style={{ fontFamily: "monospace" }}>data/financas.sqlite</span>
+                      Banco PostgreSQL hospedado; backups operacionais são gerenciados pela infraestrutura.
                     </Text>
                   </Box>
                 </Group>
                 <Button
-                  leftSection={isCreating ? <Loader size={14} color="white" /> : <IconDownload size={16} />}
+                  leftSection={
+                    isCreating ? <Loader size={14} color="white" /> : <IconDownload size={16} />
+                  }
                   onClick={createBackup}
                   disabled={isCreating || isRestoring}
                 >
                   Criar Backup Manual
+                </Button>
+                <Button variant="light" leftSection={<IconDownload size={16} />} onClick={exportData}>
+                  Exportar meus dados
                 </Button>
               </Group>
             </Card>
@@ -420,7 +459,8 @@ export function SettingsPage() {
                 <Box>
                   <Title order={3}>Backups Disponíveis</Title>
                   <Text size="sm" c="dimmed">
-                    Lista de backups gerados manualmente e pontos de segurança automáticos (pré-restauração).
+                    Lista de backups gerados manualmente e pontos de segurança automáticos
+                    (pré-restauração).
                   </Text>
                 </Box>
                 <Button
@@ -471,9 +511,7 @@ export function SettingsPage() {
                               </Badge>
                             )}
                           </Table.Td>
-                          <Table.Td>
-                            {new Date(backup.createdAt).toLocaleString("pt-BR")}
-                          </Table.Td>
+                          <Table.Td>{new Date(backup.createdAt).toLocaleString("pt-BR")}</Table.Td>
                           <Table.Td>{formatBytes(backup.sizeBytes)}</Table.Td>
                           <Table.Td>
                             <Group gap="xs" justify="flex-end">
@@ -483,11 +521,7 @@ export function SettingsPage() {
                                     variant="subtle"
                                     color="blue"
                                     onClick={() => void uploadToGDrive(backup.name)}
-                                    disabled={
-                                      isCreating ||
-                                      isRestoring ||
-                                      isUploading[backup.name]
-                                    }
+                                    disabled={isCreating || isRestoring || isUploading[backup.name]}
                                   >
                                     {isUploading[backup.name] ? (
                                       <Loader size={14} />
@@ -515,11 +549,7 @@ export function SettingsPage() {
                                   variant="subtle"
                                   color="red"
                                   onClick={() => void deleteBackup(backup.name)}
-                                  disabled={
-                                    isCreating ||
-                                    isRestoring ||
-                                    isDeleting === backup.name
-                                  }
+                                  disabled={isCreating || isRestoring || isDeleting === backup.name}
                                 >
                                   {isDeleting === backup.name ? (
                                     <Loader size={14} color="red" />
@@ -540,7 +570,7 @@ export function SettingsPage() {
           </Stack>
         </Tabs.Panel>
 
-        <Tabs.Panel value="gdrive">
+        {googleDriveReleased && <Tabs.Panel value="gdrive">
           <Stack gap="md">
             <Card withBorder radius="md" p="md">
               <Stack gap="md">
@@ -551,14 +581,18 @@ export function SettingsPage() {
                   <Box>
                     <Text fw={600}>Configurações do Google Drive</Text>
                     <Text size="xs" c="dimmed">
-                      Armazene seus backups de forma segura e automatizada na sua conta do Google Drive.
+                      Armazene seus backups de forma segura e automatizada na sua conta do Google
+                      Drive.
                     </Text>
                   </Box>
                 </Group>
 
                 <Alert color="blue" variant="light" icon={<IconAlertTriangle size={18} />}>
                   <Text size="xs">
-                    Para habilitar o salvamento em nuvem, você deve inserir o <strong>Google OAuth Client ID</strong> e o <strong>Client Secret</strong> de um projeto configurado no Google Cloud Console com acesso à API do Google Drive (Authorized Redirect URI: <code>http://localhost:3000/auth/google/callback</code>).
+                    Para habilitar o salvamento em nuvem, você deve inserir o{" "}
+                    <strong>Google OAuth Client ID</strong> e o <strong>Client Secret</strong> de um
+                    projeto configurado no Google Cloud Console com acesso à API do Google Drive
+                    (Authorized Redirect URI: <code>/auth/google/callback</code>).
                   </Text>
                 </Alert>
 
@@ -601,8 +635,10 @@ export function SettingsPage() {
 
             <Card withBorder radius="md" p="md">
               <Stack gap="xs">
-                <Text fw={600} size="sm">Status da Conexão</Text>
-                
+                <Text fw={600} size="sm">
+                  Status da Conexão
+                </Text>
+
                 {isLoadingSettings ? (
                   <Loader size="sm" />
                 ) : googleConnected ? (
@@ -615,11 +651,7 @@ export function SettingsPage() {
                         {googleAccountEmail || "Google Drive Ativo"}
                       </Text>
                     </Group>
-                    <Button
-                      variant="outline"
-                      color="red"
-                      onClick={disconnectGoogleDrive}
-                    >
+                    <Button variant="outline" color="red" onClick={disconnectGoogleDrive}>
                       Desconectar Conta
                     </Button>
                   </Group>
@@ -687,9 +719,7 @@ export function SettingsPage() {
                         {gdriveBackups.map((gfile) => (
                           <Table.Tr key={gfile.id}>
                             <Table.Td style={{ fontFamily: "monospace" }}>{gfile.name}</Table.Td>
-                            <Table.Td>
-                              {new Date(gfile.createdAt).toLocaleString("pt-BR")}
-                            </Table.Td>
+                            <Table.Td>{new Date(gfile.createdAt).toLocaleString("pt-BR")}</Table.Td>
                             <Table.Td>{formatBytes(gfile.size)}</Table.Td>
                             <Table.Td>
                               <Group gap="xs" justify="flex-end">
@@ -718,7 +748,7 @@ export function SettingsPage() {
               </Paper>
             )}
           </Stack>
-        </Tabs.Panel>
+        </Tabs.Panel>}
       </Tabs>
 
       {/* Restore Safety Modal */}
@@ -733,7 +763,9 @@ export function SettingsPage() {
         title={
           <Group gap="xs">
             <IconAlertTriangle color="orange" size={24} />
-            <Text fw={700} size="lg">Restaurar Banco de Dados?</Text>
+            <Text fw={700} size="lg">
+              Restaurar Banco de Dados?
+            </Text>
           </Group>
         }
         size="md"
@@ -745,7 +777,7 @@ export function SettingsPage() {
           <Text size="sm">
             Você está prestes a restaurar o banco de dados para o estado do backup:
           </Text>
-          
+
           <Paper withBorder p="sm" bg="gray.0" radius="sm">
             <Text size="xs" style={{ fontFamily: "monospace" }}>
               <strong>Arquivo:</strong> {restoreTarget?.name}

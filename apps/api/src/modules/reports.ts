@@ -20,6 +20,7 @@ import {
 } from "@finances/domain";
 import { and, eq, gt, gte, inArray, lt, ne, or, type SQL } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
+import { requestContextFrom } from "../application/request-context.js";
 
 type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 
@@ -28,6 +29,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
   // 1. GET /reports/credit-cards-summary?month=YYYY-MM
   app.get("/reports/credit-cards-summary", async (request, reply) => {
+    const ownerId = requestContextFrom(request).ownerId;
     const query = request.query as Record<string, unknown>;
     const monthStr = typeof query.month === "string" ? query.month : "";
 
@@ -43,7 +45,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     const monthAfterNextStart = `${advanceMonth(nextMonth, 1)}-01`;
 
     // Get active credit cards
-    const activeCards = db.select().from(creditCards).where(eq(creditCards.isActive, true)).all();
+    const activeCards = await db
+      .select()
+      .from(creditCards)
+      .where(and(eq(creditCards.ownerId, ownerId), eq(creditCards.isActive, true)));
 
     const cardMap = new Map(activeCards.map((c) => [c.id, c]));
     const cardIds = activeCards.map((c) => c.id);
@@ -53,7 +58,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     }
 
     // Get bills for these cards that are due in the current or next month
-    const bills = db
+    const bills = await db
       .select({
         id: creditCardBills.id,
         creditCardId: creditCardBills.creditCardId,
@@ -69,8 +74,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
           gte(creditCardBills.dueDate, monthStart),
           lt(creditCardBills.dueDate, monthAfterNextStart)
         )
-      )
-      .all();
+      );
 
     const summaryList = [];
 
@@ -80,7 +84,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
       // Sum current and legacy purchases for this bill. Older/imported rows may
       // only have creditCardId + budgetMonth, without creditCardBillId.
-      const billTransactions = db
+      const billTransactions = await db
         .select({
           amountCents: transactions.amountCents,
           subcategoryId: transactions.subcategoryId
@@ -88,6 +92,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         .from(transactions)
         .where(
           and(
+            eq(transactions.ownerId, ownerId),
             eq(transactions.creditCardId, bill.creditCardId),
             or(
               eq(transactions.creditCardBillId, bill.id),
@@ -96,12 +101,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
             eq(transactions.type, "expense"),
             ne(transactions.status, "canceled")
           )
-        )
-        .all();
+        );
 
       const amountCents = billTransactions.reduce((sum, t) => sum + t.amountCents, 0);
-      const categoryBreakdown = buildCategoryBreakdown(db, billTransactions);
-      const futureInstallments = db
+      const categoryBreakdown = await buildCategoryBreakdown(db, ownerId, billTransactions);
+      const futureInstallments = await db
         .select({
           amountCents: installments.amountCents,
           dueMonth: installments.dueMonth,
@@ -111,12 +115,12 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         .leftJoin(transactions, eq(installments.purchaseTransactionId, transactions.id))
         .where(
           and(
+            eq(transactions.ownerId, ownerId),
             eq(transactions.creditCardId, bill.creditCardId),
             gt(installments.dueMonth, bill.billMonth),
             ne(transactions.status, "canceled")
           )
-        )
-        .all();
+        );
 
       const futureCommittedCents = futureInstallments.reduce(
         (sum, item) => sum + item.amountCents,
@@ -144,6 +148,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
   });
 
   app.get("/reports/categories-breakdown", async (request, reply) => {
+    const ownerId = requestContextFrom(request).ownerId;
     const query = request.query as Record<string, unknown>;
     const monthStr = typeof query.month === "string" ? query.month : undefined;
     const yearStr = typeof query.year === "string" ? query.year : undefined;
@@ -163,7 +168,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         .send({ message: "Defina o mês (month) ou o ano (year) para consulta." });
     }
 
-    const txFilters = [eq(transactions.type, "expense"), ne(transactions.status, "canceled")];
+    const txFilters = [
+      eq(transactions.ownerId, ownerId),
+      eq(transactions.type, "expense"),
+      ne(transactions.status, "canceled")
+    ];
 
     if (monthStr) {
       try {
@@ -204,7 +213,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       txFilters.push(reportPaymentSourceFilter(paymentMethodId));
     }
 
-    const subcategoryRows = db
+    const subcategoryRows = await db
       .select({
         id: subcategories.id,
         name: subcategories.name,
@@ -212,8 +221,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         categoryName: dbCategories.name
       })
       .from(subcategories)
-      .leftJoin(dbCategories, eq(subcategories.categoryId, dbCategories.id))
-      .all();
+      .innerJoin(
+        dbCategories,
+        and(eq(subcategories.categoryId, dbCategories.id), eq(dbCategories.ownerId, ownerId))
+      );
 
     const subById = new Map(subcategoryRows.map((row) => [row.id, row]));
     const categorySubIds = categoryId
@@ -227,7 +238,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       txFilters.push(inArray(transactions.subcategoryId, categorySubIds));
     }
 
-    const expenses = db
+    const expenses = await db
       .select({
         amountCents: transactions.amountCents,
         subcategoryId: transactions.subcategoryId,
@@ -239,11 +250,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         transferId: transactions.transferId
       })
       .from(transactions)
-      .where(and(...txFilters))
-      .all();
+      .where(and(...txFilters));
 
-    const paymentMethodMap = getPaymentMethodMap(db);
-    const creditCardMap = getCreditCardMap(db);
+    const paymentMethodMap = await getPaymentMethodMap(db);
+    const creditCardMap = await getCreditCardMap(db, ownerId);
     const groups = new Map<
       string,
       {
@@ -297,6 +307,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
   // 2. GET /reports/daily-evolution?month=YYYY-MM
   app.get("/reports/daily-evolution", async (request, reply) => {
+    const ownerId = requestContextFrom(request).ownerId;
     const query = request.query as Record<string, unknown>;
     const monthStr = typeof query.month === "string" ? query.month : "";
     const accountId =
@@ -325,14 +336,20 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
     // 2.1 Calculate opening balance (before the 1st of the month)
     const targetAccounts = accountId
-      ? db.select().from(accounts).where(eq(accounts.id, accountId)).all()
-      : db.select().from(accounts).where(eq(accounts.isActive, true)).all();
+      ? await db
+          .select()
+          .from(accounts)
+          .where(and(eq(accounts.ownerId, ownerId), eq(accounts.id, accountId)))
+      : await db
+          .select()
+          .from(accounts)
+          .where(and(eq(accounts.ownerId, ownerId), eq(accounts.isActive, true)));
 
     const targetAccountIds = targetAccounts.map((a) => a.id);
     let openingBalance = targetAccounts.reduce((sum, a) => sum + a.initialBalanceCents, 0);
 
     if (targetAccountIds.length > 0) {
-      const pastTransactions = db
+      const pastTransactions = await db
         .select({
           type: transactions.type,
           amountCents: transactions.amountCents,
@@ -342,12 +359,12 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         .from(transactions)
         .where(
           and(
+            eq(transactions.ownerId, ownerId),
             inArray(transactions.accountId, targetAccountIds),
             lt(transactions.eventDate, `${month}-01`),
             ne(transactions.status, "canceled")
           )
-        )
-        .all();
+        );
 
       for (const t of pastTransactions) {
         openingBalance += getAccountDelta(t);
@@ -357,6 +374,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     // 2.2 Retrieve all transactions for the month with filters
     const nextMonthStart = `${advanceMonth(month, 1)}-01`;
     const txFilters = [
+      eq(transactions.ownerId, ownerId),
       view === "cash"
         ? and(
             gte(transactions.eventDate, `${month}-01`),
@@ -375,11 +393,14 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     if (subcategoryId) {
       txFilters.push(eq(transactions.subcategoryId, subcategoryId));
     } else if (categoryId) {
-      const subs = db
+      const subs = await db
         .select({ id: subcategories.id })
         .from(subcategories)
-        .where(eq(subcategories.categoryId, categoryId))
-        .all();
+        .innerJoin(
+          dbCategories,
+          and(eq(subcategories.categoryId, dbCategories.id), eq(dbCategories.ownerId, ownerId))
+        )
+        .where(eq(subcategories.categoryId, categoryId));
       const subIds = subs.map((s) => s.id);
       if (subIds.length > 0) {
         txFilters.push(inArray(transactions.subcategoryId, subIds));
@@ -388,7 +409,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       }
     }
 
-    const monthTransactions = db
+    const monthTransactions = await db
       .select({
         eventDate: transactions.eventDate,
         type: transactions.type,
@@ -400,8 +421,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         transferId: transactions.transferId
       })
       .from(transactions)
-      .where(and(...txFilters))
-      .all();
+      .where(and(...txFilters));
 
     // Group transactions by day
     const txByDay = new Map<number, typeof monthTransactions>();
@@ -461,6 +481,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
   // 3. GET /reports/annual-summary?year=YYYY
   app.get("/reports/annual-summary", async (request, reply) => {
+    const ownerId = requestContextFrom(request).ownerId;
     const query = request.query as Record<string, unknown>;
     const yearStr = typeof query.year === "string" ? query.year : "";
     const accountId =
@@ -483,6 +504,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
     const yearRange = getYearRange(yearStr);
     const txFilters = [
+      eq(transactions.ownerId, ownerId),
       view === "cash"
         ? and(
             gte(transactions.eventDate, yearRange.startDate),
@@ -504,11 +526,14 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     if (subcategoryId) {
       txFilters.push(eq(transactions.subcategoryId, subcategoryId));
     } else if (categoryId) {
-      const subs = db
+      const subs = await db
         .select({ id: subcategories.id })
         .from(subcategories)
-        .where(eq(subcategories.categoryId, categoryId))
-        .all();
+        .innerJoin(
+          dbCategories,
+          and(eq(subcategories.categoryId, dbCategories.id), eq(dbCategories.ownerId, ownerId))
+        )
+        .where(eq(subcategories.categoryId, categoryId));
       const subIds = subs.map((s) => s.id);
       if (subIds.length > 0) {
         txFilters.push(inArray(transactions.subcategoryId, subIds));
@@ -517,7 +542,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       }
     }
 
-    const yearTransactions = db
+    const yearTransactions = await db
       .select({
         eventDate: transactions.eventDate,
         budgetMonth: transactions.budgetMonth,
@@ -529,8 +554,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         transferId: transactions.transferId
       })
       .from(transactions)
-      .where(and(...txFilters))
-      .all();
+      .where(and(...txFilters));
 
     const monthlyValues = Array.from({ length: 12 }, (_, i) => {
       const monthNum = String(i + 1).padStart(2, "0");
@@ -571,6 +595,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
   // 4. GET /reports/annual-categories?year=YYYY
   app.get("/reports/annual-categories", async (request, reply) => {
+    const ownerId = requestContextFrom(request).ownerId;
     const query = request.query as Record<string, unknown>;
     const yearStr = typeof query.year === "string" ? query.year : "";
     const accountId =
@@ -589,6 +614,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
     const yearRange = getYearRange(yearStr);
     const txFilters = [
+      eq(transactions.ownerId, ownerId),
       view === "cash"
         ? and(
             gte(transactions.eventDate, yearRange.startDate),
@@ -611,7 +637,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
     // If categoryId is NOT defined, we return sums grouped by Category (Macro)
     if (!categoryId) {
-      const yearExpenses = db
+      const yearExpenses = await db
         .select({
           amountCents: transactions.amountCents,
           subcategoryId: transactions.subcategoryId,
@@ -622,18 +648,19 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
           transferId: transactions.transferId
         })
         .from(transactions)
-        .where(and(...txFilters))
-        .all();
+        .where(and(...txFilters));
 
-      const allSubs = db
+      const allSubs = await db
         .select({
           id: subcategories.id,
           categoryId: subcategories.categoryId,
           categoryName: dbCategories.name
         })
         .from(subcategories)
-        .leftJoin(dbCategories, eq(subcategories.categoryId, dbCategories.id))
-        .all();
+        .innerJoin(
+          dbCategories,
+          and(eq(subcategories.categoryId, dbCategories.id), eq(dbCategories.ownerId, ownerId))
+        );
 
       const subToCatMap = new Map(
         allSubs.map((s) => [s.id, { catId: s.categoryId, catName: s.categoryName ?? "Outros" }])
@@ -663,11 +690,14 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       return result.sort((a, b) => b.amountCents - a.amountCents);
     } else {
       // If categoryId IS defined, we filter transactions of that category and return sums grouped by Subcategory (Micro)
-      const subs = db
+      const subs = await db
         .select({ id: subcategories.id, name: subcategories.name })
         .from(subcategories)
-        .where(eq(subcategories.categoryId, categoryId))
-        .all();
+        .innerJoin(
+          dbCategories,
+          and(eq(subcategories.categoryId, dbCategories.id), eq(dbCategories.ownerId, ownerId))
+        )
+        .where(eq(subcategories.categoryId, categoryId));
 
       const subIds = subs.map((s) => s.id);
       const subNameMap = new Map(subs.map((s) => [s.id, s.name]));
@@ -678,7 +708,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
       txFilters.push(inArray(transactions.subcategoryId, subIds));
 
-      const yearExpenses = db
+      const yearExpenses = await db
         .select({
           amountCents: transactions.amountCents,
           subcategoryId: transactions.subcategoryId,
@@ -689,8 +719,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
           transferId: transactions.transferId
         })
         .from(transactions)
-        .where(and(...txFilters))
-        .all();
+        .where(and(...txFilters));
 
       const subcategorySums = new Map<string, number>();
 
@@ -716,6 +745,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
 
   // 5. GET /reports/payment-methods-participation
   app.get("/reports/payment-methods-participation", async (request, reply) => {
+    const ownerId = requestContextFrom(request).ownerId;
     const query = request.query as Record<string, unknown>;
     const monthStr = typeof query.month === "string" ? query.month : undefined;
     const yearStr = typeof query.year === "string" ? query.year : undefined;
@@ -735,7 +765,11 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         .send({ message: "Defina o mês (month) ou o ano (year) para consulta." });
     }
 
-    const txFilters = [eq(transactions.type, "expense"), ne(transactions.status, "canceled")];
+    const txFilters = [
+      eq(transactions.ownerId, ownerId),
+      eq(transactions.type, "expense"),
+      ne(transactions.status, "canceled")
+    ];
 
     if (monthStr) {
       try {
@@ -776,11 +810,14 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
     if (subcategoryId) {
       txFilters.push(eq(transactions.subcategoryId, subcategoryId));
     } else if (categoryId) {
-      const subs = db
+      const subs = await db
         .select({ id: subcategories.id })
         .from(subcategories)
-        .where(eq(subcategories.categoryId, categoryId))
-        .all();
+        .innerJoin(
+          dbCategories,
+          and(eq(subcategories.categoryId, dbCategories.id), eq(dbCategories.ownerId, ownerId))
+        )
+        .where(eq(subcategories.categoryId, categoryId));
       const subIds = subs.map((s) => s.id);
       if (subIds.length > 0) {
         txFilters.push(inArray(transactions.subcategoryId, subIds));
@@ -789,7 +826,7 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
       }
     }
 
-    const expenses = db
+    const expenses = await db
       .select({
         amountCents: transactions.amountCents,
         paymentMethodId: transactions.paymentMethodId,
@@ -800,11 +837,10 @@ export function registerReportRoutes(app: FastifyInstance, connection: DatabaseC
         transferId: transactions.transferId
       })
       .from(transactions)
-      .where(and(...txFilters))
-      .all();
+      .where(and(...txFilters));
 
-    const pmMap = getPaymentMethodMap(db);
-    const creditCardMap = getCreditCardMap(db);
+    const pmMap = await getPaymentMethodMap(db);
+    const creditCardMap = await getCreditCardMap(db, ownerId);
 
     const pmSums = new Map<string, number>();
 
@@ -837,18 +873,17 @@ function getYearRange(year: string) {
   };
 }
 
-function getPaymentMethodMap(db: DatabaseConnection["db"]) {
-  const allPaymentMethods = db.select().from(paymentMethods).all();
+async function getPaymentMethodMap(db: DatabaseConnection["db"]) {
+  const allPaymentMethods = await db.select().from(paymentMethods);
   return new Map(allPaymentMethods.map((paymentMethod) => [paymentMethod.id, paymentMethod]));
 }
 
-function getCreditCardMap(db: DatabaseConnection["db"]) {
+async function getCreditCardMap(db: DatabaseConnection["db"], ownerId: string) {
   return new Map(
-    db
-      .select()
-      .from(creditCards)
-      .all()
-      .map((card) => [card.id, card])
+    (await db.select().from(creditCards).where(eq(creditCards.ownerId, ownerId))).map((card) => [
+      card.id,
+      card
+    ])
   );
 }
 
@@ -868,8 +903,8 @@ function reportPaymentSourceFilter(paymentSourceId: string): SQL {
 }
 
 function getPaymentMethodName(
-  paymentMethodMap: ReturnType<typeof getPaymentMethodMap>,
-  creditCardMap: ReturnType<typeof getCreditCardMap>,
+  paymentMethodMap: Awaited<ReturnType<typeof getPaymentMethodMap>>,
+  creditCardMap: Awaited<ReturnType<typeof getCreditCardMap>>,
   paymentMethodId: string
 ) {
   if (paymentMethodId === "null") return "Geral / Sem Meio Específico";
@@ -882,19 +917,22 @@ function getPaymentMethodName(
   return paymentMethodMap.get(paymentMethodId)?.name ?? "Meio não identificado";
 }
 
-function buildCategoryBreakdown(
+async function buildCategoryBreakdown(
   db: DatabaseConnection["db"],
+  ownerId: string,
   billTransactions: { amountCents: number; subcategoryId: string | null }[]
 ) {
-  const subcategoryRows = db
+  const subcategoryRows = await db
     .select({
       id: subcategories.id,
       categoryId: subcategories.categoryId,
       categoryName: dbCategories.name
     })
     .from(subcategories)
-    .leftJoin(dbCategories, eq(subcategories.categoryId, dbCategories.id))
-    .all();
+    .innerJoin(
+      dbCategories,
+      and(eq(subcategories.categoryId, dbCategories.id), eq(dbCategories.ownerId, ownerId))
+    );
   const subcategoryMap = new Map(subcategoryRows.map((row) => [row.id, row]));
   const categorySums = new Map<string, { categoryName: string; amountCents: number }>();
 

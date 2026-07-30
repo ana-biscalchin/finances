@@ -117,11 +117,15 @@ export function registerBackupRoutes(app: FastifyInstance, connection: DatabaseC
 
     try {
       await connection.sqlite.backup(preRestorePath);
-      app.log.info({ path: preRestorePath }, "Backup de segurança pré-restauração criado com sucesso.");
+      app.log.info(
+        { path: preRestorePath },
+        "Backup de segurança pré-restauração criado com sucesso."
+      );
     } catch (error) {
       app.log.error({ err: error }, "Falha ao criar backup de segurança pré-restauração.");
       return reply.code(500).send({
-        message: "Falha de segurança: não foi possível criar o backup de segurança antes da restauração."
+        message:
+          "Falha de segurança: não foi possível criar o backup de segurança antes da restauração."
       });
     }
 

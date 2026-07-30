@@ -7,12 +7,13 @@ type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 export function registerPaymentMethodRoutes(app: FastifyInstance, connection: DatabaseConnection) {
   const { db } = connection;
 
-  app.get("/payment-methods", async () =>
-    db
-      .select()
-      .from(paymentMethods)
-      .where(eq(paymentMethods.isActive, true))
-      .orderBy(asc(paymentMethods.sortOrder), asc(paymentMethods.name))
-      .all()
+  app.get(
+    "/payment-methods",
+    async () =>
+      await db
+        .select()
+        .from(paymentMethods)
+        .where(eq(paymentMethods.isActive, true))
+        .orderBy(asc(paymentMethods.sortOrder), asc(paymentMethods.name))
   );
 }

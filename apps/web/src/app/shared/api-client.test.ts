@@ -63,10 +63,29 @@ describe("shared API client", () => {
     await client.delete("/item", schema);
     expect(fetcher.mock.calls.map((call) => call[1]?.method)).toEqual(["PUT", "PATCH", "DELETE"]);
   });
+  it("keeps the base URL when using raw responses", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+    const client = createApiClient({ baseUrl: "/api", fetcher });
+    await client.raw("/accounts?includeInactive=false");
+    expect(fetcher).toHaveBeenCalledWith("/api/accounts?includeInactive=false", {
+      credentials: "include"
+    });
+  });
   it("accepts an empty 204 response for deletion", async () => {
     const client = createApiClient({
       fetcher: vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
     });
     await expect(client.delete("/item", z.unknown())).resolves.toBeUndefined();
+  });
+  it("broadcasts unauthorized responses so the session gate can clear access", async () => {
+    const target = new EventTarget();
+    Object.defineProperty(globalThis, "window", { configurable: true, value: target });
+    const onUnauthorized = vi.fn();
+    target.addEventListener("finances:unauthorized", onUnauthorized);
+    const client = createApiClient({ fetcher: vi.fn().mockResolvedValue(new Response("expired", { status: 401 })) });
+    await expect(client.get("/private", z.unknown())).rejects.toThrow();
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    target.removeEventListener("finances:unauthorized", onUnauthorized);
+    delete (globalThis as { window?: unknown }).window;
   });
 });

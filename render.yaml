@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: finances-staging
+    runtime: node
+    repo: https://github.com/ana-biscalchin/finances
+    plan: free
+    region: ohio
+    autoDeployTrigger: checksPass
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm --filter @finances/api start
+    healthCheckPath: /health/ready
+    envVars:
+      - key: NODE_VERSION
+        value: 24.18.0
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_DIALECT
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: AUTH_ENABLED
+        value: "true"
+      - key: PUBLIC_URL
+        sync: false
+      - key: FEATURE_GOOGLE_DRIVE
+        value: "false"
+      - key: SERVE_WEB
+        value: "true"
+      - key: TRUST_PROXY
+        value: "true"
+      - key: LOG_LEVEL
+        value: info

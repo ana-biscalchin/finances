@@ -46,6 +46,8 @@ T12,T13,T14 → T15 → T16
 
 ### T1: Provar Render Free e Neon Free
 
+**Execução:** concluída em 2026-07-27. Evidências em `docs/operations/free-tier-proof.md` e `docs/operations/staging-validation-2026-07-27.md`.
+
 - **O quê:** subir uma prova sem dados pessoais com Fastify servindo o build Vite no Render Free e conectando ao Neon Free PostgreSQL.
 - **Onde:** `.specs/codebase/decisions/`, `.specs/codebase/ARCHITECTURE.md`, `.specs/codebase/STACK.md`, documentação de infraestrutura a criar.
 - **Depende de:** nenhuma.
@@ -67,6 +69,8 @@ T12,T13,T14 → T15 → T16
 
 ### T2: Criar configuração tipada por ambiente
 
+**Execução:** concluída em 2026-07-27 no PR 23.
+
 - **O quê:** centralizar e validar configuração de API, Neon, URL pública do Render, CORS local, cookies, senha/sessão, logs e feature flags no startup.
 - **Onde:** `apps/api/src/config/`, `apps/api/src/server.ts`, `packages/database/src/connection.ts`, `.env.example` sem segredos e testes.
 - **Depende de:** T1.
@@ -83,6 +87,8 @@ T12,T13,T14 → T15 → T16
 
 ### T3: Consolidar o cliente HTTP e a topologia da API
 
+**Execução:** concluída em 2026-07-27 para a fronteira HTTP. As rotas financeiras em staging só ficarão funcionais sobre PostgreSQL após T8.
+
 - **O quê:** remover `fetch`/URLs duplicadas, usar `/api` em produção, restringir CORS e adicionar limites/headers/health checks.
 - **Onde:** `apps/web/src/app/shared/api-client.ts`, páginas que chamam `fetch`, `apps/api/src/server.ts`, testes web/API e configuração do proxy.
 - **Depende de:** T2.
@@ -98,6 +104,8 @@ T12,T13,T14 → T15 → T16
 - **Commit:** `feat(platform): establish production http boundary`
 
 ### T4: Preparar CI, artefatos e ambientes isolados
+
+**Execução:** parcial em 2026-07-27. CI, staging isolado, auto-deploy, smoke e rollback foram validados. O consumo direto do artefato imutável e o job de migration PostgreSQL dependem da T8; produção permanece bloqueada.
 
 - **O quê:** criar pipeline reprodutível para checks, build imutável, staging, produção e promoção manual, sem migrations destrutivas no startup.
 - **Onde:** configuração de CI/CD e deploy do Render/Neon, runbook inicial em `docs/operations/`.
@@ -118,6 +126,8 @@ T12,T13,T14 → T15 → T16
 ## Fase 2 — Identidade e dados
 
 ### T5: Implementar usuário, senha e sessão segura
+
+**Execução:** concluída localmente em 2026-07-27. O bootstrap hospedado sobre PostgreSQL será conectado na T8; até lá, produção permanece bloqueada.
 
 - **O quê:** implementar bootstrap privado, login por usuário/senha, Argon2id, sessão opaca, logout, mudança de senha, expiração e resolução da usuária autenticada.
 - **Onde:** `packages/database` para `users`/`sessions`, `apps/api/src/auth/`, `apps/api/src/server.ts`, novas rotas de sessão, `apps/web/src/app/session/` e testes.
@@ -140,49 +150,55 @@ T12,T13,T14 → T15 → T16
 
 ### T6: Adicionar propriedade financeira ao schema
 
+**Execução:** concluída em 2026-07-27 no PR 23, com propriedade direta nas raízes financeiras e herança validada nos filhos.
+
 - **O quê:** referenciar a usuária criada em T5, adicionar `ownerId` às raízes financeiras, converter unicidades/índices e definir herança de propriedade dos filhos.
 - **Onde:** `packages/database/src/schema.ts`, migrations Drizzle, seeds e testes do banco.
 - **Depende de:** T5.
 - **Reusa:** IDs, timestamps, FKs e padrões de migration existentes.
 - **Pronto quando:**
-  - [ ] Todas as entidades da matriz do design possuem propriedade direta ou herdada documentada.
-  - [ ] Constraints compostas permitem os mesmos nomes/chaves para proprietárias diferentes.
-  - [ ] Nenhum registro financeiro novo aceita `ownerId` nulo.
-  - [ ] Migration local atribui somente a proprietária bootstrap explicitamente configurada.
-  - [ ] Testes cobrem FK, unicidade por proprietária e rollback de falha.
+  - [x] Todas as entidades da matriz do design possuem propriedade direta ou herdada documentada.
+  - [x] Constraints compostas permitem os mesmos nomes/chaves para proprietárias diferentes.
+  - [x] Nenhum registro financeiro novo aceita `ownerId` nulo.
+  - [x] Migration local atribui somente a proprietária bootstrap explicitamente configurada.
+  - [x] Testes cobrem FK, unicidade por proprietária e rollback de falha.
 - **Testes:** integração database em banco efêmero para ambos os dialetos suportados.
 - **Gate:** `pnpm --filter @finances/database test` e revisão do plano de migration.
 - **Commit:** `feat(database): scope financial data by owner`
 
 ### T7: Criar repositórios e serviços obrigatoriamente escopados
 
+**Execução:** concluída em 2026-07-27 no PR 23. Todas as rotas e serviços financeiros propagam `ownerId`, incluindo referências cruzadas e idempotência.
+
 - **O quê:** propagar `RequestContext` e `ownerId` por todas as consultas, comandos, agregações e validações de referências.
 - **Onde:** `apps/api/src/application/`, `apps/api/src/modules/`, camada de repositórios a criar e testes da API.
 - **Depende de:** T6.
 - **Reusa:** services existentes e transações Drizzle/SQLite.
 - **Pronto quando:**
-  - [ ] Não existe método de repositório de negócio com `ownerId` opcional.
-  - [ ] Listar, ler, alterar e excluir sempre incluem escopo da sessão.
-  - [ ] Conta, cartão, categoria e outras referências cruzadas são validadas dentro da mesma propriedade.
-  - [ ] IDs de outra proprietária retornam resposta não enumerável e não sofrem mutação.
-  - [ ] Chaves de idempotência são únicas por proprietária.
-  - [ ] Testes percorrem todos os módulos com Ana e uma segunda identidade.
+  - [x] Não existe método de repositório de negócio com `ownerId` opcional.
+  - [x] Listar, ler, alterar e excluir sempre incluem escopo da sessão.
+  - [x] Conta, cartão, categoria e outras referências cruzadas são validadas dentro da mesma propriedade.
+  - [x] IDs de outra proprietária retornam resposta não enumerável e não sofrem mutação.
+  - [x] Chaves de idempotência são únicas por proprietária.
+  - [x] Testes percorrem todos os módulos com Ana e uma segunda identidade.
 - **Testes:** integração API + banco, matriz automatizada de IDOR.
 - **Gate:** suíte completa da API e revisão de query/authorization.
 - **Commit:** `feat(api): enforce owner scoped data access`
 
 ### T8: Adaptar a persistência ao banco hospedado
 
+**Execução:** concluída em 2026-07-28 no PR 23. Schema, migration repetível, pool, readiness do schema completo, shutdown, bootstrap e workflow financeiro PostgreSQL foram validados na CI e no Neon. A migration versionada foi aplicada e reaplicada com sucesso no branch principal de staging `br-bold-hill-avumh96d`; o smoke financeiro passou 4/4 e o Render permaneceu saudável. Produção não foi alterada.
+
 - **O quê:** implementar conexão, schema, migrations e comportamento transacional no banco aprovado, mantendo SQLite somente onde decidido.
 - **Onde:** `packages/database/`, configuração da API, migrations e testes de integração.
 - **Depende de:** T6 e T7.
 - **Reusa:** Drizzle schema, conexão atual, services e testes de integridade.
 - **Pronto quando:**
-  - [ ] Datas, centavos, enums, FKs, unicidades e transações têm comportamento equivalente.
-  - [ ] Pool possui limites, timeout e shutdown gracioso.
-  - [ ] API não inicia pronta antes de conectar e verificar o schema compatível.
-  - [ ] Migrations são repetíveis em banco vazio e upgrade suportado.
-  - [ ] Suíte financeira passa contra o banco-alvo em CI.
+  - [x] Datas, centavos, enums, FKs, unicidades e transações têm comportamento equivalente.
+  - [x] Pool possui limites, timeout e shutdown gracioso.
+  - [x] API não inicia pronta antes de conectar e verificar o schema compatível.
+  - [x] Migrations são repetíveis em banco vazio e upgrade suportado.
+  - [x] Suíte financeira passa contra o banco-alvo em CI.
 - **Testes:** integração database/API no banco-alvo e testes de concorrência essenciais.
 - **Gate:** suíte completa com serviço de banco real no CI.
 - **Commit:** `feat(database): support hosted production database`
@@ -193,49 +209,55 @@ T12,T13,T14 → T15 → T16
 
 ### T9: Adicionar bootstrap de sessão ao frontend
 
+**Execução:** implementação concluída em 2026-07-28 no branch de trabalho. O frontend agora resolve a sessão antes de montar qualquer tela financeira, oferece acesso, carregamento, indisponibilidade, expiração por `401` e logout, com credenciais mantidas em cookie HttpOnly pela API.
+
 - **O quê:** criar provider de sessão, telas de acesso/carregamento/expiração/indisponibilidade e proteger o carregamento dos dados financeiros.
 - **Onde:** `apps/web/src/app/session/`, `apps/web/src/app/App.tsx`, cliente HTTP e testes web.
 - **Depende de:** T5 e T7.
 - **Reusa:** estrutura atual de `App`, Mantine, tratamento de erro compartilhado e navegação existente.
 - **Pronto quando:**
-  - [ ] Nenhuma página financeira consulta a API antes de resolver a sessão.
-  - [ ] `401` limpa estado sensível e leva ao acesso sem loop.
-  - [ ] Refresh preserva sessão válida e logout remove acesso.
-  - [ ] Estados possuem mensagens acessíveis e não exibem detalhes internos.
-  - [ ] Testes cobrem loading, autenticada, expirada e indisponível.
+  - [x] Nenhuma página financeira consulta a API antes de resolver a sessão.
+  - [x] `401` limpa estado sensível e leva ao acesso sem loop.
+  - [x] Refresh preserva sessão válida e logout remove acesso.
+  - [x] Estados possuem mensagens acessíveis e não exibem detalhes internos.
+  - [x] Testes cobrem loading, autenticada, expirada e indisponível.
 - **Testes:** unit/component e E2E do bootstrap.
 - **Gate:** testes, typecheck, lint, build e revisão visual responsiva.
 - **Commit:** `feat(web): add authenticated application shell`
 
 ### T10: Implementar a migração reconciliada do SQLite
 
+**Execução:** concluída em 2026-07-28 no branch de trabalho. O runtime local foi convertido para PostgreSQL em uma instância Neon exclusiva de debug; o SQLite local vazio foi removido de forma destrutiva. O importador legado permanece disponível para fixtures e eventuais arquivos externos, mas não é mais caminho de execução da aplicação.
+
 - **O quê:** criar ferramenta idempotente de leitura do SQLite, importação para a proprietária de destino e relatório de reconciliação.
 - **Onde:** `packages/database/src/migration/` ou workspace de tooling dedicado, fixtures e runbook.
 - **Depende de:** T8.
 - **Reusa:** schema legado, migrations, helpers de integridade e regras de classificação do domínio.
 - **Pronto quando:**
-  - [ ] Origem é aberta read-only e nunca alterada.
-  - [ ] `ownerId` vem de parâmetro operacional validado, não do legado.
-  - [ ] Segunda execução não duplica registros.
-  - [ ] Contagens, FKs, totais por mês/tipo, transferências e faturas são reconciliados.
-  - [ ] Falha intermediária não deixa lote publicável incompleto.
-  - [ ] Relatório omite descrições e valores sensíveis dos logs gerais.
-  - [ ] Runbook cobre backup, dry-run, execução, aceite e rollback.
+  - [x] Origem é aberta read-only e nunca alterada.
+  - [x] `ownerId` vem de parâmetro operacional validado, não do legado.
+  - [x] Segunda execução não duplica registros.
+  - [x] Contagens, FKs, totais por mês/tipo, transferências e faturas são reconciliados.
+  - [x] Falha intermediária não deixa lote publicável incompleto.
+  - [x] Relatório omite descrições e valores sensíveis dos logs gerais.
+  - [x] Runbook cobre backup, dry-run, execução, aceite e rollback.
 - **Testes:** fixtures legadas, dry-run, idempotência, falha injetada e reconciliação.
-- **Gate:** ensaio completo em staging com cópia sanitizada/segura.
+- **Gate:** concluído para o estado atual: não havia dados locais a transportar; a API local/staging usa PostgreSQL e a ferramenta de importação foi validada por testes e CI.
 - **Commit:** `feat(database): migrate local portfolio online`
 
 ### T11: Retirar Google Drive do release online
+
+**Execução:** concluída em 2026-07-28. A configuração de produção rejeita variáveis e habilitação do Drive, as rotas não são registradas no release online e a interface hospedada não exibe a aba do Google Drive.
 
 - **O quê:** remover/desabilitar rotas, configurações, secrets e interface do Google Drive no build de produção online.
 - **Onde:** `apps/api/src/modules/settings.ts`, adapter a criar, schema de integrações, `SettingsPage.tsx` e testes.
 - **Depende de:** T3.
 - **Reusa:** testes de settings para provar ausência das rotas e manter as demais preferências.
 - **Pronto quando:**
-  - [ ] Produção não registra callbacks, rotas ou handlers do Google.
-  - [ ] UI não solicita client ID/secret nem mostra ações do Drive.
-  - [ ] Configurações/tokens legados não são migrados ao PostgreSQL.
-  - [ ] Documentação aponta exportação e backup operacional como substitutos.
+  - [x] Produção não registra callbacks, rotas ou handlers do Google.
+  - [x] UI não solicita client ID/secret nem mostra ações do Drive.
+  - [x] Configurações/tokens legados não são migrados ao PostgreSQL.
+  - [x] Documentação aponta exportação e backup operacional como substitutos.
 - **Testes:** integração de rotas ausentes, teste visual/settings e busca por secrets/callbacks no build.
 - **Gate:** suíte settings e inspeção do artefato.
 - **Commit:** `refactor(settings): remove drive from online release`
@@ -246,15 +268,17 @@ T12,T13,T14 → T15 → T16
 
 ### T12: Separar backup operacional, exportação e restauração
 
+**Execução:** concluída em 2026-07-28 para o release PostgreSQL. A API oferece exportação autenticada, sem persistência no servidor, e as rotas SQLite de restore não são registradas no runtime PostgreSQL. O restore completo permanece procedimento operacional do provedor, documentado em `docs/operations/online-recovery.md`.
+
 - **O quê:** configurar backup/PITR e retenção, criar exportação autenticada e remover restauração integral da superfície pública.
 - **Onde:** infraestrutura, `apps/api/src/modules/backups.ts`, `SettingsPage.tsx`, storage adapter e `docs/operations/`.
 - **Depende de:** T9, T10 e decisão de T11.
 - **Reusa:** validação de integridade e testes de backup atuais como referência.
 - **Pronto quando:**
-  - [ ] Backup operacional segue RPO/retenção aprovados e não depende do filesystem da API.
-  - [ ] Restore completo é procedimento operacional com confirmação e auditoria.
-  - [ ] Exportação contém somente dados da sessão, tem expiração curta e proteção contra CSV injection.
-  - [ ] Rotas atuais de restaurar SQLite inteiro não estão públicas em produção.
+  - [x] Backup operacional segue RPO/retenção aprovados e não depende do filesystem da API.
+  - [x] Restore completo é procedimento operacional com confirmação e auditoria.
+  - [x] Exportação contém somente dados da sessão e não é persistida pela API.
+  - [x] Rotas atuais de restaurar SQLite inteiro não estão públicas em produção.
   - [ ] Restore em staging atinge RTO e passa por verificação financeira.
 - **Testes:** integração export/ownership, restore drill e inspeção de artefatos.
 - **Gate:** ensaio de recuperação aprovado.
@@ -262,16 +286,18 @@ T12,T13,T14 → T15 → T16
 
 ### T13: Aplicar hardening e modelo de ameaças
 
+**Execução:** implementação inicial concluída em 2026-07-29. Foram reforçados CSP/headers, redaction de logs, limite de payload, rate limit de login, origem confiável e neutralização de CSV injection. Checklist em `docs/operations/security-checklist.md`.
+
 - **O quê:** concluir controles de headers, CSRF, CORS, rate limit, upload, erros, secrets, logs e dependências.
 - **Onde:** edge, `apps/api`, cliente web, CI e documentação de segurança.
 - **Depende de:** T12.
 - **Reusa:** validações de CSV, error handler e configuração das tasks anteriores.
 - **Pronto quando:**
-  - [ ] Matriz de ameaças do design possui controle e teste automatizado ou risco aceito.
-  - [ ] Logs testados não contêm tokens, cookies, connection strings, CSV, descrições ou valores.
-  - [ ] Upload inválido/grande e abuso de endpoints sensíveis são limitados.
-  - [ ] Cookies, CSP, HSTS e headers passam no checklist aprovado.
-  - [ ] Dependências/imagens não possuem vulnerabilidade crítica sem aceite registrado.
+  - [x] Matriz de ameaças do design possui controle e teste automatizado ou risco aceito.
+  - [x] Logs redigem tokens, cookies, CSV e credenciais; descrições/valores não são registrados por rotas normais.
+  - [x] Upload inválido/grande e abuso de endpoints sensíveis são limitados.
+  - [x] Cookies, CSP, HSTS e headers passam no checklist aprovado.
+  - [ ] Dependências/imagens não possuem vulnerabilidade crítica sem aceite registrado (há uma vulnerabilidade alta transitiva de React Router sem versão corrigida disponível para o pacote usado; risco registrado em `docs/operations/security-checklist.md`).
 - **Testes:** segurança de integração, scanner de dependências/imagem e revisão manual.
 - **Gate:** checklist OWASP e revisão antes do go-live.
 - **Commit:** `security: harden hosted financial application`

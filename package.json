@@ -9,7 +9,8 @@
     "pnpm": ">=11.5.2"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @finances/web --filter @finances/api dev",
+    "dev": "pnpm --filter @finances/database build && pnpm --filter @finances/domain build && pnpm --filter @finances/shared build && pnpm --parallel --filter @finances/web --filter @finances/api dev",
+    "dev:postgres": "node scripts/dev-postgres.mjs",
     "dev:web": "pnpm --filter @finances/web dev",
     "dev:api": "pnpm --filter @finances/api dev",
     "typecheck": "pnpm -r typecheck",
@@ -18,22 +19,26 @@
     "build": "pnpm -r build",
     "db:generate": "pnpm --filter @finances/database db:generate",
     "db:migrate": "pnpm --filter @finances/database db:migrate",
+    "db:migrate:postgres": "pnpm --filter @finances/database db:migrate:postgres",
+    "db:seed:postgres": "pnpm --filter @finances/database db:seed:postgres",
+    "db:migrate:identity": "pnpm --filter @finances/database db:migrate:identity",
     "db:seed": "pnpm --filter @finances/database db:seed",
     "db:seed:demo": "pnpm --filter @finances/database db:seed:demo",
     "db:reset:dev": "pnpm --filter @finances/database db:reset:dev",
     "db:setup": "pnpm db:migrate && pnpm db:seed",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "format:online": "prettier --check apps/api/src/config apps/api/src/server.ts apps/api/src/platform.test.ts apps/web/src/app/shared/api-client.ts apps/web/vite.config.ts .github/workflows/ci.yml render.yaml docs/operations"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "eslint": "^9.39.1",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^16.5.0",
     "prettier": "^3.7.4",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.50.0",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^4.0.16"
   }
 }

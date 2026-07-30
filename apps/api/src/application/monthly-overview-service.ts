@@ -6,6 +6,7 @@ import {
   transactions,
   type createDatabaseConnection
 } from "@finances/database";
+import { and, eq } from "drizzle-orm";
 import { buildAccountCashProjection, type AccountCashProjectionInput } from "@finances/domain";
 import { createRecurrenceService } from "./recurrence-service.js";
 import { createPaymentSourcePlanningService } from "../modules/payment-source-planning/application/service.js";
@@ -16,19 +17,16 @@ const previousMonth = (month: string) => {
   const date = new Date(year!, value! - 2, 1);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 };
-export function createMonthlyOverviewService(connection: Connection) {
+export function createMonthlyOverviewService(connection: Connection, ownerId: string) {
   const { db } = connection;
-  const planning = createPaymentSourcePlanningService(connection);
+  const planning = createPaymentSourcePlanningService(connection, ownerId);
   return {
-    overview(month: string) {
-      return planning.overview(month);
+    async overview(month: string) {
+      return await planning.overview(month);
     },
-    cashPosition(month: string) {
+    async cashPosition(month: string) {
       const realizedRecurrences = new Set(
-        db
-          .select()
-          .from(transactions)
-          .all()
+        (await db.select().from(transactions).where(eq(transactions.ownerId, ownerId)))
           .filter(
             (item) =>
               item.recurrenceRuleId &&
@@ -37,30 +35,51 @@ export function createMonthlyOverviewService(connection: Connection) {
           )
           .map((item) => `${item.recurrenceRuleId}:${item.recurrenceMonth}`)
       );
-      const recurrence = createRecurrenceService(connection);
-      const allForecasts = [previousMonth(month), month]
-        .flatMap((occurrenceMonth) =>
-          recurrence.forecast(occurrenceMonth).map((item) => ({ ...item, occurrenceMonth }))
+      const recurrence = createRecurrenceService(connection, ownerId);
+      const allForecasts = (
+        await Promise.all(
+          [previousMonth(month), month].map(async (occurrenceMonth) =>
+            (await recurrence.forecast(occurrenceMonth)).map((item) => ({
+              ...item,
+              occurrenceMonth
+            }))
+          )
         )
+      )
+        .flat()
         .filter((item) => !realizedRecurrences.has(`${item.ruleId}:${item.occurrenceMonth}`));
       const cards = new Map(
-        db
-          .select()
-          .from(creditCards)
-          .all()
-          .map((card) => [card.id, card])
+        (await db.select().from(creditCards).where(eq(creditCards.ownerId, ownerId))).map(
+          (card) => [card.id, card]
+        )
       );
-      const payments = db
-        .select()
-        .from(creditCardBillPayments)
-        .all()
+      const payments = (
+        await db
+          .select({ payment: creditCardBillPayments })
+          .from(creditCardBillPayments)
+          .innerJoin(creditCardBills, eq(creditCardBillPayments.billId, creditCardBills.id))
+          .innerJoin(
+            creditCards,
+            and(eq(creditCardBills.creditCardId, creditCards.id), eq(creditCards.ownerId, ownerId))
+          )
+      )
+        .map(({ payment }) => payment)
         .filter((payment) => !payment.reversedAt);
-      const purchases = db.select().from(transactions).all();
-      const billObligations = db
+      const purchases = await db
         .select()
-        .from(creditCardBills)
-        .all()
-        .filter((bill) => bill.billMonth === month)
+        .from(transactions)
+        .where(eq(transactions.ownerId, ownerId));
+      const billObligations = (
+        await db
+          .select({ bill: creditCardBills })
+          .from(creditCardBills)
+          .innerJoin(
+            creditCards,
+            and(eq(creditCardBills.creditCardId, creditCards.id), eq(creditCards.ownerId, ownerId))
+          )
+          .where(eq(creditCardBills.billMonth, month))
+      )
+        .map(({ bill }) => bill)
         .flatMap((bill) => {
           const accountId = cards.get(bill.creditCardId)?.paymentAccountId ?? null;
           const total = purchases
@@ -87,7 +106,7 @@ export function createMonthlyOverviewService(connection: Connection) {
       const unassignedBillsCents = billObligations
         .filter((bill) => !bill.accountId)
         .reduce((total, bill) => total + bill.amountCents, 0);
-      const monthlyPlan = planning.overview(month);
+      const monthlyPlan = await planning.overview(month);
       const remainingPlans = monthlyPlan.items.flatMap((item) =>
         item.sources
           .filter((source) => source.availableCents > 0)
@@ -117,11 +136,9 @@ export function createMonthlyOverviewService(connection: Connection) {
             amountCents: forecast.amountCents
           });
       }
-      const accountRows = db
-        .select()
-        .from(accounts)
-        .all()
-        .filter((account) => account.isActive);
+      const accountRows = (
+        await db.select().from(accounts).where(eq(accounts.ownerId, ownerId))
+      ).filter((account) => account.isActive);
       const projection = buildAccountCashProjection({
         accounts: accountRows,
         transactions: purchases,
@@ -150,6 +167,6 @@ export function createMonthlyOverviewService(connection: Connection) {
             }
           ]
         : projection;
-    },
+    }
   };
 }

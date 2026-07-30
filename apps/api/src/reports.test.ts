@@ -1,33 +1,38 @@
-import { createDatabaseConnection, paymentMethods, transactions } from "@finances/database";
+import {
+  accounts,
+  creditCardBills,
+  creditCards,
+  paymentMethods,
+  transactions,
+  users
+} from "@finances/database";
 import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildServer } from "./server.js";
+import { createPostgresTestConnection, postgresTestsEnabled, removePostgresTestOwner, seedPostgresTestOwner } from "./test-support/postgres.js";
 
-const migrationsFolder = resolve(process.cwd(), "../../packages/database/drizzle");
-
-describe("reports API", () => {
-  let tempDir: string;
-  let databasePath: string;
+const TEST_OWNER_ID = "test-owner";
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
+describePostgres("reports API", () => {
   let app: ReturnType<typeof buildServer>;
+  let connection: ReturnType<typeof createPostgresTestConnection>;
 
-  beforeEach(() => {
-    tempDir = mkdtempSync(resolve(tmpdir(), "finances-reports-test-"));
-    databasePath = resolve(tempDir, "test.sqlite");
-    const connection = createDatabaseConnection(databasePath);
-    migrate(connection.db, { migrationsFolder });
-    connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).onConflictDoNothing().run();
-    connection.sqlite.close();
-    app = buildServer({ databasePath, logger: false });
+  beforeEach(async () => {
+    connection = createPostgresTestConnection();
+    await seedPostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.db
+      .insert(paymentMethods)
+      .values({ id: "pm-pix", name: "Pix", kind: "pix" })
+      .onConflictDoNothing()
+      .execute();
+    app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
   });
 
   afterEach(async () => {
     await app.close();
-    rmSync(tempDir, { recursive: true, force: true });
+    await removePostgresTestOwner(connection, TEST_OWNER_ID);
+    await connection.close();
   });
 
   it("should calculate monthly and annual reports with filters", async () => {
@@ -321,13 +326,12 @@ describe("reports API", () => {
     });
     expect(purchaseRes.statusCode).toBe(201);
 
-    const conn = createDatabaseConnection(databasePath);
-    conn.db
+    const conn = connection;
+    await conn.db
       .update(transactions)
       .set({ creditCardBillId: null })
       .where(eq(transactions.id, purchaseRes.json().id))
-      .run();
-    conn.sqlite.close();
+      .execute();
 
     const summaryRes = await app.inject({
       method: "GET",
@@ -378,13 +382,12 @@ describe("reports API", () => {
     });
     const subcategory = subcategoryRes.json();
 
-    const conn = createDatabaseConnection(databasePath);
-    conn.db
+    const conn = connection;
+    await conn.db
       .insert(paymentMethods)
       .values({ id: "pm-pix", name: "Pix", kind: "instant_transfer" })
       .onConflictDoNothing()
-      .run();
-    conn.sqlite.close();
+      .execute();
 
     const cardRes = await app.inject({
       method: "POST",
@@ -596,13 +599,12 @@ describe("reports API", () => {
     expect(annual[5].incomeCents).toBe(0);
     expect(annual[5].expenseCents).toBe(0);
 
-    const conn = createDatabaseConnection(databasePath);
-    const createdTransfer = conn.db
+    const conn = connection;
+    const createdTransfer = (await conn.db
       .select()
       .from(transactions)
       .where(eq(transactions.id, transferRes.json().legs[0].id))
-      .get();
-    conn.sqlite.close();
+      .execute())[0];
     expect(createdTransfer?.transferId).toBeTruthy();
   });
 
@@ -805,5 +807,95 @@ describe("reports API", () => {
         amountCents: 20000
       })
     );
+  });
+  it("does not include financial data owned by another identity", async () => {
+    await connection.db
+      .insert(users)
+      .values({
+        id: "other-owner",
+        username: "other-owner",
+        passwordHash: "test",
+        passwordChangedAt: new Date().toISOString()
+      })
+      .execute();
+    await connection.db
+      .insert(accounts)
+      .values({
+        id: "other-account",
+        ownerId: "other-owner",
+        name: "Outra",
+        type: "checking",
+        initialBalanceCents: 100000
+      })
+      .execute();
+    await connection.db
+      .insert(creditCards)
+      .values({
+        id: "other-card",
+        ownerId: "other-owner",
+        name: "Outro cartão",
+        closingDay: 5,
+        dueDay: 12
+      })
+      .execute();
+    await connection.db
+      .insert(creditCardBills)
+      .values({
+        id: "other-bill",
+        creditCardId: "other-card",
+        billMonth: "2026-07",
+        closingDate: "2026-06-05",
+        dueDate: "2026-07-12",
+        status: "open"
+      })
+      .execute();
+    await connection.db
+      .insert(transactions)
+      .values([
+        {
+          id: "other-income",
+          ownerId: "other-owner",
+          accountId: "other-account",
+          type: "income",
+          description: "Privada",
+          amountCents: 50000,
+          eventDate: "2026-07-01",
+          budgetMonth: "2026-07",
+          status: "confirmed"
+        },
+        {
+          id: "other-expense",
+          ownerId: "other-owner",
+          creditCardId: "other-card",
+          creditCardBillId: "other-bill",
+          type: "expense",
+          description: "Privada",
+          amountCents: 25000,
+          eventDate: "2026-06-01",
+          budgetMonth: "2026-07",
+          status: "confirmed"
+        }
+      ])
+      .execute();
+    
+
+    const annual = (
+      await app.inject({ method: "GET", url: "/reports/annual-summary?year=2026" })
+    ).json();
+    expect(
+      annual.every(
+        (month: { incomeCents: number; expenseCents: number }) =>
+          month.incomeCents === 0 && month.expenseCents === 0
+      )
+    ).toBe(true);
+    const daily = (
+      await app.inject({ method: "GET", url: "/reports/daily-evolution?month=2026-07" })
+    ).json();
+    expect(daily[30]).toEqual(expect.objectContaining({ balance: 0, totalSpent: 0 }));
+    expect(
+      (
+        await app.inject({ method: "GET", url: "/reports/credit-cards-summary?month=2026-07" })
+      ).json()
+    ).toEqual([]);
   });
 });
