@@ -10,7 +10,12 @@ import {
   users
 } from "@finances/database";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createPostgresTestConnection, postgresTestsEnabled, removePostgresTestOwner, seedPostgresTestOwner } from "./test-support/postgres.js";
+import {
+  createPostgresTestConnection,
+  postgresTestsEnabled,
+  removePostgresTestOwner,
+  seedPostgresTestOwner
+} from "./test-support/postgres.js";
 import { createRecurrenceService } from "./application/recurrence-service.js";
 
 const TEST_OWNER_ID = "test-owner";
@@ -24,7 +29,10 @@ describePostgres("recurrence service", () => {
       .insert(accounts)
       .values({ id: "account-1", ownerId: "test-owner", name: "Conta", type: "checking" })
       .execute();
-    await connection.db.insert(paymentMethods).values({ id: "pm-pix", name: "Pix", kind: "pix" }).execute();
+    await connection.db
+      .insert(paymentMethods)
+      .values({ id: "pm-pix", name: "Pix", kind: "pix" })
+      .execute();
     await connection.db
       .insert(accountPaymentMethods)
       .values({
@@ -54,7 +62,12 @@ describePostgres("recurrence service", () => {
   });
 
   it("forecasts without materializing and confirms one account occurrence per month", async () => {
-    const service = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
+    const service = createRecurrenceService(
+      connection as unknown as ReturnType<
+        typeof import("@finances/database").createDatabaseConnection
+      >,
+      TEST_OWNER_ID
+    );
     const rule = await service.create({
       kind: "expense",
       description: "Aluguel",
@@ -77,7 +90,12 @@ describePostgres("recurrence service", () => {
   });
 
   it("places a confirmed card occurrence in its calculated bill", async () => {
-    const service = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
+    const service = createRecurrenceService(
+      connection as unknown as ReturnType<
+        typeof import("@finances/database").createDatabaseConnection
+      >,
+      TEST_OWNER_ID
+    );
     const rule = await service.create({
       kind: "expense",
       description: "Assinatura",
@@ -95,7 +113,12 @@ describePostgres("recurrence service", () => {
   });
 
   it("pause, resume, end, and this-and-future changes preserve confirmed facts", async () => {
-    const service = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
+    const service = createRecurrenceService(
+      connection as unknown as ReturnType<
+        typeof import("@finances/database").createDatabaseConnection
+      >,
+      TEST_OWNER_ID
+    );
     const rule = await service.create({
       kind: "expense",
       description: "Aluguel",
@@ -120,7 +143,12 @@ describePostgres("recurrence service", () => {
   });
 
   it("rejects invalid or unavailable rules and exposes persisted rules", async () => {
-    const service = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
+    const service = createRecurrenceService(
+      connection as unknown as ReturnType<
+        typeof import("@finances/database").createDatabaseConnection
+      >,
+      TEST_OWNER_ID
+    );
     await expect(service.create({})).rejects.toThrow();
     await expect(service.pause("missing")).rejects.toThrow("não encontrada");
     const rule = await service.create({
@@ -154,13 +182,18 @@ describePostgres("recurrence service", () => {
       .execute();
     await connection.db
       .insert(categories)
-      .values({ id: "other-category", ownerId: "other-owner", name: "Outra", nature: "expense" })
+      .values({ id: "other-category", ownerId: "other-owner", name: "Outra", nature: "income" })
       .execute();
     connection.db
       .insert(subcategories)
       .values({ id: "other-subcategory", categoryId: "other-category", name: "Privada" })
       .execute();
-    const otherService = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, "other-owner");
+    const otherService = createRecurrenceService(
+      connection as unknown as ReturnType<
+        typeof import("@finances/database").createDatabaseConnection
+      >,
+      "other-owner"
+    );
     const privateRule = await otherService.create({
       kind: "income",
       description: "Privada",
@@ -171,7 +204,12 @@ describePostgres("recurrence service", () => {
       dayOfMonth: 1,
       startMonth: "2026-07"
     });
-    const service = createRecurrenceService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
+    const service = createRecurrenceService(
+      connection as unknown as ReturnType<
+        typeof import("@finances/database").createDatabaseConnection
+      >,
+      TEST_OWNER_ID
+    );
 
     expect(await service.list()).toEqual([]);
     await expect(service.pause(privateRule.id)).rejects.toThrow("não encontrada");

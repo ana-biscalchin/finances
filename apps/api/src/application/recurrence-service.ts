@@ -73,6 +73,7 @@ export function createRecurrenceService(connection: Connection, ownerId: string)
     );
   };
   const validateReferences = async (value: {
+    kind: string;
     subcategoryId: string;
     accountId?: string | null;
     creditCardId?: string | null;
@@ -126,6 +127,17 @@ export function createRecurrenceService(connection: Connection, ownerId: string)
         "Categoria, conta, cartão ou meio de pagamento não encontrado.",
         404
       );
+    if (!(["income", "expense"] as const).includes(value.kind as "income" | "expense")) {
+      throw new RecurrenceServiceError("Tipo de recorrência inválido.", 409);
+    }
+    if (subcategory.categories.nature !== value.kind) {
+      throw new RecurrenceServiceError(
+        value.kind === "income"
+          ? "Receita recorrente exige uma categoria de receita."
+          : "Despesa recorrente exige uma categoria de despesa.",
+        409
+      );
+    }
     if ((account && !account.isActive) || (card && !card.isActive) || (method && !method.isActive))
       throw new RecurrenceServiceError("Conta, cartão ou meio de pagamento está arquivado.", 409);
     if (value.accountId && value.paymentMethodId) {

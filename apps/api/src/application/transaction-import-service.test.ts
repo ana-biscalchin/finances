@@ -1,4 +1,11 @@
-import { accounts, createDatabaseConnection, transactions, users } from "@finances/database";
+import {
+  accounts,
+  categories,
+  createDatabaseConnection,
+  subcategories,
+  transactions,
+  users
+} from "@finances/database";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,6 +63,35 @@ describeImport("simple transaction import", () => {
     });
     await expect(service.confirm([valid])).rejects.toThrow("failure");
     expect(connection.db.select().from(transactions).all()).toEqual([]);
+  });
+  it("rejects imported transactions whose type disagrees with category nature", async () => {
+    connection.db
+      .insert(categories)
+      .values([
+        { id: "income", ownerId: TEST_OWNER_ID, name: "Receitas", nature: "income" },
+        { id: "expense", ownerId: TEST_OWNER_ID, name: "Despesas", nature: "expense" }
+      ])
+      .run();
+    connection.db
+      .insert(subcategories)
+      .values([
+        { id: "salary", categoryId: "income", name: "Salário" },
+        { id: "market", categoryId: "expense", name: "Mercado" }
+      ])
+      .run();
+    const service = createTransactionImportService(connection, TEST_OWNER_ID);
+
+    expect(await service.preview([{ ...valid, type: "expense", subcategoryId: "salary" }])).toEqual(
+      [expect.objectContaining({ isValid: false, errors: ["Tipo e categoria são incompatíveis."] })]
+    );
+
+    expect(
+      await service.confirm([
+        { ...valid, type: "expense", subcategoryId: "salary" },
+        { ...valid, type: "income", subcategoryId: "market" },
+        { ...valid, type: "refund", subcategoryId: "market" }
+      ])
+    ).toEqual({ created: 1, duplicatesIgnored: 0, invalid: 2 });
   });
   it("ignores duplicates from another owner and rejects cross-owner references", async () => {
     connection.db
