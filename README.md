@@ -12,7 +12,7 @@ O projeto ja possui:
 - API local em Node.js e Fastify;
 - banco SQLite local via Drizzle;
 - CRUD de contas, categorias, lancamentos e cartoes;
-- controle mensal com planejamento distribuído por conta/cartão, realização, disponibilidade e visão de caixa;
+- controle mensal com orçamento distribuído por conta/cartão, acompanhamento de entradas previstas, recebidas e a receber por categoria e conta, disponibilidade e visão de caixa;
 - contas com formas de pagamento associadas, incluindo benefícios pré-pagos separados;
 - faturas de cartao com importacao CSV, parcelamentos e pagamento por conta;
 - importacao/exportacao CSV de lancamentos;
