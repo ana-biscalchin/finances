@@ -120,6 +120,7 @@ Dinheiro mudando de bolso. Não deixa mais rico nem mais pobre.
 
 ## Observações De Modelagem
 
+- Subcategorias de receita podem receber previsões mensais por conta de destino; o orçamento de gastos aceita somente subcategorias de despesa.
 - As tags "Fixo/Variável/Extra" ajudam nos relatórios de despesas para mostrar o que é "Custo de Vida" vs "Estilo de Vida".
 - "Aporte" é registrado como Despesa para sair do fluxo de caixa diário. Em relatórios de "Quanto eu gastei de fato", a categoria "Investimentos" é simplesmente subtraída.
 - "Resgate" é registrado como Receita para entrar no fluxo de caixa disponível do mês.
