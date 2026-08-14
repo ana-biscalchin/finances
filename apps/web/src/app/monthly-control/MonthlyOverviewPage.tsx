@@ -1,4 +1,4 @@
-import { Alert, Loader, Stack, Title } from "@mantine/core";
+import { Alert, Button, Loader, Stack, Title } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "../shared/api-client.js";
 import { monthlyOverviewSchema, type MonthlyOverview } from "../shared/api-contracts.js";
@@ -7,6 +7,9 @@ import { BudgetCategoryTable } from "./BudgetCategoryTable.js";
 import { MonthAtGlance } from "./MonthAtGlance.js";
 import { MonthlyHealthSummary } from "./MonthlyHealthSummary.js";
 import { PaymentSourceSummary } from "./PaymentSourceSummary.js";
+import { MonthlyAttentionPanel } from "./MonthlyAttentionPanel.js";
+import { MonthlyTransfersPanel } from "./MonthlyTransfersPanel.js";
+import { MonthlyBudgetEmptyState } from "./MonthlyBudgetEmptyState.js";
 export function MonthlyOverviewPage({
   selectedMonth,
   setSelectedMonth
@@ -35,19 +38,22 @@ export function MonthlyOverviewPage({
       <MonthSelector selectedMonth={selectedMonth} onChange={setSelectedMonth} />
       {error ? (
         <Alert color="red" title="Não foi possível carregar">
-          {error}
+          <Stack gap="sm"><span>{error}</span><Button variant="light" onClick={() => void load()}>Tentar novamente</Button></Stack>
         </Alert>
       ) : data ? (
         <>
           <MonthAtGlance summary={data.summary} />
+          {data.summary.plannedCents === 0 && <MonthlyBudgetEmptyState month={selectedMonth} onChanged={load} />}
+          <MonthlyAttentionPanel items={data.items} />
           <MonthlyHealthSummary data={data} />
           <PaymentSourceSummary sources={data.sourceSummary} />
           <BudgetCategoryTable
             items={data.items}
-            sourceOptions={data.availableSources}
+            paymentMethodOptions={data.availablePaymentMethods}
             month={selectedMonth}
             onChanged={load}
           />
+          <MonthlyTransfersPanel transfers={data.transfers} />
         </>
       ) : (
         <Loader />

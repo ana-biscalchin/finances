@@ -52,10 +52,47 @@ export const creditCardsSchema = z.array(creditCardSchema);
 const allocationSchema = z
   .object({
     accountId: nullableText,
+    paymentMethodId: nullableText,
     creditCardId: nullableText,
     amountCents: cents.positive()
   })
-  .refine((value) => Number(Boolean(value.accountId)) + Number(Boolean(value.creditCardId)) === 1);
+  .refine(
+    (value) =>
+      (Boolean(value.accountId) && Boolean(value.paymentMethodId) && !value.creditCardId) ||
+      (!value.accountId && !value.paymentMethodId && Boolean(value.creditCardId))
+  );
+
+const attentionSchema = z.enum(["over", "near_limit", "unplanned", "on_track", "unused"]);
+
+const paymentMethodOverviewSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("account_method"),
+    accountId: z.string().min(1),
+    paymentMethodId: z.string().min(1),
+    amountCents: cents.positive(),
+    label: z.string(),
+    plannedCents: cents.nonnegative(),
+    spentCents: cents.nonnegative(),
+    availableCents: cents.nonnegative(),
+    abovePlannedCents: cents.nonnegative(),
+    usagePercent: z.number().nonnegative().nullable(),
+    attention: attentionSchema,
+    isUnplanned: z.boolean()
+  }),
+  z.object({
+    kind: z.literal("credit_card"),
+    creditCardId: z.string().min(1),
+    amountCents: cents.positive(),
+    label: z.string(),
+    plannedCents: cents.nonnegative(),
+    spentCents: cents.nonnegative(),
+    availableCents: cents.nonnegative(),
+    abovePlannedCents: cents.nonnegative(),
+    usagePercent: z.number().nonnegative().nullable(),
+    attention: attentionSchema,
+    isUnplanned: z.boolean()
+  })
+]);
 
 const sourceSchema = z.object({
   kind: z.enum(["account", "credit_card"]),
@@ -69,18 +106,6 @@ const sourceSchema = z.object({
   isUnplanned: z.boolean()
 });
 
-const plannedExpenseSchema = z.object({
-  id: z.string().min(1),
-  budgetMonth: z.string(),
-  subcategoryId: z.string().min(1),
-  name: z.string().min(1),
-  amountCents: cents.positive(),
-  accountId: nullableText,
-  creditCardId: nullableText,
-  recurrenceRuleId: nullableText,
-  sortOrder: z.number().int()
-});
-
 export const monthlyOverviewSchema = z.object({
   items: z.array(
     z.object({
@@ -88,6 +113,8 @@ export const monthlyOverviewSchema = z.object({
       subcategoryName: z.string(),
       categoryId: nullableText,
       categoryName: z.string(),
+      categorySortOrder: z.number().int(),
+      subcategorySortOrder: z.number().int(),
       budgetMonth: z.string(),
       amountCents: cents.nonnegative(),
       plannedCents: cents.nonnegative(),
@@ -98,9 +125,11 @@ export const monthlyOverviewSchema = z.object({
       spentCents: cents.nonnegative(),
       availableCents: cents.nonnegative(),
       abovePlannedCents: cents.nonnegative(),
+      usagePercent: z.number().nonnegative().nullable(),
+      attention: attentionSchema,
       hasSourceDivergence: z.boolean(),
-      sources: z.array(sourceSchema),
-      plannedExpenses: z.array(plannedExpenseSchema)
+      paymentMethods: z.array(paymentMethodOverviewSchema),
+      sources: z.array(sourceSchema)
     })
   ),
   summary: z.object({
@@ -124,6 +153,31 @@ export const monthlyOverviewSchema = z.object({
   ),
   availableSources: z.array(
     z.object({ kind: z.enum(["account", "credit_card"]), id: z.string().min(1), name: z.string() })
+  ),
+  availablePaymentMethods: z.array(
+    z.discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("account_method"),
+        accountId: z.string().min(1),
+        paymentMethodId: z.string().min(1),
+        label: z.string()
+      }),
+      z.object({
+        kind: z.literal("credit_card"),
+        creditCardId: z.string().min(1),
+        label: z.string()
+      })
+    ])
+  ),
+  transfers: z.array(
+    z.object({
+      id: z.string().min(1),
+      eventDate: z.string(),
+      description: z.string(),
+      amountCents: cents.positive(),
+      sourceAccount: z.object({ id: z.string().min(1), name: z.string() }),
+      destinationAccount: z.object({ id: z.string().min(1), name: z.string() })
+    })
   )
 });
 
