@@ -26,7 +26,7 @@ export async function resetPostgresTestDatabase(connection: PostgresDatabaseConn
   const postgresDb = connection.db as unknown as { execute(query: unknown): Promise<unknown> };
   await postgresDb.execute(sql.raw(`TRUNCATE TABLE
     sessions, reserve_movements, reserve_goals, installments, installment_purchases,
-    credit_card_bill_payments, planned_expenses, transactions, recurrence_rules,
+    credit_card_bill_payments, monthly_budget_allocations, transactions, recurrence_rules,
     account_transfers, credit_card_bills, credit_cards, account_payment_methods,
     payment_methods, accounts, subcategories, categories, settings, users
     RESTART IDENTITY CASCADE`));

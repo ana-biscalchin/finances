@@ -109,7 +109,7 @@ export function createPostgresDatabaseConnection(options: {
             'installments',
             'reserve_goals',
             'reserve_movements',
-            'planned_expenses',
+            'monthly_budget_allocations',
             'settings'
           ])
       `;

@@ -1,4 +1,10 @@
-import { distributedBudgetInputSchema, type DistributedBudgetInput } from "./contracts.js";
+import {
+  distributedBudgetInputSchema,
+  replaceMonthlyBudgetAllocationsSchema,
+  type DistributedBudgetInput,
+  type MonthlyBudgetAllocationInput,
+  type ReplaceMonthlyBudgetAllocations
+} from "./contracts.js";
 import {
   getAccountDelta,
   isCreditCardPayment,
@@ -21,10 +27,42 @@ export type PaymentSourceTransaction = {
   budgetMonth: string;
   subcategoryId?: string | null;
   accountId?: string | null;
+  paymentMethodId?: string | null;
   creditCardId?: string | null;
   creditCardBillId?: string | null;
   transferId?: string | null;
 };
+
+export type PaymentMethodAttention =
+  | "over"
+  | "near_limit"
+  | "unplanned"
+  | "on_track"
+  | "unused";
+
+export type PaymentMethodOverviewItem = MonthlyBudgetAllocationInput & {
+  plannedCents: number;
+  spentCents: number;
+  availableCents: number;
+  abovePlannedCents: number;
+  usagePercent: number | null;
+  attention: PaymentMethodAttention;
+  isUnplanned: boolean;
+};
+
+export type PaymentMethodOverview = ReplaceMonthlyBudgetAllocations & {
+  plannedCents: number;
+  spentCents: number;
+  availableCents: number;
+  abovePlannedCents: number;
+  usagePercent: number | null;
+  attention: PaymentMethodAttention;
+  paymentMethods: PaymentMethodOverviewItem[];
+};
+
+type PaymentMethodIdentity =
+  | { kind: "account_method"; accountId: string; paymentMethodId: string }
+  | { kind: "credit_card"; creditCardId: string };
 
 export type PaymentSourceOverviewItem = PaymentSource & {
   plannedCents: number;
@@ -100,6 +138,127 @@ function sourceFromTransaction(transaction: PaymentSourceTransaction): PaymentSo
 
 function sourceKey(source: PaymentSource): string {
   return `${source.kind}:${source.id}`;
+}
+
+function allocationKey(allocation: MonthlyBudgetAllocationInput): string {
+  return allocation.kind === "account_method"
+    ? `account_method:${allocation.accountId}:${allocation.paymentMethodId}`
+    : `credit_card:${allocation.creditCardId}`;
+}
+
+function allocationFromTransaction(
+  transaction: PaymentSourceTransaction
+): PaymentMethodIdentity | null {
+  if (transaction.creditCardId) {
+    return { kind: "credit_card", creditCardId: transaction.creditCardId };
+  }
+  if (transaction.accountId && transaction.paymentMethodId) {
+    return {
+      kind: "account_method",
+      accountId: transaction.accountId,
+      paymentMethodId: transaction.paymentMethodId
+    };
+  }
+  return null;
+}
+
+function usagePercent(plannedCents: number, spentCents: number): number | null {
+  return plannedCents === 0 ? null : (spentCents / plannedCents) * 100;
+}
+
+function attentionFor(
+  plannedCents: number,
+  spentCents: number,
+  percent: number | null
+): PaymentMethodAttention {
+  if (plannedCents === 0 && spentCents > 0) return "unplanned";
+  if (spentCents > plannedCents) return "over";
+  if (spentCents === 0) return "unused";
+  if (percent !== null && percent >= 80) return "near_limit";
+  return "on_track";
+}
+
+export function validateMonthlyBudgetAllocations(input: unknown) {
+  const parsed = replaceMonthlyBudgetAllocationsSchema.parse(input);
+  return {
+    ...parsed,
+    plannedCents: parsed.allocations.reduce(
+      (total, allocation) => total + allocation.amountCents,
+      0
+    )
+  };
+}
+
+export function buildPaymentMethodOverview(
+  input: ReplaceMonthlyBudgetAllocations & { transactions: PaymentSourceTransaction[] }
+): PaymentMethodOverview {
+  const validated = validateMonthlyBudgetAllocations(input);
+  const methods = new Map<string, PaymentMethodOverviewItem>();
+
+  for (const allocation of validated.allocations) {
+    methods.set(allocationKey(allocation), {
+      ...allocation,
+      plannedCents: allocation.amountCents,
+      spentCents: 0,
+      availableCents: allocation.amountCents,
+      abovePlannedCents: 0,
+      usagePercent: 0,
+      attention: "unused",
+      isUnplanned: false
+    });
+  }
+
+  for (const transaction of input.transactions) {
+    if (
+      transaction.budgetMonth !== validated.budgetMonth ||
+      transaction.subcategoryId !== validated.subcategoryId ||
+      !isRealizedTransaction(transaction) ||
+      transaction.transferId ||
+      isCreditCardPayment(transaction) ||
+      !["expense", "refund", "chargeback"].includes(transaction.type)
+    ) {
+      continue;
+    }
+    const identity = allocationFromTransaction(transaction);
+    if (!identity) continue;
+    const key = allocationKey({ ...identity, amountCents: 1 } as MonthlyBudgetAllocationInput);
+    const current = methods.get(key) ?? {
+      ...identity,
+      amountCents: 0,
+      plannedCents: 0,
+      spentCents: 0,
+      availableCents: 0,
+      abovePlannedCents: 0,
+      usagePercent: null,
+      attention: "unplanned" as const,
+      isUnplanned: true
+    };
+    current.spentCents +=
+      transaction.type === "expense" ? transaction.amountCents : -transaction.amountCents;
+    methods.set(key, current as PaymentMethodOverviewItem);
+  }
+
+  for (const method of methods.values()) {
+    method.spentCents = Math.max(0, method.spentCents);
+    method.availableCents = Math.max(0, method.plannedCents - method.spentCents);
+    method.abovePlannedCents = Math.max(0, method.spentCents - method.plannedCents);
+    method.usagePercent = usagePercent(method.plannedCents, method.spentCents);
+    method.attention = attentionFor(method.plannedCents, method.spentCents, method.usagePercent);
+  }
+
+  const paymentMethods = [...methods.values()];
+  const spentCents = paymentMethods.reduce((total, method) => total + method.spentCents, 0);
+  const plannedCents = validated.plannedCents;
+  const percent = usagePercent(plannedCents, spentCents);
+  return {
+    ...validated,
+    spentCents,
+    availableCents: Math.max(0, plannedCents - spentCents),
+    abovePlannedCents: Math.max(0, spentCents - plannedCents),
+    usagePercent: percent,
+    attention: attentionFor(plannedCents, spentCents, percent),
+    paymentMethods
+  };
 }
 
 export function validateBudgetDistribution(input: unknown): BudgetDistribution {

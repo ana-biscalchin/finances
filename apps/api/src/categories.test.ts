@@ -44,7 +44,7 @@ describePostgres("categories API", () => {
     ).toHaveLength(1);
   });
 
-  it("moves transactions and planned expense lines when merging subcategories", async () => {
+  it("moves transactions and budget allocations when merging subcategories", async () => {
     const category = (
       await app.inject({
         method: "POST",
@@ -76,19 +76,21 @@ describePostgres("categories API", () => {
     expect(
       (
         await app.inject({
-          method: "POST",
-          url: "/planned-expenses",
+          method: "PUT",
+          url: "/monthly-budget-allocations",
           payload: {
             budgetMonth: "2026-07",
             subcategoryId: source.id,
-            name: "Aluguel",
-            amountCents: 180_000,
-            accountId: account.id,
-            creditCardId: null
+            allocations: [{
+              kind: "account_method",
+              accountId: account.id,
+              paymentMethodId: account.paymentMethods[0].paymentMethodId,
+              amountCents: 180_000
+            }]
           }
         })
       ).statusCode
-    ).toBe(201);
+    ).toBe(200);
     expect(
       (
         await app.inject({

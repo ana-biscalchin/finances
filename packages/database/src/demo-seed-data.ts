@@ -64,14 +64,14 @@ export function buildDemoSeedData(month: string) {
     transactions,
     transfers: [{ id: ids.transfer, sourceAccountId: ids.checking, destinationAccountId: ids.savings, amountCents: 100_000, eventDate: date(6), description: "Guardar na reserva", status: "active" }],
     billPayments: [{ id: "demo-bill-payment", idempotencyKey: `demo-${month}-partial`, billId: ids.bill, accountId: ids.checking, paymentTransactionId: "demo-transaction-bill-payment", paymentDate: date(13), principalCents: 30_000, interestCents: 0, penaltyCents: 0, notes: "Pagamento parcial para demonstrar saldo em aberto" }],
-    plannedExpenses: [
-      plannedExpense("rent", "Aluguel", "cat-moradia-sub-aluguel", 220_000, month, 0, { accountId: ids.checking, recurrenceRuleId: ids.rentRecurrence }),
-      plannedExpense("market-debit", "Mercado no débito", "cat-alimentacao-sub-supermercado", 25_000, month, 0, { accountId: ids.checking }),
-      plannedExpense("market-flash", "Mercado no Flash", "cat-alimentacao-sub-supermercado", 40_000, month, 1, { accountId: ids.flashFood }),
-      plannedExpense("restaurants", "Restaurantes", "cat-alimentacao-sub-restaurantes", 12_000, month, 0, { creditCardId: ids.card }),
-      plannedExpense("health", "Farmácia", "cat-saude-sub-farmacia", 20_000, month, 0, { accountId: ids.checking }),
-      plannedExpense("streaming", "Streaming", "cat-lazer-sub-assinaturas-de-streaming", 6_000, month, 0, { creditCardId: ids.card, recurrenceRuleId: ids.streamingRecurrence }),
-      plannedExpense("courses", "Curso de finanças", "cat-educacao-sub-cursos", 25_000, month, 0, { creditCardId: ids.card })
+    monthlyBudgetAllocations: [
+      allocation("rent", "cat-moradia-sub-aluguel", 220_000, month, { accountId: ids.checking, paymentMethodId: "pm-pix" }),
+      allocation("market-debit", "cat-alimentacao-sub-supermercado", 25_000, month, { accountId: ids.checking, paymentMethodId: "pm-debit-card" }),
+      allocation("market-flash", "cat-alimentacao-sub-supermercado", 40_000, month, { accountId: ids.flashFood, paymentMethodId: "pm-prepaid-card" }),
+      allocation("restaurants", "cat-alimentacao-sub-restaurantes", 12_000, month, { creditCardId: ids.card }),
+      allocation("health", "cat-saude-sub-farmacia", 20_000, month, { accountId: ids.checking, paymentMethodId: "pm-pix" }),
+      allocation("streaming", "cat-lazer-sub-assinaturas-de-streaming", 6_000, month, { creditCardId: ids.card }),
+      allocation("courses", "cat-educacao-sub-cursos", 25_000, month, { creditCardId: ids.card })
     ],
     recurrenceRules: [
       { id: ids.rentRecurrence, kind: "expense", description: "Aluguel", amountCents: 220_000, subcategoryId: "cat-moradia-sub-aluguel", accountId: ids.checking, creditCardId: null, paymentMethodId: "pm-pix", frequency: "monthly", dayOfMonth: 8, startMonth: month, endMonth: null, status: "active" },
@@ -88,6 +88,6 @@ function transaction(suffix: string, type: string, description: string, amountCe
   return { id: `demo-transaction-${suffix}`, type, description, amountCents, eventDate, budgetMonth, status: "confirmed", notes: "Dados de demonstração", accountId: null, paymentMethodId: null, subcategoryId: null, creditCardId: null, creditCardBillId: null, transferId: null, recurrenceRuleId: null, recurrenceMonth: null, ...links };
 }
 
-function plannedExpense(suffix: string, name: string, subcategoryId: string, amountCents: number, budgetMonth: string, sortOrder: number, source: { accountId?: string; creditCardId?: string; recurrenceRuleId?: string }) {
-  return { id: `demo-planned-expense-${suffix}`, budgetMonth, subcategoryId, name, amountCents, accountId: source.accountId ?? null, creditCardId: source.creditCardId ?? null, recurrenceRuleId: source.recurrenceRuleId ?? null, sortOrder };
+function allocation(suffix: string, subcategoryId: string, amountCents: number, budgetMonth: string, source: { accountId?: string; paymentMethodId?: string; creditCardId?: string }) {
+  return { id: `demo-budget-allocation-${suffix}`, budgetMonth, subcategoryId, amountCents, accountId: source.accountId ?? null, paymentMethodId: source.paymentMethodId ?? null, creditCardId: source.creditCardId ?? null };
 }

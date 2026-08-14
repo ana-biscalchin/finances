@@ -117,6 +117,41 @@ export const distributedBudgetInputSchema = z
     }
   });
 
+export const monthlyBudgetAllocationInputSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("account_method"),
+    accountId: entityIdSchema,
+    paymentMethodId: entityIdSchema,
+    amountCents: positiveCentsSchema
+  }),
+  z.object({
+    kind: z.literal("credit_card"),
+    creditCardId: entityIdSchema,
+    amountCents: positiveCentsSchema
+  })
+]);
+
+export const replaceMonthlyBudgetAllocationsSchema = z
+  .object({
+    budgetMonth: yearMonthSchema,
+    subcategoryId: entityIdSchema,
+    allocations: z.array(monthlyBudgetAllocationInputSchema).default([])
+  })
+  .superRefine((value, context) => {
+    const keys = value.allocations.map((allocation) =>
+      allocation.kind === "account_method"
+        ? `account_method:${allocation.accountId}:${allocation.paymentMethodId}`
+        : `credit_card:${allocation.creditCardId}`
+    );
+    if (new Set(keys).size !== keys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Duplicate payment method allocation",
+        path: ["allocations"]
+      });
+    }
+  });
+
 export const transferInputSchema = z
   .object({
     sourceAccountId: entityIdSchema,
@@ -230,6 +265,10 @@ export type AccountInput = z.infer<typeof accountInputSchema>;
 export type AccountPaymentMethodInput = z.infer<typeof accountPaymentMethodInputSchema>;
 export type BudgetAllocationInput = z.infer<typeof budgetAllocationInputSchema>;
 export type DistributedBudgetInput = z.infer<typeof distributedBudgetInputSchema>;
+export type MonthlyBudgetAllocationInput = z.infer<typeof monthlyBudgetAllocationInputSchema>;
+export type ReplaceMonthlyBudgetAllocations = z.infer<
+  typeof replaceMonthlyBudgetAllocationsSchema
+>;
 export type TransferInput = z.infer<typeof transferInputSchema>;
 export type BillPaymentInput = z.infer<typeof billPaymentInputSchema>;
 export type RecurrenceInput = z.infer<typeof recurrenceInputSchema>;

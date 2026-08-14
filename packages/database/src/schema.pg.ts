@@ -176,6 +176,49 @@ export const creditCards = pgTable(
   ]
 );
 
+export const monthlyBudgetAllocations = pgTable(
+  "monthly_budget_allocations",
+  {
+    id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
+    budgetMonth: text("budget_month").notNull(),
+    subcategoryId: text("subcategory_id")
+      .notNull()
+      .references(() => subcategories.id),
+    accountId: text("account_id").references(() => accounts.id),
+    paymentMethodId: text("payment_method_id").references(() => paymentMethods.id),
+    creditCardId: text("credit_card_id").references(() => creditCards.id),
+    amountCents: integer("amount_cents").notNull(),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("monthly_budget_allocations_account_method_unique").on(
+      table.ownerId,
+      table.budgetMonth,
+      table.subcategoryId,
+      table.accountId,
+      table.paymentMethodId
+    ),
+    uniqueIndex("monthly_budget_allocations_card_unique").on(
+      table.ownerId,
+      table.budgetMonth,
+      table.subcategoryId,
+      table.creditCardId
+    ),
+    index("monthly_budget_allocations_owner_month_idx").on(table.ownerId, table.budgetMonth),
+    index("monthly_budget_allocations_account_method_idx").on(
+      table.accountId,
+      table.paymentMethodId
+    ),
+    index("monthly_budget_allocations_card_idx").on(table.creditCardId),
+    check("monthly_budget_allocations_positive_amount", sql`${table.amountCents} > 0`),
+    check(
+      "monthly_budget_allocations_single_source",
+      sql`((${table.accountId} IS NOT NULL AND ${table.paymentMethodId} IS NOT NULL AND ${table.creditCardId} IS NULL) OR (${table.accountId} IS NULL AND ${table.paymentMethodId} IS NULL AND ${table.creditCardId} IS NOT NULL))`
+    )
+  ]
+);
+
 export const creditCardBills = pgTable(
   "credit_card_bills",
   {
@@ -445,36 +488,6 @@ export const reserveMovements = pgTable(
   (table) => [
     index("reserve_movements_goal_idx").on(table.reserveGoalId),
     index("reserve_movements_date_idx").on(table.movementDate)
-  ]
-);
-
-export const plannedExpenses = pgTable(
-  "planned_expenses",
-  {
-    id: text("id").primaryKey(),
-    ownerId: ownedByUser(),
-    budgetMonth: text("budget_month").notNull(),
-    subcategoryId: text("subcategory_id")
-      .notNull()
-      .references(() => subcategories.id),
-    name: text("name").notNull(),
-    amountCents: integer("amount_cents").notNull(),
-    accountId: text("account_id").references(() => accounts.id),
-    creditCardId: text("credit_card_id").references(() => creditCards.id),
-    recurrenceRuleId: text("recurrence_rule_id").references(() => recurrenceRules.id),
-    sortOrder: integer("sort_order").notNull().default(0),
-    ...timestamps
-  },
-  (table) => [
-    index("planned_expenses_owner_month_idx").on(table.ownerId, table.budgetMonth),
-    index("planned_expenses_month_subcategory_idx").on(table.budgetMonth, table.subcategoryId),
-    index("planned_expenses_account_idx").on(table.accountId),
-    index("planned_expenses_card_idx").on(table.creditCardId),
-    check("planned_expenses_positive_amount", sql`${table.amountCents} > 0`),
-    check(
-      "planned_expenses_single_source",
-      sql`(${table.accountId} IS NOT NULL) <> (${table.creditCardId} IS NOT NULL)`
-    )
   ]
 );
 

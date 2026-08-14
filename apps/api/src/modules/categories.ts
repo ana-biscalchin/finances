@@ -1,8 +1,8 @@
 import {
   categories,
+  monthlyBudgetAllocations,
   subcategories,
   transactions,
-  plannedExpenses,
   type createDatabaseConnection
 } from "@finances/database";
 import { assertCategoryNature } from "@finances/domain";
@@ -295,9 +295,9 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
         .where(eq(transactions.subcategoryId, id));
 
       await tx
-        .update(plannedExpenses)
+        .update(monthlyBudgetAllocations)
         .set({ subcategoryId: targetSubcategoryId, updatedAt: new Date().toISOString() })
-        .where(eq(plannedExpenses.subcategoryId, id));
+        .where(eq(monthlyBudgetAllocations.subcategoryId, id));
 
       await tx
         .update(subcategories)

@@ -6,7 +6,7 @@ import {
   creditCardBills,
   creditCards,
   paymentMethods,
-  plannedExpenses,
+  monthlyBudgetAllocations,
   recurrenceRules,
   subcategories,
   transactions
@@ -58,17 +58,16 @@ describePostgres("canonical monthly views", () => {
   it("returns spending without counting transfer and exposes account risk", async () => {
     const service = createMonthlyOverviewService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     await connection.db
-      .insert(plannedExpenses)
+      .insert(monthlyBudgetAllocations)
       .values({
         id: "plan",
         ownerId: TEST_OWNER_ID,
         budgetMonth: "2026-07",
         subcategoryId: "subcategory",
-        name: "Conta",
         amountCents: 20_000,
         accountId: "account",
-        creditCardId: null,
-        sortOrder: 0
+        paymentMethodId: "pm-pix",
+        creditCardId: null
       })
       .execute();
     await connection.db
@@ -83,6 +82,7 @@ describePostgres("canonical monthly views", () => {
           eventDate: "2026-07-01",
           budgetMonth: "2026-07",
           accountId: "account",
+          paymentMethodId: "pm-pix",
           subcategoryId: "subcategory",
           status: "confirmed"
         },
