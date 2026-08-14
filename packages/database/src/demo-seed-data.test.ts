@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildDemoSeedData } from "./demo-seed-data.js";
-import { categorySeeds, paymentMethodSeeds } from "./seed-data.js";
+import { accountSeeds, categorySeeds, paymentMethodSeeds } from "./seed-data.js";
 
 describe("demo seed data", () => {
   it("builds a coherent monthly scenario without classifying internal movements as consumption", () => {
@@ -10,6 +10,20 @@ describe("demo seed data", () => {
 
     expect(seed.accounts.length).toBeGreaterThanOrEqual(2);
     expect(seed.monthlyBudgetAllocations.length).toBeGreaterThanOrEqual(5);
+    expect(seed.monthlyIncomePlans).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          subcategoryId: "cat-trabalho-sub-salario",
+          accountId: "account-checking-main",
+          amountCents: 850_000
+        }),
+        expect.objectContaining({
+          subcategoryId: "cat-outras-receitas-sub-flash-alimentacao",
+          accountId: "account-flash-food",
+          amountCents: 70_000
+        })
+      ])
+    );
     expect(seed.transactions.some((item) => item.creditCardBillId)).toBe(true);
     expect(seed.recurrenceRules.some((item) => item.accountId)).toBe(true);
     expect(seed.recurrenceRules.some((item) => item.creditCardId)).toBe(true);
@@ -33,8 +47,8 @@ describe("demo seed data", () => {
     expect(categorySeeds.map((category) => category.nature)).not.toContain("transfer");
     expect(paymentMethodSeeds.map((method) => method.id)).not.toContain("pm-credit-card");
     expect(
-      buildDemoSeedData("2026-07").transactions
-        .filter((transaction) => transaction.creditCardId)
+      buildDemoSeedData("2026-07")
+        .transactions.filter((transaction) => transaction.creditCardId)
         .every((transaction) => transaction.paymentMethodId === null)
     ).toBe(true);
   });
@@ -59,23 +73,40 @@ describe("demo seed data", () => {
     ).toBe(true);
     expect(
       seed.transactions.some(
-        (transaction) => transaction.accountId === flashAccounts[0]?.id && transaction.type === "income"
+        (transaction) =>
+          transaction.accountId === flashAccounts[0]?.id && transaction.type === "income"
       )
     ).toBe(true);
     expect(
       seed.transactions.some(
-        (transaction) => transaction.accountId === flashAccounts[0]?.id && transaction.type === "expense"
+        (transaction) =>
+          transaction.accountId === flashAccounts[0]?.id && transaction.type === "expense"
       )
     ).toBe(true);
   });
 
   it("plans the same category by account and payment method", () => {
     const seed = buildDemoSeedData("2026-07");
-    const foodLines = seed.monthlyBudgetAllocations.filter((line) => line.subcategoryId === "cat-alimentacao-sub-supermercado");
+    const foodLines = seed.monthlyBudgetAllocations.filter(
+      (line) => line.subcategoryId === "cat-alimentacao-sub-supermercado"
+    );
     expect(foodLines.map((line) => [line.accountId, line.paymentMethodId])).toEqual([
-      ["demo-account-checking", "pm-debit-card"],
-      ["demo-account-flash-food", "pm-prepaid-card"]
+      ["account-checking-main", "pm-debit-card"],
+      ["account-flash-food", "pm-prepaid-card"]
     ]);
     expect(foodLines.reduce((total, line) => total + line.amountCents, 0)).toBe(65_000);
+  });
+
+  it("reuses canonical account identities instead of creating duplicate balances", () => {
+    const seed = buildDemoSeedData("2026-07");
+    const canonicalIds = new Set<string>(accountSeeds.map((account) => account.id));
+    expect(
+      seed.accounts
+        .filter((account) => account.name !== "Reserva imediata")
+        .every((account) => canonicalIds.has(account.id))
+    ).toBe(true);
+    expect(new Set([...accountSeeds, ...seed.accounts].map((account) => account.name)).size).toBe(
+      new Set([...accountSeeds, ...seed.accounts].map((account) => account.id)).size
+    );
   });
 });

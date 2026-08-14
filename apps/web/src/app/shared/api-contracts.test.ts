@@ -57,60 +57,20 @@ describe("shared API contracts", () => {
       }).success
     ).toBe(true);
     const overview = monthlyOverviewSchema.parse({
-        items: [
-          {
-            subcategoryId: "food",
-            subcategoryName: "Mercado",
-            categoryId: "category",
-            categoryName: "Casa",
-            categorySortOrder: 0,
-            subcategorySortOrder: 0,
-            budgetMonth: "2026-07",
-            amountCents: 1000,
-            plannedCents: 1000,
-            distributedCents: 600,
-            undistributedCents: 400,
-            planningStatus: "incomplete",
-            spentCents: 500,
-            availableCents: 500,
-            abovePlannedCents: 0,
-            hasSourceDivergence: false,
-            usagePercent: 50,
-            attention: "on_track",
-            allocations: [{ accountId: "checking", paymentMethodId: "pix", creditCardId: null, amountCents: 1000 }],
-            paymentMethods: [
-              {
-                kind: "account_method",
-                accountId: "checking",
-                paymentMethodId: "pix",
-                amountCents: 1000,
-                label: "Conta · Pix",
-                plannedCents: 1000,
-                spentCents: 500,
-                availableCents: 500,
-                abovePlannedCents: 0,
-                usagePercent: 50,
-                attention: "on_track",
-                isUnplanned: false
-              }
-            ],
-            sources: [
-              {
-                kind: "account",
-                id: "checking",
-                name: "Conta",
-                plannedCents: 600,
-                spentCents: 500,
-                availableCents: 100,
-                abovePlannedCents: 0,
-                differenceCents: 100,
-                isUnplanned: false
-              }
-            ]
-          }
-        ],
-        summary: {
+      items: [
+        {
+          subcategoryId: "food",
+          subcategoryName: "Mercado",
+          categoryId: "category",
+          categoryName: "Casa",
+          categorySortOrder: 0,
+          subcategorySortOrder: 0,
+          budgetMonth: "2026-07",
+          amountCents: 1000,
           plannedCents: 1000,
+          distributedCents: 600,
+          undistributedCents: 400,
+          planningStatus: "incomplete",
           spentCents: 500,
           availableCents: 500,
           abovePlannedCents: 0,
@@ -192,35 +152,47 @@ describe("shared API contracts", () => {
           paymentMethodId: "pix",
           label: "Conta · Pix"
         },
-        sourceSummary: [
+        { kind: "credit_card", creditCardId: "card", label: "Cartão" }
+      ],
+      incomePlanning: {
+        summary: {
+          plannedCents: 850000,
+          receivedCents: 400000,
+          remainingCents: 450000,
+          abovePlannedCents: 0
+        },
+        items: [
           {
-            kind: "account",
-            id: "checking",
-            name: "Conta",
-            plannedCents: 600,
-            spentCents: 500,
-            differenceCents: 100
+            subcategoryId: "salary",
+            subcategoryName: "Salário",
+            categoryName: "Trabalho",
+            accountId: "checking",
+            accountName: "Conta",
+            plannedCents: 850000,
+            receivedCents: 400000,
+            remainingCents: 450000,
+            abovePlannedCents: 0,
+            status: "partial"
           }
         ],
-        availableSources: [{ kind: "account", id: "checking", name: "Conta" }],
-        availablePaymentMethods: [
-          { kind: "account_method", accountId: "checking", paymentMethodId: "pix", label: "Conta · Pix" },
-          { kind: "credit_card", creditCardId: "card", label: "Cartão" }
-        ],
-        transfers: [
-          {
-            id: "transfer",
-            eventDate: "2026-07-10",
-            description: "Reserva",
-            amountCents: 300,
-            sourceAccount: { id: "checking", name: "Conta" },
-            destinationAccount: { id: "savings", name: "Reserva" }
-          }
-        ]
-      });
+        availableSubcategories: [{ id: "salary", name: "Salário", categoryName: "Trabalho" }],
+        availableAccounts: [{ id: "checking", name: "Conta" }]
+      },
+      transfers: [
+        {
+          id: "transfer",
+          eventDate: "2026-07-10",
+          description: "Reserva",
+          amountCents: 300,
+          sourceAccount: { id: "checking", name: "Conta" },
+          destinationAccount: { id: "savings", name: "Reserva" }
+        }
+      ]
+    });
     expect(overview.items[0]?.paymentMethods[0]?.label).toBe("Conta · Pix");
     expect(overview.items[0]?.paymentMethods[1]?.attention).toBe("unplanned");
     expect(overview.transfers[0]?.sourceAccount.name).toBe("Conta");
+    expect(overview.incomePlanning.items[0]?.status).toBe("partial");
     expect(
       cashPositionSchema.safeParse([
         {

@@ -5,12 +5,17 @@ import {
   categories,
   creditCards,
   monthlyBudgetAllocations,
+  monthlyIncomePlans,
   paymentMethods,
   subcategories,
   transactions,
   type createDatabaseConnection
 } from "@finances/database";
-import { buildPaymentMethodOverview, type MonthlyBudgetAllocationInput } from "@finances/domain";
+import {
+  buildMonthlyIncomeOverview,
+  buildPaymentMethodOverview,
+  type MonthlyBudgetAllocationInput
+} from "@finances/domain";
 import { and, eq } from "drizzle-orm";
 
 type Connection = ReturnType<typeof createDatabaseConnection>;
@@ -29,6 +34,7 @@ export function createPaymentSourcePlanningService(connection: Connection, owner
   async function overview(month: string) {
     const [
       plannedRows,
+      incomePlanRows,
       transactionRows,
       transferRows,
       accountRows,
@@ -49,6 +55,12 @@ export function createPaymentSourcePlanningService(connection: Connection, owner
         ),
       db
         .select()
+        .from(monthlyIncomePlans)
+        .where(
+          and(eq(monthlyIncomePlans.ownerId, ownerId), eq(monthlyIncomePlans.budgetMonth, month))
+        ),
+      db
+        .select()
         .from(transactions)
         .where(and(eq(transactions.ownerId, ownerId), eq(transactions.budgetMonth, month))),
       db.select().from(accountTransfers).where(eq(accountTransfers.ownerId, ownerId)),
@@ -62,7 +74,8 @@ export function createPaymentSourcePlanningService(connection: Connection, owner
           id: subcategories.id,
           categoryId: subcategories.categoryId,
           name: subcategories.name,
-          sortOrder: subcategories.sortOrder
+          sortOrder: subcategories.sortOrder,
+          isActive: subcategories.isActive
         })
         .from(subcategories)
         .innerJoin(
@@ -78,12 +91,23 @@ export function createPaymentSourcePlanningService(connection: Connection, owner
     const cardNames = new Map(cardRows.map((item) => [item.id, item.name]));
     const categoryRows = new Map(allCategoryRows.map((item) => [item.id, item]));
     const subcategoryRows = new Map(joinedSubcategories.map((item) => [item.id, item]));
-    const subcategoryIds = new Set([
-      ...joinedSubcategories
+    const expenseSubcategoryIds = new Set(
+      joinedSubcategories
         .filter((item) => categoryRows.get(item.categoryId)?.nature === "expense")
-        .map((item) => item.id),
-      ...plannedRows.map((item) => item.subcategoryId),
-      ...transactionRows.flatMap((item) => (item.subcategoryId ? [item.subcategoryId] : []))
+        .map((item) => item.id)
+    );
+    const subcategoryIds = new Set([
+      ...expenseSubcategoryIds,
+      ...plannedRows
+        .filter((item) => expenseSubcategoryIds.has(item.subcategoryId))
+        .map((item) => item.subcategoryId),
+      ...transactionRows.flatMap((item) =>
+        item.subcategoryId &&
+        expenseSubcategoryIds.has(item.subcategoryId) &&
+        ["expense", "refund", "chargeback"].includes(item.type)
+          ? [item.subcategoryId]
+          : []
+      )
     ]);
 
     const items = [...subcategoryIds].map((subcategoryId) => {
@@ -262,6 +286,38 @@ export function createPaymentSourcePlanningService(connection: Connection, owner
       })
       .sort((left, right) => right.eventDate.localeCompare(left.eventDate));
 
+    const incomeOverview = buildMonthlyIncomeOverview({
+      plans: incomePlanRows,
+      transactions: transactionRows
+    });
+    const incomePlanning = {
+      summary: incomeOverview.summary,
+      items: incomeOverview.items.map((item) => ({
+        ...item,
+        subcategoryName: subcategoryRows.get(item.subcategoryId)?.name ?? "Categoria arquivada",
+        categoryName: subcategoryRows.get(item.subcategoryId)
+          ? (categoryRows.get(subcategoryRows.get(item.subcategoryId)!.categoryId)?.name ??
+            "Categoria arquivada")
+          : "Categoria arquivada",
+        accountName: accountNames.get(item.accountId) ?? "Conta arquivada"
+      })),
+      availableSubcategories: joinedSubcategories
+        .filter(
+          (item) =>
+            item.isActive &&
+            categoryRows.get(item.categoryId)?.nature === "income" &&
+            categoryRows.get(item.categoryId)?.isActive
+        )
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          categoryName: categoryRows.get(item.categoryId)?.name ?? "Receita"
+        })),
+      availableAccounts: accountRows
+        .filter((item) => item.isActive)
+        .map((item) => ({ id: item.id, name: item.name }))
+    };
+
     const availablePaymentMethods = [
       ...associationRows
         .filter(
@@ -309,6 +365,7 @@ export function createPaymentSourcePlanningService(connection: Connection, owner
           .map((item) => ({ kind: "credit_card" as const, id: item.id, name: item.name }))
       ],
       availablePaymentMethods,
+      incomePlanning,
       transfers
     };
   }

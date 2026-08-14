@@ -143,6 +143,13 @@ export function createMonthlyOverviewService(connection: Connection, ownerId: st
         accounts: accountRows,
         transactions: purchases,
         remainingPlans,
+        remainingIncomePlans: monthlyPlan.incomePlanning.items
+          .filter((item) => item.remainingCents > 0)
+          .map((item) => ({
+            accountId: item.accountId,
+            subcategoryId: item.subcategoryId,
+            amountCents: item.remainingCents
+          })),
         recurrenceForecasts,
         cards: [...cards.values()],
         outstandingBills

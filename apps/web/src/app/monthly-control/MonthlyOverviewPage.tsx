@@ -10,6 +10,7 @@ import { PaymentSourceSummary } from "./PaymentSourceSummary.js";
 import { MonthlyAttentionPanel } from "./MonthlyAttentionPanel.js";
 import { MonthlyTransfersPanel } from "./MonthlyTransfersPanel.js";
 import { MonthlyBudgetEmptyState } from "./MonthlyBudgetEmptyState.js";
+import { MonthlyIncomePlanningPanel } from "./MonthlyIncomePlanningPanel.js";
 export function MonthlyOverviewPage({
   selectedMonth,
   setSelectedMonth
@@ -38,12 +39,24 @@ export function MonthlyOverviewPage({
       <MonthSelector selectedMonth={selectedMonth} onChange={setSelectedMonth} />
       {error ? (
         <Alert color="red" title="Não foi possível carregar">
-          <Stack gap="sm"><span>{error}</span><Button variant="light" onClick={() => void load()}>Tentar novamente</Button></Stack>
+          <Stack gap="sm">
+            <span>{error}</span>
+            <Button variant="light" onClick={() => void load()}>
+              Tentar novamente
+            </Button>
+          </Stack>
         </Alert>
       ) : data ? (
         <>
           <MonthAtGlance summary={data.summary} />
-          {data.summary.plannedCents === 0 && <MonthlyBudgetEmptyState month={selectedMonth} onChanged={load} />}
+          <MonthlyIncomePlanningPanel
+            data={data.incomePlanning}
+            month={selectedMonth}
+            onChanged={load}
+          />
+          {data.summary.plannedCents === 0 && (
+            <MonthlyBudgetEmptyState month={selectedMonth} onChanged={load} />
+          )}
           <MonthlyAttentionPanel items={data.items} />
           <MonthlyHealthSummary data={data} />
           <PaymentSourceSummary sources={data.sourceSummary} />

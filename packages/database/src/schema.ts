@@ -14,6 +14,8 @@ export const subcategories = selected.subcategories as typeof sqliteSchema.subca
 export const creditCards = selected.creditCards as typeof sqliteSchema.creditCards;
 export const monthlyBudgetAllocations =
   selected.monthlyBudgetAllocations as typeof sqliteSchema.monthlyBudgetAllocations;
+export const monthlyIncomePlans =
+  selected.monthlyIncomePlans as typeof sqliteSchema.monthlyIncomePlans;
 export const creditCardBills = selected.creditCardBills as typeof sqliteSchema.creditCardBills;
 export const accountTransfers = selected.accountTransfers as typeof sqliteSchema.accountTransfers;
 export const recurrenceRules = selected.recurrenceRules as typeof sqliteSchema.recurrenceRules;
