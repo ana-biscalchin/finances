@@ -26,33 +26,45 @@ export const businessDateSchema = z.string().refine(isValidBusinessDate, "Invali
 export const yearMonthSchema = z.string().refine(isValidYearMonth, "Invalid year month");
 
 export const transactionTypeSchema = z.enum(["income", "expense", "refund", "chargeback"]);
-export const transactionStatusSchema = z.enum([
-  "planned",
-  "confirmed",
-  "reconciled",
-  "canceled"
-]);
+export const transactionStatusSchema = z.enum(["planned", "confirmed", "reconciled", "canceled"]);
 
 export const accountTypeSchema = z.enum([
-  "checking", "savings", "cash", "investment", "benefit", "digital_wallet"
+  "checking",
+  "savings",
+  "cash",
+  "investment",
+  "benefit",
+  "digital_wallet"
 ]);
 export const accountPaymentMethodInputSchema = z.object({
   paymentMethodId: entityIdSchema,
   isDefault: z.boolean().default(false)
 });
-export const accountInputSchema = z.object({
-  name: z.string().trim().min(1),
-  type: accountTypeSchema,
-  institution: z.string().trim().nullish(),
-  initialBalanceCents: z.number().int().default(0),
-  sortOrder: z.number().int().nonnegative().optional(),
-  isPrimary: z.boolean().default(false),
-  paymentMethods: z.array(accountPaymentMethodInputSchema).default([])
-}).superRefine((value, context) => {
-  const ids = value.paymentMethods.map((item) => item.paymentMethodId);
-  if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", message: "Duplicate account payment method", path: ["paymentMethods"] });
-  if (value.paymentMethods.filter((item) => item.isDefault).length > 1) context.addIssue({ code: "custom", message: "Account can have only one default payment method", path: ["paymentMethods"] });
-});
+export const accountInputSchema = z
+  .object({
+    name: z.string().trim().min(1),
+    type: accountTypeSchema,
+    institution: z.string().trim().nullish(),
+    initialBalanceCents: z.number().int().default(0),
+    sortOrder: z.number().int().nonnegative().optional(),
+    isPrimary: z.boolean().default(false),
+    paymentMethods: z.array(accountPaymentMethodInputSchema).default([])
+  })
+  .superRefine((value, context) => {
+    const ids = value.paymentMethods.map((item) => item.paymentMethodId);
+    if (new Set(ids).size !== ids.length)
+      context.addIssue({
+        code: "custom",
+        message: "Duplicate account payment method",
+        path: ["paymentMethods"]
+      });
+    if (value.paymentMethods.filter((item) => item.isDefault).length > 1)
+      context.addIssue({
+        code: "custom",
+        message: "Account can have only one default payment method",
+        path: ["paymentMethods"]
+      });
+  });
 
 export const budgetInputSchema = z.object({
   budgetMonth: yearMonthSchema,
@@ -152,6 +164,28 @@ export const replaceMonthlyBudgetAllocationsSchema = z
     }
   });
 
+export const monthlyIncomePlanInputSchema = z.object({
+  subcategoryId: entityIdSchema,
+  accountId: entityIdSchema,
+  amountCents: positiveCentsSchema
+});
+
+export const replaceMonthlyIncomePlansSchema = z
+  .object({
+    budgetMonth: yearMonthSchema,
+    plans: z.array(monthlyIncomePlanInputSchema).default([])
+  })
+  .superRefine((value, context) => {
+    const keys = value.plans.map((plan) => `${plan.subcategoryId}:${plan.accountId}`);
+    if (new Set(keys).size !== keys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Duplicate monthly income plan",
+        path: ["plans"]
+      });
+    }
+  });
+
 export const transferInputSchema = z
   .object({
     sourceAccountId: entityIdSchema,
@@ -242,7 +276,6 @@ export const recurrenceInputSchema = z
         path: ["endMonth"]
       });
     }
-
   });
 
 export const importTransactionInputSchema = z.object({
@@ -266,9 +299,9 @@ export type AccountPaymentMethodInput = z.infer<typeof accountPaymentMethodInput
 export type BudgetAllocationInput = z.infer<typeof budgetAllocationInputSchema>;
 export type DistributedBudgetInput = z.infer<typeof distributedBudgetInputSchema>;
 export type MonthlyBudgetAllocationInput = z.infer<typeof monthlyBudgetAllocationInputSchema>;
-export type ReplaceMonthlyBudgetAllocations = z.infer<
-  typeof replaceMonthlyBudgetAllocationsSchema
->;
+export type ReplaceMonthlyBudgetAllocations = z.infer<typeof replaceMonthlyBudgetAllocationsSchema>;
+export type MonthlyIncomePlanInput = z.infer<typeof monthlyIncomePlanInputSchema>;
+export type ReplaceMonthlyIncomePlans = z.infer<typeof replaceMonthlyIncomePlansSchema>;
 export type TransferInput = z.infer<typeof transferInputSchema>;
 export type BillPaymentInput = z.infer<typeof billPaymentInputSchema>;
 export type RecurrenceInput = z.infer<typeof recurrenceInputSchema>;

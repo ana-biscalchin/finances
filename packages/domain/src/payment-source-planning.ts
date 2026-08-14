@@ -33,12 +33,7 @@ export type PaymentSourceTransaction = {
   transferId?: string | null;
 };
 
-export type PaymentMethodAttention =
-  | "over"
-  | "near_limit"
-  | "unplanned"
-  | "on_track"
-  | "unused";
+export type PaymentMethodAttention = "over" | "near_limit" | "unplanned" | "on_track" | "unused";
 
 export type PaymentMethodOverviewItem = MonthlyBudgetAllocationInput & {
   plannedCents: number;
@@ -85,6 +80,8 @@ export type AccountCashProjectionInput = {
   accounts: Array<{ id: string; type: string; initialBalanceCents: number }>;
   transactions: Array<{
     accountId?: string | null;
+    creditCardId?: string | null;
+    subcategoryId?: string | null;
     type: string;
     status?: string | null;
     amountCents: number;
@@ -92,6 +89,11 @@ export type AccountCashProjectionInput = {
   remainingPlans: Array<{
     kind: "account" | "credit_card";
     sourceId: string;
+    subcategoryId: string;
+    amountCents: number;
+  }>;
+  remainingIncomePlans?: Array<{
+    accountId: string;
     subcategoryId: string;
     amountCents: number;
   }>;
@@ -372,18 +374,93 @@ export function buildAccountCashProjection(
   input: AccountCashProjectionInput
 ): AccountCashProjection[] {
   const cards = new Map(input.cards.map((card) => [card.id, card]));
+  const plannedForecasts: AccountCashProjectionInput["recurrenceForecasts"] =
+    input.transactions.flatMap<AccountCashProjectionInput["recurrenceForecasts"][number]>(
+      (transaction) => {
+        if (
+          transaction.status !== "planned" ||
+          !transaction.subcategoryId ||
+          !["income", "expense"].includes(transaction.type)
+        ) {
+          return [];
+        }
+        if (transaction.creditCardId) {
+          return [
+            {
+              kind: transaction.type as "income" | "expense",
+              sourceKind: "credit_card" as const,
+              sourceId: transaction.creditCardId,
+              subcategoryId: transaction.subcategoryId,
+              amountCents: transaction.amountCents
+            }
+          ];
+        }
+        if (!transaction.accountId) return [];
+        return [
+          {
+            kind: transaction.type as "income" | "expense",
+            sourceKind: "account" as const,
+            sourceId: transaction.accountId,
+            subcategoryId: transaction.subcategoryId,
+            amountCents: transaction.amountCents
+          }
+        ];
+      }
+    );
+  const forecasts = [...input.recurrenceForecasts, ...plannedForecasts];
   return input.accounts.map((account) => {
     const currentBalanceCents = input.transactions.reduce(
       (balance, transaction) =>
         balance + (transaction.accountId === account.id ? getAccountDelta(transaction) : 0),
       account.initialBalanceCents
     );
-    const accountForecasts = input.recurrenceForecasts.filter(
+    const accountForecasts = forecasts.filter(
       (forecast) => forecast.sourceKind === "account" && forecast.sourceId === account.id
     );
-    const expectedIncome = accountForecasts
-      .filter((forecast) => forecast.kind === "income")
-      .reduce((total, forecast) => total + forecast.amountCents, 0);
+    const incomeSignals = new Map<
+      string,
+      { planCents: number; recurrenceCents: number; transactionCents: number }
+    >();
+    const addIncomeSignal = (
+      subcategoryId: string,
+      field: "planCents" | "recurrenceCents" | "transactionCents",
+      amountCents: number
+    ) => {
+      const current = incomeSignals.get(subcategoryId) ?? {
+        planCents: 0,
+        recurrenceCents: 0,
+        transactionCents: 0
+      };
+      current[field] += amountCents;
+      incomeSignals.set(subcategoryId, current);
+    };
+    for (const plan of input.remainingIncomePlans ?? []) {
+      if (plan.accountId === account.id)
+        addIncomeSignal(plan.subcategoryId, "planCents", plan.amountCents);
+    }
+    for (const forecast of input.recurrenceForecasts) {
+      if (
+        forecast.kind === "income" &&
+        forecast.sourceKind === "account" &&
+        forecast.sourceId === account.id
+      ) {
+        addIncomeSignal(forecast.subcategoryId, "recurrenceCents", forecast.amountCents);
+      }
+    }
+    for (const forecast of plannedForecasts) {
+      if (
+        forecast.kind === "income" &&
+        forecast.sourceKind === "account" &&
+        forecast.sourceId === account.id
+      ) {
+        addIncomeSignal(forecast.subcategoryId, "transactionCents", forecast.amountCents);
+      }
+    }
+    const expectedIncome = [...incomeSignals.values()].reduce(
+      (total, signal) =>
+        total + Math.max(signal.planCents, signal.recurrenceCents, signal.transactionCents),
+      0
+    );
     const expectedIncomeCents = account.type === "benefit" ? 0 : expectedIncome;
     const benefitIncomeCents = account.type === "benefit" ? expectedIncome : 0;
     const directPlanRemainingCents = projectedExpenses(
@@ -401,7 +478,7 @@ export function buildAccountCashProjection(
       input.remainingPlans.filter(
         (plan) => plan.kind === "credit_card" && accountCardIds.has(plan.sourceId)
       ),
-      input.recurrenceForecasts.filter(
+      forecasts.filter(
         (forecast) => forecast.sourceKind === "credit_card" && accountCardIds.has(forecast.sourceId)
       )
     );

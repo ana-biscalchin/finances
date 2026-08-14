@@ -219,6 +219,33 @@ export const monthlyBudgetAllocations = pgTable(
   ]
 );
 
+export const monthlyIncomePlans = pgTable(
+  "monthly_income_plans",
+  {
+    id: text("id").primaryKey(),
+    ownerId: ownedByUser(),
+    budgetMonth: text("budget_month").notNull(),
+    subcategoryId: text("subcategory_id")
+      .notNull()
+      .references(() => subcategories.id),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id),
+    amountCents: integer("amount_cents").notNull(),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("monthly_income_plans_owner_month_key_unique").on(
+      table.ownerId,
+      table.budgetMonth,
+      table.subcategoryId,
+      table.accountId
+    ),
+    index("monthly_income_plans_owner_month_idx").on(table.ownerId, table.budgetMonth),
+    check("monthly_income_plans_positive_amount", sql`${table.amountCents} > 0`)
+  ]
+);
+
 export const creditCardBills = pgTable(
   "credit_card_bills",
   {

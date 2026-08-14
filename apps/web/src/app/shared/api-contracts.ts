@@ -169,6 +169,32 @@ export const monthlyOverviewSchema = z.object({
       })
     ])
   ),
+  incomePlanning: z.object({
+    summary: z.object({
+      plannedCents: cents.nonnegative(),
+      receivedCents: cents.nonnegative(),
+      remainingCents: cents.nonnegative(),
+      abovePlannedCents: cents.nonnegative()
+    }),
+    items: z.array(
+      z.object({
+        subcategoryId: z.string().min(1),
+        subcategoryName: z.string(),
+        categoryName: z.string(),
+        accountId: z.string().min(1),
+        accountName: z.string(),
+        plannedCents: cents.nonnegative(),
+        receivedCents: cents.nonnegative(),
+        remainingCents: cents.nonnegative(),
+        abovePlannedCents: cents.nonnegative(),
+        status: z.enum(["pending", "partial", "received", "above_planned", "unplanned"])
+      })
+    ),
+    availableSubcategories: z.array(
+      z.object({ id: z.string().min(1), name: z.string(), categoryName: z.string() })
+    ),
+    availableAccounts: z.array(z.object({ id: z.string().min(1), name: z.string() }))
+  }),
   transfers: z.array(
     z.object({
       id: z.string().min(1),

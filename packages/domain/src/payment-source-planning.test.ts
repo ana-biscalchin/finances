@@ -373,6 +373,76 @@ describe("payment source planning", () => {
 });
 
 describe("account cash projection", () => {
+  it("uses the greater remaining income signal without double counting plans and forecasts", () => {
+    const [result] = buildAccountCashProjection({
+      accounts: [{ id: "checking", type: "checking", initialBalanceCents: 0 }],
+      transactions: [
+        {
+          accountId: "checking",
+          subcategoryId: "salary",
+          type: "income",
+          status: "planned",
+          amountCents: 400_000
+        }
+      ],
+      remainingPlans: [],
+      remainingIncomePlans: [
+        { accountId: "checking", subcategoryId: "salary", amountCents: 450_000 }
+      ],
+      recurrenceForecasts: [
+        {
+          kind: "income",
+          sourceKind: "account",
+          sourceId: "checking",
+          subcategoryId: "salary",
+          amountCents: 420_000
+        }
+      ],
+      cards: [],
+      outstandingBills: []
+    });
+
+    expect(result?.expectedIncomeCents).toBe(450_000);
+    expect(result?.expectedBalanceCents).toBe(450_000);
+  });
+
+  it("adds planned income and expenses to expected balance without changing current balance", () => {
+    const [result] = buildAccountCashProjection({
+      accounts: [{ id: "checking", type: "checking", initialBalanceCents: 100_000 }],
+      transactions: [
+        {
+          accountId: "checking",
+          subcategoryId: "salary",
+          type: "income",
+          status: "planned",
+          amountCents: 50_000
+        },
+        {
+          accountId: "checking",
+          subcategoryId: "rent",
+          type: "expense",
+          status: "planned",
+          amountCents: 30_000
+        }
+      ],
+      remainingPlans: [
+        { kind: "account", sourceId: "checking", subcategoryId: "rent", amountCents: 20_000 }
+      ],
+      recurrenceForecasts: [],
+      cards: [],
+      outstandingBills: []
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        currentBalanceCents: 100_000,
+        expectedIncomeCents: 50_000,
+        directPlanRemainingCents: 30_000,
+        expectedBalanceCents: 120_000
+      })
+    );
+  });
+
   it("projects each account independently from remaining direct plans and future income", () => {
     const result = buildAccountCashProjection({
       accounts: [

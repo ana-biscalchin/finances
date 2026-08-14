@@ -30,6 +30,7 @@ import { registerTransferRoutes } from "./modules/transfers.js";
 import { registerRecurrenceRoutes } from "./modules/recurrences.js";
 import { registerMonthlyOverviewRoutes } from "./modules/monthly-overview.js";
 import { registerMonthlyBudgetAllocationRoutes } from "./modules/monthly-budget-allocations.js";
+import { registerMonthlyIncomePlanRoutes } from "./modules/monthly-income-plans.js";
 import { registerSimpleImportRoutes } from "./modules/simple-import.js";
 
 type BuildServerOptions = {
@@ -207,6 +208,7 @@ export function buildServer(options: BuildServerOptions = {}) {
     registerRecurrenceRoutes(routesApp, applicationConnection);
     registerMonthlyOverviewRoutes(routesApp, applicationConnection);
     registerMonthlyBudgetAllocationRoutes(routesApp, applicationConnection);
+    registerMonthlyIncomePlanRoutes(routesApp, applicationConnection);
     registerSimpleImportRoutes(routesApp, applicationConnection);
   };
   app.register(registerBusinessRoutes, { prefix: "/api" });
