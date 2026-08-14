@@ -5,7 +5,7 @@
 **Sponsor:** Ana
 **Status:** implemented — aguardando UAT visual
 **PRD:** não existe
-**Criado em:** 2026-07-13  ·  **Última atualização:** 2026-08-14
+**Criado em:** 2026-07-13 · **Última atualização:** 2026-08-14
 
 ---
 
@@ -51,6 +51,7 @@ expandir categorias para comparar, por exemplo, `Flash Alimentação · Pré-pag
 - [x] Remover código e contratos substituídos, reconstruindo o banco de desenvolvimento sobre uma baseline revisada.
 - [ ] Transformar a Visão do mês em um painel de controle orientado a acompanhamento e exceções.
 - [ ] Exibir transferências entre contas em uma área própria, sem fazê-las consumir orçamento.
+- [ ] Planejar entradas por categoria de receita e conta, comparando previsto, recebido e a receber.
 
 ## Revisão de premissa — unidade do planejamento
 
@@ -82,16 +83,16 @@ valor acima do planejado por combinação e no total da categoria.
 
 ## Fora de escopo
 
-| Item | Por que está fora |
-| --- | --- |
-| Meta máxima de uso do cartão | A sponsor quer controle transparente, sem meta imposta pelo sistema. |
-| Cadastro de cartão físico pré-pago | `Flash Alimentação` e `Flash Conveniência` são contas; `cartão pré-pago` é a forma de pagamento. |
-| Transferências entre contas consumirem orçamento | Movimentam caixa, mas não representam consumo, receita ou despesa. |
-| Bloqueio rígido de categorias por benefício | A aceitação depende do estabelecimento; uma orientação poderá ser evoluída depois. |
-| Data-base explícita do saldo inicial | Permanece no backlog conforme decisão anterior. |
-| Conciliação ou importação automática dos saldos Flash | Evolução futura do fluxo de importação. |
-| Múltiplas moedas | O produto permanece exclusivamente em BRL. |
-| Exclusão automática de backups pessoais | A reconstrução destrutiva vale para bancos de desenvolvimento explicitamente selecionados, não para cópias de segurança. |
+| Item                                                  | Por que está fora                                                                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Meta máxima de uso do cartão                          | A sponsor quer controle transparente, sem meta imposta pelo sistema.                                                     |
+| Cadastro de cartão físico pré-pago                    | `Flash Alimentação` e `Flash Conveniência` são contas; `cartão pré-pago` é a forma de pagamento.                         |
+| Transferências entre contas consumirem orçamento      | Movimentam caixa, mas não representam consumo, receita ou despesa.                                                       |
+| Bloqueio rígido de categorias por benefício           | A aceitação depende do estabelecimento; uma orientação poderá ser evoluída depois.                                       |
+| Data-base explícita do saldo inicial                  | Permanece no backlog conforme decisão anterior.                                                                          |
+| Conciliação ou importação automática dos saldos Flash | Evolução futura do fluxo de importação.                                                                                  |
+| Múltiplas moedas                                      | O produto permanece exclusivamente em BRL.                                                                               |
+| Exclusão automática de backups pessoais               | A reconstrução destrutiva vale para bancos de desenvolvimento explicitamente selecionados, não para cópias de segurança. |
 
 ---
 
@@ -246,6 +247,28 @@ compatibilidade com contratos descartados aumentaria o risco e o custo da nova f
 **Teste independente:** Recriar uma base temporária vazia, executar baseline e seeds, validar
 integridade e confirmar por busca, build e testes que nenhum contrato removido continua referenciado.
 
+### P1: Acompanhar entradas previstas e realizadas ⭐ MVP
+
+**Story:** Como usuária, quero planejar as entradas do mês por categoria de receita e conta de
+destino para saber o que já recebi, o que ainda falta receber e se o valor real divergiu do previsto.
+**Por que P1:** Separar receita do orçamento de gastos sem oferecer conciliação das entradas deixa o
+painel mensal incompleto e impede confiar no saldo esperado.
+
+**Critérios de aceite:**
+
+1. QUANDO uma entrada for planejada ENTÃO o sistema DEVE exigir mês, subcategoria de receita, conta de destino e valor positivo.
+2. QUANDO receitas confirmadas ou conciliadas coincidirem em `mês + subcategoria + conta` ENTÃO o sistema DEVE somá-las como recebido daquela previsão.
+3. QUANDO o recebido for menor que o previsto ENTÃO o sistema DEVE mostrar o valor ainda a receber.
+4. QUANDO o recebido superar o previsto ENTÃO o sistema DEVE mostrar a diferença recebida acima do previsto.
+5. QUANDO houver receita realizada sem previsão ENTÃO o sistema DEVE exibi-la como entrada não planejada, sem ocultá-la nem transformá-la em orçamento de despesa.
+6. QUANDO houver uma transferência entre contas próprias ENTÃO suas pernas NÃO DEVEM realizar nenhuma previsão de entrada.
+7. QUANDO uma previsão for criada, editada ou removida ENTÃO os totais de previsto, recebido e a receber DEVEM ser atualizados após a confirmação da API.
+8. QUANDO o saldo esperado por conta for calculado ENTÃO a entrada restante DEVE ser considerada uma vez, sem duplicar recorrência ou lançamento `planned` equivalente.
+
+**Teste independente:** Planejar Salário de R$ 8.500 para a conta principal e Benefício Alimentação
+de R$ 1.000 para a conta Flash; registrar recebimentos integral e parcial, confirmar os estados
+`recebido` e `parcial` e verificar os saldos esperados das contas.
+
 ---
 
 ## Edge cases
@@ -262,6 +285,8 @@ integridade e confirmar por busca, build e testes que nenhum contrato removido c
 - QUANDO a forma `Transferência` for usada para pagar uma despesa a terceiro ENTÃO o sistema DEVE tratá-la como consumo da combinação escolhida, sem confundi-la com transferência entre contas próprias.
 - QUANDO não houver transferências no mês ENTÃO a seção correspondente DEVE apresentar estado vazio compacto, sem competir com os alertas de orçamento.
 - QUANDO uma operação falhar ENTÃO o sistema DEVE preservar o estado anterior e expor erro reproduzível.
+- QUANDO uma previsão usar categoria de despesa ou conta de outro owner ENTÃO a API DEVE rejeitar a operação sem alterar o planejamento anterior.
+- QUANDO várias receitas realizarem a mesma previsão ENTÃO o recebido DEVE ser a soma em centavos, independentemente da forma usada no lançamento.
 - QUANDO a varredura encontrar código aparentemente morto mas alcançável por registro dinâmico ENTÃO o sistema de trabalho DEVE preservá-lo até que a ausência de uso seja comprovada.
 - QUANDO o caminho de um banco destrutivo não puder ser classificado com segurança ENTÃO o comando DEVE falhar sem alterar arquivos.
 
@@ -288,36 +313,38 @@ integridade e confirmar por busca, build e testes que nenhum contrato removido c
 
 ## Rastreabilidade de requisitos
 
-| ID | Story | Origem | Fase | Status |
-| --- | --- | --- | --- | --- |
-| ACC-01 | P1: Cadastrar contas que representam saldos | decisão da sponsor | Tasks | Em tasks |
-| PMT-01 | P1: Associar formas de pagamento às contas | decisão da sponsor | Tasks | Em tasks |
-| PLAN-01 | P1: Distribuir o planejamento | decisão da sponsor | Tasks | Em tasks |
-| EXEC-01 | P1: Comparar execução por origem | decisão da sponsor | Tasks | Em tasks |
-| CASH-02 | P1: Conferir impacto nos saldos | decisão da sponsor | Tasks | Em tasks |
-| UX-02 | P2: Configuração simples das origens | decisão da sponsor | Tasks | Em tasks |
-| CLEAN-01 | P1: Remover legado e reconstruir o armazenamento | decisão da sponsor | Tasks | Em tasks |
-| DASH-01 | P1: Operar o painel de controle do mês | decisão da sponsor | Tasks | Em tasks |
-| TRANS-02 | P1: Exibir transferências sem impacto no orçamento | decisão da sponsor | Tasks | Em tasks |
+| ID        | Story                                              | Origem             | Fase  | Status   |
+| --------- | -------------------------------------------------- | ------------------ | ----- | -------- |
+| ACC-01    | P1: Cadastrar contas que representam saldos        | decisão da sponsor | Tasks | Em tasks |
+| PMT-01    | P1: Associar formas de pagamento às contas         | decisão da sponsor | Tasks | Em tasks |
+| PLAN-01   | P1: Distribuir o planejamento                      | decisão da sponsor | Tasks | Em tasks |
+| EXEC-01   | P1: Comparar execução por origem                   | decisão da sponsor | Tasks | Em tasks |
+| CASH-02   | P1: Conferir impacto nos saldos                    | decisão da sponsor | Tasks | Em tasks |
+| UX-02     | P2: Configuração simples das origens               | decisão da sponsor | Tasks | Em tasks |
+| CLEAN-01  | P1: Remover legado e reconstruir o armazenamento   | decisão da sponsor | Tasks | Em tasks |
+| DASH-01   | P1: Operar o painel de controle do mês             | decisão da sponsor | Tasks | Em tasks |
+| TRANS-02  | P1: Exibir transferências sem impacto no orçamento | decisão da sponsor | Tasks | Em tasks |
+| INCOME-01 | P1: Acompanhar entradas previstas e realizadas     | decisão da sponsor | UAT   | Implementado — aguarda UAT visual |
 
-**Cobertura:** 9 total · 9 mapeados em tasks · 0 sem mapeamento.
+**Cobertura:** 10 total · 10 mapeados em tasks · 0 sem mapeamento.
 
 ## Delta sobre as capacidades
 
 O `CAPABILITIES.md` ainda é uma semente vazia. Os requisitos entram como `ADDED`, embora `PLAN-01`
 substitua a regra de orçamento sem origem documentada na feature `monthly-foundation`.
 
-| ID | Tipo | Capacidade | Nota |
-| --- | --- | --- | --- |
-| ACC-01 | ADDED | Contas | Contas bancárias e pré-pagas representam saldos independentes e acumulativos. |
-| PMT-01 | ADDED | Formas de pagamento | Formas predefinidas são associadas às contas e preservadas na realização. |
-| PLAN-01 | ADDED | Controle mensal | Planejamento por subcategoria distribuído entre combinações de conta e forma de pagamento e cartões de crédito. |
-| EXEC-01 | ADDED | Controle mensal | Comparação do planejado e realizado por meio de pagamento. |
-| CASH-02 | ADDED | Dinheiro nas contas | Saldo previsto considera consumo direto restante e faturas sem duplicidade. |
-| UX-02 | ADDED | Configuração financeira | Cadastro sugere associações compatíveis e apresenta escolhas em linguagem simples. |
-| CLEAN-01 | ADDED | Manutenção e armazenamento | Código substituído é removido e o banco de desenvolvimento parte de baseline revisada. |
-| DASH-01 | ADDED | Controle mensal | Painel do mês prioriza totais, exceções e detalhamento progressivo por meio de pagamento. |
-| TRANS-02 | ADDED | Controle mensal | Transferências aparecem separadas no painel e não alteram o orçamento. |
+| ID        | Tipo  | Capacidade                 | Nota                                                                                                            |
+| --------- | ----- | -------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| ACC-01    | ADDED | Contas                     | Contas bancárias e pré-pagas representam saldos independentes e acumulativos.                                   |
+| PMT-01    | ADDED | Formas de pagamento        | Formas predefinidas são associadas às contas e preservadas na realização.                                       |
+| PLAN-01   | ADDED | Controle mensal            | Planejamento por subcategoria distribuído entre combinações de conta e forma de pagamento e cartões de crédito. |
+| EXEC-01   | ADDED | Controle mensal            | Comparação do planejado e realizado por meio de pagamento.                                                      |
+| CASH-02   | ADDED | Dinheiro nas contas        | Saldo previsto considera consumo direto restante e faturas sem duplicidade.                                     |
+| UX-02     | ADDED | Configuração financeira    | Cadastro sugere associações compatíveis e apresenta escolhas em linguagem simples.                              |
+| CLEAN-01  | ADDED | Manutenção e armazenamento | Código substituído é removido e o banco de desenvolvimento parte de baseline revisada.                          |
+| DASH-01   | ADDED | Controle mensal            | Painel do mês prioriza totais, exceções e detalhamento progressivo por meio de pagamento.                       |
+| TRANS-02  | ADDED | Controle mensal            | Transferências aparecem separadas no painel e não alteram o orçamento.                                          |
+| INCOME-01 | ADDED | Controle mensal            | Entradas possuem planejamento próprio por categoria de receita e conta, conciliado com receitas realizadas.     |
 
 ## Critérios de sucesso
 
@@ -332,6 +359,7 @@ substitua a regra de orçamento sem origem documentada na feature `monthly-found
 - [ ] Nenhum fluxo apresenta o cartão físico Flash como conta ou fonte adicional.
 - [ ] Uma base temporária pode ser destruída e reconstruída integralmente com baseline, seeds e integridade válidos.
 - [ ] Nenhuma referência aos contratos removidos permanece no runtime, build, testes ou documentação canônica.
+- [ ] A usuária identifica no painel quanto esperava receber, quanto recebeu, quanto falta e quanto entrou acima do previsto.
 
 ## Riscos conhecidos
 

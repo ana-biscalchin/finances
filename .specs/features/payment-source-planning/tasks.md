@@ -1,7 +1,53 @@
 # Tasks — Planejamento mensal por categoria e meio de pagamento
 
 **Design:** `.specs/features/payment-source-planning/design.md` · **Spec:** `.specs/features/payment-source-planning/spec.md`
-**Status:** implementação e gates automatizados concluídos; T10 aguarda UAT visual
+**Status:** implementação e gates automatizados concluídos; T10 e a validação visual de T15 aguardam UAT
+
+## Extensão aprovada — acompanhamento de entradas
+
+**Evidência de execução — 2026-08-14:** T11–T14 e gates automatizados de T15 concluídos em RED →
+GREEN. Migration SQLite aplicada com backup e integridade válida; smoke autenticado confirmou três
+entradas conciliadas. Resta somente a revisão visual da usuária antes de marcar `INCOME-01` como
+verificado.
+
+### T11: Persistir previsões mensais de receita
+
+- **O quê:** criar domínio, tabela e migrations equivalentes para previsões por mês, categoria de receita e conta.
+- **Requisito:** INCOME-01.
+- **Pronto quando:** constraints rejeitam valor não positivo e chave duplicada; testes SQLite e domínio passam; constituição `testing.md` e `coding-style.md`.
+- **Gate:** `pnpm --filter @finances/database test && pnpm --filter @finances/domain test`.
+
+### T12: Criar escrita atômica das previsões
+
+- **O quê:** implementar `PUT /monthly-income-plans` com validação de owner, natureza e atividade.
+- **Depende de:** T11.
+- **Requisito:** INCOME-01.
+- **Pronto quando:** substituição e remoção são atômicas, erro preserva dados e testes HTTP passam; constituição `error-handling.md` e `web-standards.md`.
+- **Gate:** `pnpm --filter @finances/api test`.
+
+### T13: Conciliar entradas no dashboard e no saldo esperado
+
+- **O quê:** ampliar o snapshot mensal e a projeção por conta sem duplicar outras previsões.
+- **Depende de:** T11, T12.
+- **Requisito:** INCOME-01, CASH-02.
+- **Pronto quando:** previsto, recebido, a receber, excedente e não planejado são exatos; transferências ficam fora; testes de domínio/API passam; constituição `testing.md`.
+- **Gate:** `pnpm --filter @finances/domain test && pnpm --filter @finances/api test`.
+
+### T14: Adicionar acompanhamento e edição de entradas na visão mensal
+
+- **O quê:** criar resumo, tabela e editor de entradas reutilizando cliente, dinheiro e padrões do orçamento.
+- **Depende de:** T12, T13.
+- **Requisito:** INCOME-01, DASH-01.
+- **Pronto quando:** painel mostra estados integral, parcial, excedente e não planejado; salvar preserva erro/rascunho; contratos e testes web passam; constituição `web-standards.md`.
+- **Gate:** `pnpm --filter @finances/web test && pnpm --filter @finances/web build`.
+
+### T15: Migrar, documentar e validar a extensão
+
+- **O quê:** aplicar migration local com backup, atualizar regras/arquitetura, executar regressão e UAT.
+- **Depende de:** T11–T14.
+- **Requisito:** INCOME-01.
+- **Pronto quando:** banco íntegro, `pnpm check` verde, smoke autenticado e app em 5173; constituição `pr-conventions.md`.
+- **Gate:** `pnpm check` + smoke HTTP + UAT visual.
 
 ## Evidência de execução — 2026-08-14
 
@@ -68,16 +114,16 @@ Fase 4 — fechamento:        T6,T7,T8 ─► T9 ─► T10
 - **Ferramentas:** Skill `ana-tdd`.
 - **Pronto quando:**
   - [ ] Conta exige `accountId + paymentMethodId`; cartão exige somente `creditCardId`; variantes
-    inválidas e chaves duplicadas são rejeitadas.
+        inválidas e chaves duplicadas são rejeitadas.
   - [ ] Realizado é agregado pela combinação efetiva, gasto sem plano aparece com planejado zero e
-    estorno/reembolso não produz realizado negativo.
+        estorno/reembolso não produz realizado negativo.
   - [ ] Transferências próprias e pagamentos de fatura não realizam nenhuma alocação.
   - [ ] Atenção resulta em `over`, `near_limit` a partir de 80%, `unplanned`, `on_track` ou
-    `unused`, com percentual nulo quando o planejado é zero.
+        `unused`, com percentual nulo quando o planejado é zero.
   - [ ] Teste: `payment-source-planning.test.ts` cobre todas as variantes e regressões; gate do
-    pacote passa com cobertura do código novo ≥ 80%.
+        pacote passa com cobertura do código novo ≥ 80%.
   - [ ] Constituição: respeita `testing.md`, `coding-style.md` e
-    `verify-before-claiming.md`.
+        `verify-before-claiming.md`.
 - **Testes:** unit.
 - **Gate:** `pnpm --filter @finances/domain test && pnpm --filter @finances/domain typecheck`.
 - **Commit:** `feat(domain): plan budgets by payment method`.
@@ -96,11 +142,11 @@ Fase 4 — fechamento:        T6,T7,T8 ─► T9 ─► T10
   - [ ] Cada linha aceita conta+forma XOR cartão, valor positivo e owner obrigatório.
   - [ ] Duplicidades por mês, subcategoria e meio são rejeitadas em SQLite e PostgreSQL.
   - [ ] Migration não converte silenciosamente `planned_expenses`; rollback/recuperação e impacto da
-    remoção posterior estão documentados.
+        remoção posterior estão documentados.
   - [ ] Base temporária vazia migra nos dois dialetos suportados e passa checks de FK/integridade.
   - [ ] Teste: pacote database cobre constraints e equivalência; gate passa sem acessar banco pessoal.
   - [ ] Constituição: respeita `testing.md`, `surgical-edits.md` e rigor de migration/storage em
-    `pr-conventions.md`.
+        `pr-conventions.md`.
 - **Testes:** integração SQLite isolada + integração PostgreSQL quando o harness local estiver disponível.
 - **Gate:** `pnpm --filter @finances/database test && pnpm --filter @finances/database typecheck`.
 - **Commit:** `feat(database): store monthly budget allocations`.
@@ -121,7 +167,7 @@ Fase 4 — fechamento:        T6,T7,T8 ─► T9 ─► T10
   - [ ] Cópia exige destino vazio, cria IDs novos e informa combinações arquivadas ignoradas.
   - [ ] Erros de validação, ausência e conflito retornam 400, 404 e 409 coerentes sem valores em logs.
   - [ ] Teste: API cobre sucesso, lista vazia, duplicidade, owner cruzado, arquivamento, destino
-    preenchido e rollback; cobertura nova ≥ 80%.
+        preenchido e rollback; cobertura nova ≥ 80%.
   - [ ] Constituição: respeita `error-handling.md`, `web-standards.md` e contratos Zod na borda.
 - **Testes:** unit de serviço + integração HTTP/SQLite isolada.
 - **Gate:** `pnpm --filter @finances/api test && pnpm --filter @finances/api typecheck`.
@@ -141,13 +187,13 @@ Fase 4 — fechamento:        T6,T7,T8 ─► T9 ─► T10
   - [ ] Totais da categoria e do mês são derivados das alocações e lançamentos confirmados.
   - [ ] Despesas em conta agrupam por conta+forma; cartão agrupa pelo mês da fatura.
   - [ ] Transferências realizadas do mês retornam uma vez, com origem/destino, e não alteram
-    `summary`, itens ou atenção.
+        `summary`, itens ou atenção.
   - [ ] Pagamento de fatura e pernas de transferência permanecem excluídos do gasto.
   - [ ] A consulta não executa uma busca adicional por categoria ou transferência.
   - [ ] Agregado de transferência inconsistente falha com contexto e correlação; não é reconstruído
-    silenciosamente pelas pernas.
+        silenciosamente pelas pernas.
   - [ ] Teste: API cobre Flash, Nubank com duas formas, cartão, parcela, gasto não planejado,
-    transferência dentro/fora do mês e owner scope.
+        transferência dentro/fora do mês e owner scope.
   - [ ] Constituição: respeita `testing.md`, `error-handling.md` e observabilidade sem dados financeiros.
 - **Testes:** unit de domínio + integração HTTP/SQLite isolada.
 - **Gate:** `pnpm --filter @finances/api test && pnpm --filter @finances/domain test`.
@@ -207,13 +253,13 @@ Fase 4 — fechamento:        T6,T7,T8 ─► T9 ─► T10
 - **Pronto quando:**
   - [ ] Resumo mostra planejado, gasto e disponível ou acima sem promover `comprometido`.
   - [ ] Exceções priorizam `over`, `unplanned` e `near_limit`; categorias restantes preservam
-    ordem cadastrada.
+        ordem cadastrada.
   - [ ] Categoria recolhida mostra totais; expandida mostra cada meio e sua situação.
   - [ ] Estado sem plano oferece começar do zero ou copiar outro mês.
   - [ ] Layout empilha valores em tela estreita e situação possui texto/valor além de cor.
   - [ ] Falha de GET mostra retry e nunca converte ausência de dados em zeros.
   - [ ] Teste: helpers/componentes cobrem as cinco classificações, ordenação, vazio, responsividade
-    estrutural e acessibilidade.
+        estrutural e acessibilidade.
   - [ ] Constituição: respeita `testing.md`, `web-standards.md` e `surgical-edits.md`.
 - **Testes:** unit + componente.
 - **Gate:** `pnpm --filter @finances/web test && pnpm --filter @finances/web build`.
@@ -253,10 +299,10 @@ Fase 4 — fechamento:        T6,T7,T8 ─► T9 ─► T10
   - [ ] Tabela, rotas, serviço, schemas e componentes de `planned_expenses` deixam de existir.
   - [ ] Nenhum teste é removido sem cobertura equivalente nas tasks T1–T8.
   - [ ] Seeds demonstram Supermercado dividido entre Flash Pré-pago e Nubank Débito e transferência
-    própria separada.
+        própria separada.
   - [ ] Migrations finais dos dois dialetos e reset UAT temporário preservam integridade.
   - [ ] Constituição: respeita `surgical-edits.md`, `verify-before-claiming.md` e proibição de
-    deleção especulativa.
+        deleção especulativa.
 - **Testes:** regressão completa dos pacotes afetados + integração isolada de migration/seed.
 - **Gate:** `pnpm check`.
 - **Commit:** `refactor(finances): remove planned expense budgeting`.
@@ -272,13 +318,13 @@ Fase 4 — fechamento:        T6,T7,T8 ─► T9 ─► T10
 - **Ferramentas:** `ana-update-readme` quando aplicável; `ana-code-review`; navegador/UAT local.
 - **Pronto quando:**
   - [ ] UAT visual planeja Supermercado em `Flash Alimentação · Pré-pago` e `Nubank · Débito`,
-    registra gasto abaixo e acima e confere os saldos.
+        registra gasto abaixo e acima e confere os saldos.
   - [ ] UAT mostra gasto não planejado, próximo do limite em 80%, cartão no mês da fatura e erro com
-    rascunho preservado.
+        rascunho preservado.
   - [ ] Transferência entre contas aparece no painel, movimenta os saldos e não altera orçamento,
-    gasto ou receita.
+        gasto ou receita.
   - [ ] `pnpm check` passa; testes não diminuem sem justificativa; SQLite e PostgreSQL possuem
-    evidência compatível de migration.
+        evidência compatível de migration.
   - [ ] Documentação não descreve total paralelo, `planned_expenses` ou transferência própria como gasto.
   - [ ] Spec marca requisito como `Verificado` somente após evidência e revisão visual da usuária.
   - [ ] `pnpm dev` permanece rodando em segundo plano para a revisão visual.
@@ -293,59 +339,59 @@ Fase 4 — fechamento:        T6,T7,T8 ─► T9 ─► T10
 
 ### Granularidade
 
-| Task | Entrega única | Status |
-| --- | --- | --- |
-| T1 | Domínio puro e classificação | ✅ |
-| T2 | Schema e migrations da mesma entidade | ✅ |
-| T3 | API de escrita/cópia | ✅ |
-| T4 | Snapshot de leitura do dashboard | ✅ |
-| T5 | Contratos e helpers web | ✅ |
-| T6 | Editor de alocações | ✅ |
-| T7 | Resumo, atenção e categorias | ✅ |
-| T8 | Painel de transferências | ✅ |
-| T9 | Remoção comprovada do fluxo substituído | ✅ |
-| T10 | UAT e documentação | ✅ |
+| Task | Entrega única                           | Status |
+| ---- | --------------------------------------- | ------ |
+| T1   | Domínio puro e classificação            | ✅     |
+| T2   | Schema e migrations da mesma entidade   | ✅     |
+| T3   | API de escrita/cópia                    | ✅     |
+| T4   | Snapshot de leitura do dashboard        | ✅     |
+| T5   | Contratos e helpers web                 | ✅     |
+| T6   | Editor de alocações                     | ✅     |
+| T7   | Resumo, atenção e categorias            | ✅     |
+| T8   | Painel de transferências                | ✅     |
+| T9   | Remoção comprovada do fluxo substituído | ✅     |
+| T10  | UAT e documentação                      | ✅     |
 
 ### Diagrama × dependências
 
-| Task | Depende de | Plano mostra | Status |
-| --- | --- | --- | --- |
-| T1 | nenhuma | raiz paralela | ✅ |
-| T2 | nenhuma | raiz paralela | ✅ |
-| T3 | T1, T2 | T1,T2 → T3 | ✅ |
-| T4 | T1, T2, T3 | T3 → T4 | ✅ |
-| T5 | T4 | T4 → T5 | ✅ |
-| T6 | T3, T5 | T3,T5 → T6 | ✅ |
-| T7 | T4, T5 | T4,T5 → T7 | ✅ |
-| T8 | T4, T5 | T4,T5 → T8 | ✅ |
-| T9 | T6, T7, T8 | T6,T7,T8 → T9 | ✅ |
-| T10 | T9 | T9 → T10 | ✅ |
+| Task | Depende de | Plano mostra  | Status |
+| ---- | ---------- | ------------- | ------ |
+| T1   | nenhuma    | raiz paralela | ✅     |
+| T2   | nenhuma    | raiz paralela | ✅     |
+| T3   | T1, T2     | T1,T2 → T3    | ✅     |
+| T4   | T1, T2, T3 | T3 → T4       | ✅     |
+| T5   | T4         | T4 → T5       | ✅     |
+| T6   | T3, T5     | T3,T5 → T6    | ✅     |
+| T7   | T4, T5     | T4,T5 → T7    | ✅     |
+| T8   | T4, T5     | T4,T5 → T8    | ✅     |
+| T9   | T6, T7, T8 | T6,T7,T8 → T9 | ✅     |
+| T10  | T9         | T9 → T10      | ✅     |
 
 ### Co-locação de testes
 
-| Tasks | Camada | Constituição exige | Planejado | Status |
-| --- | --- | --- | --- | --- |
-| T1 | domínio puro | unit | unit co-locado | ✅ |
-| T2 | schema/migration | integração isolada | testes na própria task | ✅ |
-| T3–T4 | serviço/API | unit + HTTP/banco isolado | testes em cada task | ✅ |
-| T5 | contratos/helpers | unit | unit co-locado | ✅ |
-| T6–T8 | frontend | unit/componente | testes em cada task | ✅ |
-| T9 | remoção comportamental | regressão + equivalência | gate completo | ✅ |
-| T10 | entrega | suíte + UAT | evidência completa | ✅ |
+| Tasks | Camada                 | Constituição exige        | Planejado              | Status |
+| ----- | ---------------------- | ------------------------- | ---------------------- | ------ |
+| T1    | domínio puro           | unit                      | unit co-locado         | ✅     |
+| T2    | schema/migration       | integração isolada        | testes na própria task | ✅     |
+| T3–T4 | serviço/API            | unit + HTTP/banco isolado | testes em cada task    | ✅     |
+| T5    | contratos/helpers      | unit                      | unit co-locado         | ✅     |
+| T6–T8 | frontend               | unit/componente           | testes em cada task    | ✅     |
+| T9    | remoção comportamental | regressão + equivalência  | gate completo          | ✅     |
+| T10   | entrega                | suíte + UAT               | evidência completa     | ✅     |
 
 ### Rastreabilidade
 
-| Requisito | Tasks |
-| --- | --- |
-| ACC-01 | T3, T10 |
-| PMT-01 | T1, T3, T5, T10 |
-| PLAN-01 | T1, T2, T3, T5, T6, T9, T10 |
-| EXEC-01 | T1, T4, T7, T10 |
-| CASH-02 | T4, T10 |
-| UX-02 | T5, T6, T7, T10 |
-| CLEAN-01 | T2, T3, T9, T10 |
-| DASH-01 | T1, T4, T5, T7, T8, T10 |
-| TRANS-02 | T1, T4, T5, T8, T10 |
+| Requisito | Tasks                       |
+| --------- | --------------------------- |
+| ACC-01    | T3, T10                     |
+| PMT-01    | T1, T3, T5, T10             |
+| PLAN-01   | T1, T2, T3, T5, T6, T9, T10 |
+| EXEC-01   | T1, T4, T7, T10             |
+| CASH-02   | T4, T10                     |
+| UX-02     | T5, T6, T7, T10             |
+| CLEAN-01  | T2, T3, T9, T10             |
+| DASH-01   | T1, T4, T5, T7, T8, T10     |
+| TRANS-02  | T1, T4, T5, T8, T10         |
 
 **Cobertura:** 9 requisitos · 9 mapeados · 0 sem task.
 
