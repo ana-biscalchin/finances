@@ -5,15 +5,16 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 ## Visão do mês e orçamento
 
 - A construção inicial é mensal, com evolução patrimonial de longo prazo no backlog.
-- O orçamento mantém um total por mês e subcategoria e pode ser distribuído entre contas e cartões de crédito.
-- A distribuição pode ficar incompleta; o valor ainda sem origem permanece visível e não impede salvar.
-- A forma de pagamento não recebe orçamento próprio: ela explica como uma conta foi usada. O realizado é agrupado pela conta ou pelo cartão.
+- O orçamento é composto por alocações de `mês + subcategoria + conta + forma de pagamento` ou de `mês + subcategoria + cartão de crédito`.
+- O total planejado da subcategoria e do mês é sempre a soma das alocações; não existe um total paralelo ou valor sem origem.
+- Conta e forma são granulares: Nubank · Pix, Nubank · Débito e Nubank · Boleto podem ter valores planejados e realizados independentes.
 - A interface mostra **planejado**, **gasto**, **disponível** e **acima do planejado**. `Comprometido` não é indicador principal.
 - `disponível = max(planejado - gasto, 0)` e `acima do planejado = max(gasto - planejado, 0)`.
-- Valor zero remove uma alocação, mediante confirmação na interface.
+- Uma alocação exige valor positivo; removê-la do conjunto salvo remove seu planejamento.
 - Compras parceladas consomem o orçamento pela parcela no mês da fatura. A data original da compra é preservada para análises.
-- Transferências e pagamentos de fatura não contam novamente como gasto.
-- A API canônica é `GET /monthly-overview?month=YYYY-MM` e `PUT /monthly-budgets`.
+- Transferências entre contas próprias aparecem em uma seção separada do painel e não alteram orçamento, gasto, receita ou disponível.
+- Pagamentos de fatura não contam novamente como gasto.
+- As APIs canônicas são `GET /monthly-overview?month=YYYY-MM`, `PUT /monthly-budget-allocations` e `POST /monthly-budget-allocations/copy`.
 
 ## Dinheiro nas contas
 
