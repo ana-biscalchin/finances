@@ -12,6 +12,7 @@ import {
 } from "@finances/database";
 import {
   getCreditCardBillDates,
+  categoryNatureForTransactionType,
   importTransactionInputSchema,
   type ImportTransactionInput
 } from "@finances/domain";
@@ -69,16 +70,41 @@ export function createTransactionImportService(
   return {
     async preview(items: unknown[]) {
       const existing = await existingKeys();
+      const categoryRows = await connection.db
+        .select({ subcategoryId: subcategories.id, nature: categories.nature })
+        .from(subcategories)
+        .innerJoin(
+          categories,
+          and(eq(subcategories.categoryId, categories.id), eq(categories.ownerId, ownerId))
+        );
+      const categoryNatures = new Map(categoryRows.map((row) => [row.subcategoryId, row.nature]));
       return items.map((raw) => {
         const result = importTransactionInputSchema.safeParse(raw);
-        return result.success
-          ? { ...result.data, isValid: true, isDuplicate: existing.has(key(result.data)) }
-          : {
-              input: raw,
-              isValid: false,
-              isDuplicate: false,
-              errors: result.error.issues.map((issue) => issue.message)
-            };
+        if (!result.success) {
+          return {
+            input: raw,
+            isValid: false,
+            isDuplicate: false,
+            errors: result.error.issues.map((issue) => issue.message)
+          };
+        }
+        if (
+          result.data.subcategoryId &&
+          categoryNatures.get(result.data.subcategoryId) !==
+            categoryNatureForTransactionType(result.data.type)
+        ) {
+          return {
+            input: raw,
+            isValid: false,
+            isDuplicate: false,
+            errors: ["Tipo e categoria são incompatíveis."]
+          };
+        }
+        return {
+          ...result.data,
+          isValid: true,
+          isDuplicate: existing.has(key(result.data))
+        };
       });
     },
     async confirm(items: unknown[]) {
@@ -136,19 +162,25 @@ export function createTransactionImportService(
             item.type !== "expense" ||
             !item.subcategoryId ||
             Boolean(item.creditCardId || (item.accountId && item.paymentMethodId));
+          const category = item.subcategoryId
+            ? (
+                await connection.db
+                  .select()
+                  .from(subcategories)
+                  .innerJoin(
+                    categories,
+                    and(
+                      eq(subcategories.categoryId, categories.id),
+                      eq(categories.ownerId, ownerId)
+                    )
+                  )
+                  .where(eq(subcategories.id, item.subcategoryId))
+                  .limit(1)
+              )[0]
+            : null;
           const categoryValid =
             !item.subcategoryId ||
-            (
-              await connection.db
-                .select()
-                .from(subcategories)
-                .innerJoin(
-                  categories,
-                  and(eq(subcategories.categoryId, categories.id), eq(categories.ownerId, ownerId))
-                )
-                .where(eq(subcategories.id, item.subcategoryId))
-                .limit(1)
-            )[0];
+            category?.categories.nature === categoryNatureForTransactionType(item.type);
           const card = item.creditCardId
             ? (
                 await connection.db

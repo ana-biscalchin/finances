@@ -69,7 +69,7 @@ const paymentMethodOverviewSchema = z.discriminatedUnion("kind", [
     kind: z.literal("account_method"),
     accountId: z.string().min(1),
     paymentMethodId: z.string().min(1),
-    amountCents: cents.positive(),
+    amountCents: cents.nonnegative(),
     label: z.string(),
     plannedCents: cents.nonnegative(),
     spentCents: cents.nonnegative(),
@@ -82,7 +82,7 @@ const paymentMethodOverviewSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("credit_card"),
     creditCardId: z.string().min(1),
-    amountCents: cents.positive(),
+    amountCents: cents.nonnegative(),
     label: z.string(),
     plannedCents: cents.nonnegative(),
     spentCents: cents.nonnegative(),

@@ -38,3 +38,7 @@ export function assertTransactionStatus(value: string): TransactionStatus {
 
   return value;
 }
+
+export function categoryNatureForTransactionType(type: TransactionType): "income" | "expense" {
+  return type === "income" ? "income" : "expense";
+}

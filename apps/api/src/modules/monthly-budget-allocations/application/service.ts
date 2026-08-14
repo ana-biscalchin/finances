@@ -43,7 +43,7 @@ export function createMonthlyBudgetAllocationService(connection: Connection, own
   async function assertOwnedSubcategory(subcategoryId: string): Promise<void> {
     const row = (
       await db
-        .select({ id: subcategories.id })
+        .select({ id: subcategories.id, nature: categories.nature })
         .from(subcategories)
         .innerJoin(
           categories,
@@ -53,6 +53,12 @@ export function createMonthlyBudgetAllocationService(connection: Connection, own
         .limit(1)
     )[0];
     if (!row) throw new MonthlyBudgetAllocationError("Subcategoria não encontrada.", 404);
+    if (row.nature !== "expense") {
+      throw new MonthlyBudgetAllocationError(
+        "O orçamento aceita apenas categorias de despesa.",
+        409
+      );
+    }
   }
 
   async function isActiveAllocation(allocation: MonthlyBudgetAllocationInput): Promise<boolean> {
@@ -128,8 +134,7 @@ export function createMonthlyBudgetAllocationService(connection: Connection, own
       budgetMonth: input.budgetMonth,
       subcategoryId: input.subcategoryId,
       accountId: allocation.kind === "account_method" ? allocation.accountId : null,
-      paymentMethodId:
-        allocation.kind === "account_method" ? allocation.paymentMethodId : null,
+      paymentMethodId: allocation.kind === "account_method" ? allocation.paymentMethodId : null,
       creditCardId: allocation.kind === "credit_card" ? allocation.creditCardId : null,
       amountCents: allocation.amountCents
     };
@@ -192,10 +197,7 @@ export function createMonthlyBudgetAllocationService(connection: Connection, own
             };
         if (await isActiveAllocation(allocation)) {
           copied.push(
-            rowFor(
-              { budgetMonth: targetMonth, subcategoryId: row.subcategoryId },
-              allocation
-            )
+            rowFor({ budgetMonth: targetMonth, subcategoryId: row.subcategoryId }, allocation)
           );
         } else {
           skippedAllocations.push(row.id);

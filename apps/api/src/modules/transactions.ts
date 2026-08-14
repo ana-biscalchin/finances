@@ -16,6 +16,7 @@ import {
   assertBusinessDate,
   assertTransactionStatus,
   assertTransactionType,
+  categoryNatureForTransactionType,
   assertYearMonth,
   getCreditCardBillDates,
   getCreditCardBillMonth,
@@ -330,10 +331,11 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
       await ensureOptionalSubcategoryExists(
         connection,
         requestContextFrom(request).ownerId,
-        subcategoryId
+        subcategoryId,
+        assertTransactionType(current.type)
       );
-    } catch {
-      return reply.code(400).send({ message: "Subcategoria não encontrada." });
+    } catch (error) {
+      return sendPayloadError(error, reply, "Subcategoria inválida.");
     }
     await db
       .update(transactions)
@@ -768,7 +770,8 @@ export function registerTransactionRoutes(app: FastifyInstance, connection: Data
         await ensureOptionalSubcategoryExists(
           connection,
           requestContextFrom(request).ownerId,
-          t.subcategoryId ?? null
+          t.subcategoryId ?? null,
+          assertTransactionType(t.type)
         );
         await ensureOptionalCreditCardExists(
           connection,
@@ -1234,7 +1237,7 @@ async function ensureReferencesOrReply(
   try {
     await ensureOptionalAccountExists(connection, ownerId, payload.accountId);
     await ensureOptionalPaymentMethodExists(connection, payload.paymentMethodId);
-    await ensureOptionalSubcategoryExists(connection, ownerId, payload.subcategoryId);
+    await ensureOptionalSubcategoryExists(connection, ownerId, payload.subcategoryId, payload.type);
     await ensureOptionalCreditCardExists(connection, ownerId, payload.creditCardId);
     await ensurePaymentSource(connection, payload);
     return true;
@@ -1306,7 +1309,8 @@ async function ensureOptionalPaymentMethodExists(
 async function ensureOptionalSubcategoryExists(
   connection: DatabaseConnection,
   ownerId: string,
-  subcategoryId: string | null
+  subcategoryId: string | null,
+  transactionType?: ReturnType<typeof assertTransactionType>
 ) {
   if (!subcategoryId) {
     return;
@@ -1314,7 +1318,7 @@ async function ensureOptionalSubcategoryExists(
 
   const sub = (
     await connection.db
-      .select()
+      .select({ nature: dbCategories.nature })
       .from(subcategories)
       .innerJoin(
         dbCategories,
@@ -1326,6 +1330,13 @@ async function ensureOptionalSubcategoryExists(
 
   if (!sub) {
     throw new ValidationError("Subcategoria não encontrada.");
+  }
+  if (transactionType && sub.nature !== categoryNatureForTransactionType(transactionType)) {
+    throw new ValidationError(
+      transactionType === "income"
+        ? "Receita exige uma categoria de receita."
+        : "Despesa, reembolso ou estorno exige uma categoria de despesa."
+    );
   }
 }
 

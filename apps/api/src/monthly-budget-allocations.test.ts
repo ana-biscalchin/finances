@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "./server.js";
+import { createRecurrenceService } from "./application/recurrence-service.js";
 
 describe("monthly budget allocations API", () => {
   const ownerId = "test-owner";
@@ -177,6 +178,197 @@ describe("monthly budget allocations API", () => {
       payload: { sourceMonth: "2026-08", targetMonth: "2026-09" }
     });
     expect(conflict.statusCode).toBe(409);
+  });
+
+  it("rejects budget allocations for income categories", async () => {
+    await connection.db.insert(categories).values({
+      id: "work",
+      ownerId,
+      name: "Trabalho",
+      nature: "income"
+    });
+    await connection.db.insert(subcategories).values({
+      id: "salary",
+      categoryId: "work",
+      name: "Salário"
+    });
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/monthly-budget-allocations",
+      payload: {
+        budgetMonth: "2026-08",
+        subcategoryId: "salary",
+        allocations: [
+          {
+            kind: "account_method",
+            accountId: "nubank",
+            paymentMethodId: "pix",
+            amountCents: 500_000
+          }
+        ]
+      }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      message: "O orçamento aceita apenas categorias de despesa."
+    });
+  });
+
+  it("keeps income categories out of the monthly budget dashboard", async () => {
+    await connection.db.insert(categories).values({
+      id: "work",
+      ownerId,
+      name: "Trabalho",
+      nature: "income"
+    });
+    await connection.db.insert(subcategories).values({
+      id: "salary",
+      categoryId: "work",
+      name: "Salário"
+    });
+    await connection.db.insert(transactions).values({
+      id: "salary-income",
+      ownerId,
+      type: "income",
+      description: "Salário",
+      amountCents: 500_000,
+      eventDate: "2026-08-05",
+      budgetMonth: "2026-08",
+      accountId: "nubank",
+      paymentMethodId: "pix",
+      subcategoryId: "salary",
+      status: "confirmed"
+    });
+
+    const response = await app.inject({ method: "GET", url: "/monthly-overview?month=2026-08" });
+
+    expect(response.statusCode).toBe(200);
+    expect(
+      response.json().items.map((item: { subcategoryId: string }) => item.subcategoryId)
+    ).not.toContain("salary");
+    expect(response.json().summary.freeIncomeCents).toBe(500_000);
+  });
+
+  it("requires transaction type and category nature to agree", async () => {
+    await connection.db.insert(categories).values({
+      id: "work",
+      ownerId,
+      name: "Trabalho",
+      nature: "income"
+    });
+    await connection.db.insert(subcategories).values({
+      id: "salary",
+      categoryId: "work",
+      name: "Salário"
+    });
+    const base = {
+      description: "Teste de natureza",
+      amountCents: 10_000,
+      eventDate: "2026-08-15",
+      accountId: "nubank",
+      paymentMethodId: "pix"
+    };
+
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/transactions",
+          payload: { ...base, type: "income", subcategoryId: "salary" }
+        })
+      ).statusCode
+    ).toBe(201);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/transactions",
+          payload: { ...base, type: "expense", subcategoryId: "salary" }
+        })
+      ).statusCode
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/transactions",
+          payload: { ...base, type: "income", subcategoryId: "groceries" }
+        })
+      ).statusCode
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/transactions",
+          payload: { ...base, type: "refund", subcategoryId: "groceries" }
+        })
+      ).statusCode
+    ).toBe(201);
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/transactions/import-confirm",
+      payload: {
+        transactions: [
+          {
+            ...base,
+            type: "expense",
+            subcategoryId: "salary",
+            status: "confirmed"
+          }
+        ]
+      }
+    });
+    expect(imported.statusCode).toBe(400);
+
+    const expense = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      payload: { ...base, type: "expense", subcategoryId: "groceries" }
+    });
+    const metadata = await app.inject({
+      method: "PATCH",
+      url: `/transactions/${expense.json().id}/metadata`,
+      payload: { description: "Categoria inválida", subcategoryId: "salary", notes: null }
+    });
+    expect(metadata.statusCode).toBe(400);
+  });
+
+  it("requires recurrence kind and category nature to agree", async () => {
+    await connection.db.insert(categories).values({
+      id: "work",
+      ownerId,
+      name: "Trabalho",
+      nature: "income"
+    });
+    await connection.db.insert(subcategories).values({
+      id: "salary",
+      categoryId: "work",
+      name: "Salário"
+    });
+    const service = createRecurrenceService(connection, ownerId);
+    const base = {
+      description: "Recorrência",
+      amountCents: 10_000,
+      accountId: "nubank",
+      paymentMethodId: "pix",
+      frequency: "monthly",
+      dayOfMonth: 5,
+      startMonth: "2026-08"
+    };
+
+    await expect(
+      service.create({ ...base, kind: "expense", subcategoryId: "salary" })
+    ).rejects.toThrow("categoria de despesa");
+    await expect(
+      service.create({ ...base, kind: "income", subcategoryId: "groceries" })
+    ).rejects.toThrow("categoria de receita");
+    await expect(
+      service.create({ ...base, kind: "income", subcategoryId: "salary" })
+    ).resolves.toEqual(expect.objectContaining({ kind: "income", subcategoryId: "salary" }));
   });
 
   it("returns payment method execution and transfers in one monthly snapshot", async () => {
