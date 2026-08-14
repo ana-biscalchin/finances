@@ -42,7 +42,7 @@ describe("shared API contracts", () => {
     expect(() => accountSchema.parse({ id: "checking", name: "Conta" })).toThrow();
   });
 
-  it("validates credit cards, distributed planning, and cash components", () => {
+  it("validates credit cards, payment-method budgets, transfers, and cash components", () => {
     expect(
       creditCardSchema.safeParse({
         id: "card",
@@ -56,14 +56,15 @@ describe("shared API contracts", () => {
         isActive: true
       }).success
     ).toBe(true);
-    expect(
-      monthlyOverviewSchema.safeParse({
+    const overview = monthlyOverviewSchema.parse({
         items: [
           {
             subcategoryId: "food",
             subcategoryName: "Mercado",
             categoryId: "category",
             categoryName: "Casa",
+            categorySortOrder: 0,
+            subcategorySortOrder: 0,
             budgetMonth: "2026-07",
             amountCents: 1000,
             plannedCents: 1000,
@@ -74,7 +75,25 @@ describe("shared API contracts", () => {
             availableCents: 500,
             abovePlannedCents: 0,
             hasSourceDivergence: false,
-            allocations: [{ accountId: "checking", creditCardId: null, amountCents: 600 }],
+            usagePercent: 50,
+            attention: "on_track",
+            allocations: [{ accountId: "checking", paymentMethodId: "pix", creditCardId: null, amountCents: 1000 }],
+            paymentMethods: [
+              {
+                kind: "account_method",
+                accountId: "checking",
+                paymentMethodId: "pix",
+                amountCents: 1000,
+                label: "Conta · Pix",
+                plannedCents: 1000,
+                spentCents: 500,
+                availableCents: 500,
+                abovePlannedCents: 0,
+                usagePercent: 50,
+                attention: "on_track",
+                isUnplanned: false
+              }
+            ],
             sources: [
               {
                 kind: "account",
@@ -87,8 +106,7 @@ describe("shared API contracts", () => {
                 differenceCents: 100,
                 isUnplanned: false
               }
-            ],
-            plannedExpenses: [{ id: "market", budgetMonth: "2026-07", subcategoryId: "food", name: "Mercado", amountCents: 1000, accountId: "checking", creditCardId: null, recurrenceRuleId: null, sortOrder: 0 }]
+            ]
           }
         ],
         summary: {
@@ -110,9 +128,24 @@ describe("shared API contracts", () => {
             differenceCents: 100
           }
         ],
-        availableSources: [{ kind: "account", id: "checking", name: "Conta" }]
-      }).success
-    ).toBe(true);
+        availableSources: [{ kind: "account", id: "checking", name: "Conta" }],
+        availablePaymentMethods: [
+          { kind: "account_method", accountId: "checking", paymentMethodId: "pix", label: "Conta · Pix" },
+          { kind: "credit_card", creditCardId: "card", label: "Cartão" }
+        ],
+        transfers: [
+          {
+            id: "transfer",
+            eventDate: "2026-07-10",
+            description: "Reserva",
+            amountCents: 300,
+            sourceAccount: { id: "checking", name: "Conta" },
+            destinationAccount: { id: "savings", name: "Reserva" }
+          }
+        ]
+      });
+    expect(overview.items[0]?.paymentMethods[0]?.label).toBe("Conta · Pix");
+    expect(overview.transfers[0]?.sourceAccount.name).toBe("Conta");
     expect(
       cashPositionSchema.safeParse([
         {
