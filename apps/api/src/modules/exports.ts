@@ -5,7 +5,7 @@ import {
   creditCardBills,
   creditCards,
   creditCardBillPayments,
-  plannedExpenses,
+  monthlyBudgetAllocations,
   recurrenceRules,
   reserveGoals,
   settings,
@@ -33,11 +33,11 @@ export function registerExportRoutes(app: FastifyInstance, connection: DatabaseC
       ? await db.select().from(creditCardBills).where(inArray(creditCardBills.creditCardId, cardIds))
       : [];
     const [ownerTransactions, ownerTransfers,
-      ownerRecurrences, ownerPlanned, ownerReserves, ownerPayments, ownerSettings] = await Promise.all([
+      ownerRecurrences, ownerAllocations, ownerReserves, ownerPayments, ownerSettings] = await Promise.all([
       db.select().from(transactions).where(eq(transactions.ownerId, ownerId)),
       db.select().from(accountTransfers).where(eq(accountTransfers.ownerId, ownerId)),
       db.select().from(recurrenceRules).where(eq(recurrenceRules.ownerId, ownerId)),
-      db.select().from(plannedExpenses).where(eq(plannedExpenses.ownerId, ownerId)),
+      db.select().from(monthlyBudgetAllocations).where(eq(monthlyBudgetAllocations.ownerId, ownerId)),
       db.select().from(reserveGoals).where(eq(reserveGoals.ownerId, ownerId)),
       db.select().from(creditCardBillPayments).where(eq(creditCardBillPayments.ownerId, ownerId)),
       db.select().from(settings).where(and(eq(settings.ownerId, ownerId), notLike(settings.key, "google_%")))
@@ -45,7 +45,7 @@ export function registerExportRoutes(app: FastifyInstance, connection: DatabaseC
     void ownerTransactions;
     void ownerTransfers;
     void ownerRecurrences;
-    void ownerPlanned;
+    void ownerAllocations;
     void ownerReserves;
     void ownerPayments;
     void ownerSettings;
@@ -59,7 +59,7 @@ export function registerExportRoutes(app: FastifyInstance, connection: DatabaseC
       exportedAt: new Date().toISOString(),
       data: { accounts: ownerAccounts, categories: ownerCategories, cards: ownerCards, bills: ownerBills,
         transactions: ownerTransactions, transfers: ownerTransfers, recurrences: ownerRecurrences,
-        plannedExpenses: ownerPlanned, reserves: ownerReserves,
+        monthlyBudgetAllocations: ownerAllocations, reserves: ownerReserves,
         billPayments: ownerPayments, settings: ownerSettings }
     };
   });

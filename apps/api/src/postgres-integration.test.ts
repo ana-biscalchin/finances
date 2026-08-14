@@ -11,8 +11,8 @@ import {
   createPostgresDatabaseConnection,
   installmentPurchases,
   installments,
+  monthlyBudgetAllocations,
   paymentMethods,
-  plannedExpenses,
   recurrenceRules,
   reserveGoals,
   reserveMovements,
@@ -115,7 +115,7 @@ describePostgres("PostgreSQL production persistence", () => {
         .where(inArray(creditCardBills.creditCardId, cardIds));
     }
     await connection.db.delete(transactions).where(inArray(transactions.ownerId, ownerIds));
-    await connection.db.delete(plannedExpenses).where(inArray(plannedExpenses.ownerId, ownerIds));
+    await connection.db.delete(monthlyBudgetAllocations).where(inArray(monthlyBudgetAllocations.ownerId, ownerIds));
     await connection.db.delete(recurrenceRules).where(inArray(recurrenceRules.ownerId, ownerIds));
     await connection.db.delete(accountTransfers).where(inArray(accountTransfers.ownerId, ownerIds));
     if (reserveGoalIds.length)
@@ -256,19 +256,21 @@ describePostgres("PostgreSQL production persistence", () => {
     expect(
       (
         await app.inject({
-          method: "POST",
-          url: "/api/planned-expenses",
+          method: "PUT",
+          url: "/api/monthly-budget-allocations",
           payload: {
             budgetMonth: "2026-07",
             subcategoryId: subcategory.id,
-            name: "PostgreSQL plan",
-            amountCents: 20_000,
-            accountId: source.id,
-            creditCardId: null
+            allocations: [{
+              kind: "account_method",
+              accountId: source.id,
+              paymentMethodId,
+              amountCents: 20_000
+            }]
           }
         })
       ).statusCode
-    ).toBe(201);
+    ).toBe(200);
 
     const recurrenceResponse = await app.inject({
       method: "POST",

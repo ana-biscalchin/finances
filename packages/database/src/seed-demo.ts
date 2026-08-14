@@ -9,7 +9,7 @@ import {
   creditCardBills,
   creditCards,
   recurrenceRules,
-  plannedExpenses,
+  monthlyBudgetAllocations,
   transactions
 } from "./schema.js";
 
@@ -102,11 +102,11 @@ try {
         .run();
     }
 
-    for (const item of seed.plannedExpenses) {
-      db.insert(plannedExpenses)
+    for (const item of seed.monthlyBudgetAllocations) {
+      db.insert(monthlyBudgetAllocations)
         .values({ ...item, ownerId })
         .onConflictDoUpdate({
-          target: plannedExpenses.id,
+          target: monthlyBudgetAllocations.id,
           set: { ...item, ownerId, updatedAt: now }
         })
         .run();

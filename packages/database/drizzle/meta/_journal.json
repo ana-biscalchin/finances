@@ -71,6 +71,20 @@
       "when": 1785190018089,
       "tag": "0009_demonic_starfox",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1786735927455,
+      "tag": "0010_condemned_stardust",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1786736687274,
+      "tag": "0011_long_devos",
+      "breakpoints": true
     }
   ]
 }

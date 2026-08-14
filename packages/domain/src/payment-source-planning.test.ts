@@ -1,9 +1,173 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAccountCashProjection,
+  buildPaymentMethodOverview,
   buildPaymentSourceOverview,
+  validateMonthlyBudgetAllocations,
   validateBudgetDistribution
 } from "./payment-source-planning.js";
+
+describe("monthly budget allocations by payment method", () => {
+  const allocations = [
+    {
+      kind: "account_method" as const,
+      accountId: "nubank",
+      paymentMethodId: "debit",
+      amountCents: 50_000
+    },
+    {
+      kind: "account_method" as const,
+      accountId: "flash-food",
+      paymentMethodId: "prepaid",
+      amountCents: 100_000
+    },
+    { kind: "credit_card" as const, creditCardId: "nubank-card", amountCents: 30_000 }
+  ];
+
+  it("validates account methods and credit cards as exclusive allocation variants", () => {
+    expect(
+      validateMonthlyBudgetAllocations({
+        budgetMonth: "2026-08",
+        subcategoryId: "groceries",
+        allocations
+      })
+    ).toEqual(expect.objectContaining({ plannedCents: 180_000, allocations }));
+
+    expect(() =>
+      validateMonthlyBudgetAllocations({
+        budgetMonth: "2026-08",
+        subcategoryId: "groceries",
+        allocations: [
+          {
+            kind: "account_method",
+            accountId: "nubank",
+            amountCents: 10_000
+          }
+        ]
+      })
+    ).toThrow();
+  });
+
+  it("rejects a duplicate account and payment method combination", () => {
+    expect(() =>
+      validateMonthlyBudgetAllocations({
+        budgetMonth: "2026-08",
+        subcategoryId: "groceries",
+        allocations: [allocations[0], allocations[0]]
+      })
+    ).toThrow(/duplicate payment method/i);
+  });
+
+  it("aggregates realization by account and payment method without mixing methods", () => {
+    const result = buildPaymentMethodOverview({
+      budgetMonth: "2026-08",
+      subcategoryId: "groceries",
+      allocations,
+      transactions: [
+        {
+          id: "debit-expense",
+          type: "expense",
+          status: "confirmed",
+          amountCents: 70_000,
+          budgetMonth: "2026-08",
+          subcategoryId: "groceries",
+          accountId: "nubank",
+          paymentMethodId: "debit"
+        },
+        {
+          id: "pix-expense",
+          type: "expense",
+          status: "confirmed",
+          amountCents: 10_000,
+          budgetMonth: "2026-08",
+          subcategoryId: "groceries",
+          accountId: "nubank",
+          paymentMethodId: "pix"
+        },
+        {
+          id: "refund",
+          type: "refund",
+          status: "confirmed",
+          amountCents: 5_000,
+          budgetMonth: "2026-08",
+          subcategoryId: "groceries",
+          accountId: "nubank",
+          paymentMethodId: "debit"
+        }
+      ]
+    });
+
+    expect(result.plannedCents).toBe(180_000);
+    expect(result.spentCents).toBe(75_000);
+    expect(result.paymentMethods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "account_method",
+          accountId: "nubank",
+          paymentMethodId: "debit",
+          plannedCents: 50_000,
+          spentCents: 65_000,
+          abovePlannedCents: 15_000,
+          attention: "over"
+        }),
+        expect.objectContaining({
+          kind: "account_method",
+          accountId: "nubank",
+          paymentMethodId: "pix",
+          plannedCents: 0,
+          spentCents: 10_000,
+          attention: "unplanned"
+        })
+      ])
+    );
+  });
+
+  it("classifies usage at eighty percent and ignores structural cash movements", () => {
+    const result = buildPaymentMethodOverview({
+      budgetMonth: "2026-08",
+      subcategoryId: "groceries",
+      allocations: [allocations[0]],
+      transactions: [
+        {
+          id: "expense",
+          type: "expense",
+          status: "confirmed",
+          amountCents: 40_000,
+          budgetMonth: "2026-08",
+          subcategoryId: "groceries",
+          accountId: "nubank",
+          paymentMethodId: "debit"
+        },
+        {
+          id: "transfer",
+          type: "expense",
+          status: "confirmed",
+          amountCents: 20_000,
+          budgetMonth: "2026-08",
+          subcategoryId: "groceries",
+          accountId: "nubank",
+          paymentMethodId: "debit",
+          transferId: "own-transfer"
+        },
+        {
+          id: "bill-payment",
+          type: "expense",
+          status: "confirmed",
+          amountCents: 30_000,
+          budgetMonth: "2026-08",
+          subcategoryId: "groceries",
+          accountId: "nubank",
+          paymentMethodId: "debit",
+          creditCardBillId: "bill"
+        }
+      ]
+    });
+
+    expect(result.spentCents).toBe(40_000);
+    expect(result.attention).toBe("near_limit");
+    expect(result.usagePercent).toBe(80);
+  });
+});
 
 describe("payment source planning", () => {
   it("accepts a complete distribution between accounts and credit cards", () => {

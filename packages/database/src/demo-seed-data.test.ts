@@ -9,7 +9,7 @@ describe("demo seed data", () => {
     const transactionIds = new Set(seed.transactions.map((item) => item.id));
 
     expect(seed.accounts.length).toBeGreaterThanOrEqual(2);
-    expect(seed.plannedExpenses.length).toBeGreaterThanOrEqual(5);
+    expect(seed.monthlyBudgetAllocations.length).toBeGreaterThanOrEqual(5);
     expect(seed.transactions.some((item) => item.creditCardBillId)).toBe(true);
     expect(seed.recurrenceRules.some((item) => item.accountId)).toBe(true);
     expect(seed.recurrenceRules.some((item) => item.creditCardId)).toBe(true);
@@ -69,10 +69,13 @@ describe("demo seed data", () => {
     ).toBe(true);
   });
 
-  it("plans individual expenses inside the same category", () => {
+  it("plans the same category by account and payment method", () => {
     const seed = buildDemoSeedData("2026-07");
-    const foodLines = seed.plannedExpenses.filter((line) => line.subcategoryId === "cat-alimentacao-sub-supermercado");
-    expect(foodLines.map((line) => line.name)).toEqual(["Mercado no débito", "Mercado no Flash"]);
+    const foodLines = seed.monthlyBudgetAllocations.filter((line) => line.subcategoryId === "cat-alimentacao-sub-supermercado");
+    expect(foodLines.map((line) => [line.accountId, line.paymentMethodId])).toEqual([
+      ["demo-account-checking", "pm-debit-card"],
+      ["demo-account-flash-food", "pm-prepaid-card"]
+    ]);
     expect(foodLines.reduce((total, line) => total + line.amountCents, 0)).toBe(65_000);
   });
 });

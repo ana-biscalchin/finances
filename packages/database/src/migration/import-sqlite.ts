@@ -17,7 +17,7 @@ export const importTableOrder = [
   "account_transfers",
   "recurrence_rules",
   "installment_purchases",
-  "planned_expenses",
+  "monthly_budget_allocations",
   "reserve_goals",
   "reserve_movements",
   "transactions",

@@ -29,8 +29,8 @@ import { registerSettingsRoutes } from "./modules/settings.js";
 import { registerTransferRoutes } from "./modules/transfers.js";
 import { registerRecurrenceRoutes } from "./modules/recurrences.js";
 import { registerMonthlyOverviewRoutes } from "./modules/monthly-overview.js";
+import { registerMonthlyBudgetAllocationRoutes } from "./modules/monthly-budget-allocations.js";
 import { registerSimpleImportRoutes } from "./modules/simple-import.js";
-import { registerPlannedExpenseRoutes } from "./modules/planned-expenses.js";
 
 type BuildServerOptions = {
   databasePath?: string;
@@ -206,7 +206,7 @@ export function buildServer(options: BuildServerOptions = {}) {
     registerTransferRoutes(routesApp, applicationConnection);
     registerRecurrenceRoutes(routesApp, applicationConnection);
     registerMonthlyOverviewRoutes(routesApp, applicationConnection);
-    registerPlannedExpenseRoutes(routesApp, applicationConnection);
+    registerMonthlyBudgetAllocationRoutes(routesApp, applicationConnection);
     registerSimpleImportRoutes(routesApp, applicationConnection);
   };
   app.register(registerBusinessRoutes, { prefix: "/api" });
