@@ -45,6 +45,8 @@ O diagrama representa a topologia do ADR 002. SQLite permanece no desenvolviment
 4. `PUT /monthly-budget-allocations` substitui atomicamente as alocações de uma subcategoria; o total é derivado da soma.
 5. A interface prioriza exceções, detalha os meios dentro de cada categoria e exibe transferências em seção própria.
 6. Parcelas contam no mês da fatura; transferências e pagamentos não duplicam gasto.
+7. `monthly_income_plans` mantém entradas previstas separadas do orçamento; receitas realizadas são conciliadas por mês, subcategoria e conta.
+8. O saldo esperado considera somente o restante a receber e elimina duplicidade com recorrências ou lançamentos previstos equivalentes.
 
 ### Dinheiro nas contas
 

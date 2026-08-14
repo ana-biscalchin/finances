@@ -6,6 +6,7 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 
 - A construção inicial é mensal, com evolução patrimonial de longo prazo no backlog.
 - O orçamento é composto por alocações de `mês + subcategoria + conta + forma de pagamento` ou de `mês + subcategoria + cartão de crédito`.
+- Somente subcategorias de natureza `expense` aceitam orçamento e aparecem no detalhamento orçado; categorias de receita alimentam os indicadores de entrada, nunca os de gasto.
 - O total planejado da subcategoria e do mês é sempre a soma das alocações; não existe um total paralelo ou valor sem origem.
 - Conta e forma são granulares: Nubank · Pix, Nubank · Débito e Nubank · Boleto podem ter valores planejados e realizados independentes.
 - A interface mostra **planejado**, **gasto**, **disponível** e **acima do planejado**. `Comprometido` não é indicador principal.
@@ -15,6 +16,8 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 - Transferências entre contas próprias aparecem em uma seção separada do painel e não alteram orçamento, gasto, receita ou disponível.
 - Pagamentos de fatura não contam novamente como gasto.
 - As APIs canônicas são `GET /monthly-overview?month=YYYY-MM`, `PUT /monthly-budget-allocations` e `POST /monthly-budget-allocations/copy`.
+- Entradas são planejadas separadamente do orçamento por `mês + subcategoria de receita + conta de destino` por meio de `PUT /monthly-income-plans`.
+- O painel concilia receitas confirmadas/conciliadas como recebido e mostra previsto, a receber, acima do previsto e entrada não planejada.
 
 ## Dinheiro nas contas
 
@@ -23,6 +26,9 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 - Uma conta pode aceitar várias formas ativas e ter no máximo uma forma padrão.
 - O saldo atual parte do saldo inicial e soma os lançamentos realizados.
 - Receitas, reembolsos e estornos aumentam o saldo; despesas o reduzem.
+- Lançamentos `planned` não alteram o saldo atual: receitas previstas aumentam o saldo esperado e despesas previstas o reduzem.
+- O restante das entradas planejadas aumenta o saldo esperado da conta de destino; previsão explícita, recorrência e lançamento previsto equivalentes não são somados em duplicidade.
+- Na projeção, uma despesa prevista e o orçamento restante da mesma categoria representam o mesmo compromisso; vale o maior dos dois, sem dupla contagem.
 - `GET /cash-position?month=YYYY-MM` separa entradas livres, benefícios, plano direto restante, compras esperadas no cartão, faturas e saldo esperado por conta.
 - Recorrências futuras são previsões: não alteram saldo nem gasto até serem confirmadas.
 - A data-base explícita do saldo inicial permanece no backlog.
@@ -32,6 +38,7 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 - Valores são inteiros em centavos positivos; o tipo define a direção econômica.
 - Datas de negócio usam `YYYY-MM-DD`; meses usam `YYYY-MM`.
 - Tipos: `income`, `expense`, `refund` e `chargeback`.
+- `income` aceita somente categoria de receita; `expense`, `refund` e `chargeback` aceitam somente categoria de despesa.
 - Lançamentos manuais e importados são realizados (`confirmed`) por padrão. `canceled` não entra em saldos ou agregações.
 - Despesa de consumo em conta exige uma forma ativa associada. Compra no cartão usa somente o cartão.
 - Categorias e subcategorias usam IDs internos, podem ser renomeadas e preservam o histórico.

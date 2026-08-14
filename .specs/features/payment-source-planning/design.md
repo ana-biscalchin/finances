@@ -52,18 +52,18 @@ flowchart TD
 
 ## Análise de reuso
 
-| Componente existente | Local | Como usar |
-| --- | --- | --- |
-| Associações conta–forma | `account_payment_methods` e contratos de conta | Validar e nomear combinações orçáveis. |
-| Lançamentos com conta, forma e cartão | `transactions` | Derivar realizado sem persistir execução duplicada. |
-| Classificação financeira | `packages/domain/src/financial-classification.ts` | Excluir transferências e pagamentos de fatura dos gastos. |
-| Planejamento por origem | `packages/domain/src/payment-source-planning.ts` | Evoluir a chave de conta para conta + forma. |
-| Resumo mensal | `apps/api/src/application/monthly-overview-service.ts` | Orquestrar planejamento, realização, cartões e transferências. |
-| Agregado de transferência | `account_transfers` e `transfer-service.ts` | Ler fatos realizados sem reconstruí-los pelas duas pernas. |
-| Opções `Conta · Forma` | `apps/web/src/app/shared/payment-source-options.ts` | Reusar no editor de alocações. |
-| Seletor de mês | `apps/web/src/app/shared/MonthSelector.tsx` | Manter navegação temporal do painel. |
-| Componentes mensais | `MonthAtGlance`, `MonthlyHealthSummary`, `BudgetCategoryTable` | Evoluir em vez de criar uma página paralela. |
-| Cliente HTTP e schemas web | `api-client.ts`, `api-contracts.ts` | Validar a resposta ampliada na fronteira do frontend. |
+| Componente existente                  | Local                                                          | Como usar                                                      |
+| ------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------- |
+| Associações conta–forma               | `account_payment_methods` e contratos de conta                 | Validar e nomear combinações orçáveis.                         |
+| Lançamentos com conta, forma e cartão | `transactions`                                                 | Derivar realizado sem persistir execução duplicada.            |
+| Classificação financeira              | `packages/domain/src/financial-classification.ts`              | Excluir transferências e pagamentos de fatura dos gastos.      |
+| Planejamento por origem               | `packages/domain/src/payment-source-planning.ts`               | Evoluir a chave de conta para conta + forma.                   |
+| Resumo mensal                         | `apps/api/src/application/monthly-overview-service.ts`         | Orquestrar planejamento, realização, cartões e transferências. |
+| Agregado de transferência             | `account_transfers` e `transfer-service.ts`                    | Ler fatos realizados sem reconstruí-los pelas duas pernas.     |
+| Opções `Conta · Forma`                | `apps/web/src/app/shared/payment-source-options.ts`            | Reusar no editor de alocações.                                 |
+| Seletor de mês                        | `apps/web/src/app/shared/MonthSelector.tsx`                    | Manter navegação temporal do painel.                           |
+| Componentes mensais                   | `MonthAtGlance`, `MonthlyHealthSummary`, `BudgetCategoryTable` | Evoluir em vez de criar uma página paralela.                   |
+| Cliente HTTP e schemas web            | `api-client.ts`, `api-contracts.ts`                            | Validar a resposta ampliada na fronteira do frontend.          |
 
 ### Duplicações encontradas
 
@@ -154,9 +154,46 @@ O editor salva por subcategoria. Durante a gravação, preserva o rascunho, desa
 categoria e atualiza a resposta completa após sucesso. Falha mantém os valores digitados e mostra
 erro contextual na própria categoria.
 
+### Planejamento e conciliação de entradas
+
+- **Propósito:** manter o planejamento de receitas separado do orçamento de despesas e conciliá-lo
+  com lançamentos realizados.
+- **Persistência:** `monthly_income_plans`, com uma linha por
+  `owner + mês + subcategoria de receita + conta`.
+- **Escrita:** `PUT /monthly-income-plans` substitui atomicamente o conjunto de entradas do mês.
+- **Leitura:** `GET /monthly-overview` devolve `incomePlanning.summary`, itens conciliados e opções
+  válidas de categoria/conta.
+
+O recebido considera apenas lançamentos `income` confirmados ou conciliados, sem `transferId`,
+agrupados pela mesma chave da previsão. Receitas sem plano geram itens com previsto zero. A forma de
+recebimento permanece no lançamento para histórico, mas não integra a chave da previsão.
+
+O saldo esperado usa o restante positivo de cada previsão. Ao combinar previsão explícita,
+recorrência e lançamento `planned` da mesma conta e subcategoria, considera o maior valor esperado
+da chave, evitando dupla contagem.
+
 ---
 
 ## Modelo de dados
+
+### `monthly_income_plans`
+
+```text
+monthly_income_plans
+├─ id TEXT PK
+├─ owner_id FK users NOT NULL
+├─ budget_month TEXT NOT NULL
+├─ subcategory_id FK subcategories NOT NULL
+├─ account_id FK accounts NOT NULL
+├─ amount_cents INTEGER NOT NULL CHECK > 0
+├─ created_at
+└─ updated_at
+
+UNIQUE (owner_id, budget_month, subcategory_id, account_id)
+```
+
+Categorias e contas arquivadas continuam legíveis no histórico, mas não podem receber novas
+previsões. A API valida owner, natureza `income`, atividade e centavos antes da transação.
 
 ### `monthly_budget_allocations`
 
@@ -318,17 +355,17 @@ detalhamento é progressivo e os estados têm texto, valor e semântica acessív
 Segue `ana-standards/references/error-handling.md`: validar cedo, preservar causa e nunca retornar
 estado parcial ou valor vazio como se fosse sucesso.
 
-| Cenário | Tratamento | Impacto para a UI |
-| --- | --- | --- |
-| Mês ou payload inválido | Zod na borda; `400` | Mensagem contextual sem enviar ao domínio. |
-| Conta, forma, cartão ou subcategoria inexistente | Validar owner e existência; `404` | Rascunho preservado; solicitar correção. |
-| Combinação arquivada ou forma não associada | Rejeitar antes da transação; `409` | Recarregar opções e manter valores editados. |
-| Combinação duplicada | Domínio e constraint; `409` | Destacar linhas conflitantes. |
-| Falha ao substituir várias alocações | Transação atômica; log estruturado e erro com causa | Nenhuma linha muda; mostrar falha reproduzível. |
-| Destino da cópia já planejado | Não sobrescrever; `409` | Pedir escolha explícita em evolução futura. |
-| Transferência com agregado inconsistente | Falhar a leitura e registrar ID técnico; não inferir pelas pernas | Dashboard mostra erro geral com opção de tentar novamente. |
-| Banco indisponível | Propagar `5xx` com correlação, sem valores financeiros em logs | Manter última tela apenas como visualmente desatualizada, sem afirmar sucesso. |
-| Falha de carregamento no navegador | `apiClient` preserva erro; página mostra retry | Não renderizar zeros falsos. |
+| Cenário                                          | Tratamento                                                        | Impacto para a UI                                                              |
+| ------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Mês ou payload inválido                          | Zod na borda; `400`                                               | Mensagem contextual sem enviar ao domínio.                                     |
+| Conta, forma, cartão ou subcategoria inexistente | Validar owner e existência; `404`                                 | Rascunho preservado; solicitar correção.                                       |
+| Combinação arquivada ou forma não associada      | Rejeitar antes da transação; `409`                                | Recarregar opções e manter valores editados.                                   |
+| Combinação duplicada                             | Domínio e constraint; `409`                                       | Destacar linhas conflitantes.                                                  |
+| Falha ao substituir várias alocações             | Transação atômica; log estruturado e erro com causa               | Nenhuma linha muda; mostrar falha reproduzível.                                |
+| Destino da cópia já planejado                    | Não sobrescrever; `409`                                           | Pedir escolha explícita em evolução futura.                                    |
+| Transferência com agregado inconsistente         | Falhar a leitura e registrar ID técnico; não inferir pelas pernas | Dashboard mostra erro geral com opção de tentar novamente.                     |
+| Banco indisponível                               | Propagar `5xx` com correlação, sem valores financeiros em logs    | Manter última tela apenas como visualmente desatualizada, sem afirmar sucesso. |
+| Falha de carregamento no navegador               | `apiClient` preserva erro; página mostra retry                    | Não renderizar zeros falsos.                                                   |
 
 Não há integração externa nova, portanto retry/backoff não se aplica. Chamadas HTTP do navegador
 seguem o timeout central do `apiClient`; mutações não são repetidas automaticamente.
@@ -337,18 +374,18 @@ seguem o timeout central do `apiClient`; mutações não são repetidas automati
 
 ## Decisões técnicas
 
-| Decisão | Escolha | Por quê |
-| --- | --- | --- |
-| Fonte canônica | `monthly_budget_allocations` | Representa diretamente o modelo mental aprovado. |
-| Total da categoria | Soma derivada | Evita divergência entre total e distribuição. |
-| Chave de conta | `accountId + paymentMethodId` | Permite granularidade real dentro da mesma conta. |
-| Cartão | Variante exclusiva por `creditCardId` | Preserva competência da fatura e evita forma sintética. |
-| Realizado | Derivado de `transactions` | Não duplica estado nem exige conciliação manual. |
-| Transferências no dashboard | Ler `account_transfers` | Usa o agregado íntegro e evita contar duas pernas. |
-| Endpoint do dashboard | Ampliar `GET /monthly-overview` | Uma tela, um snapshot coerente e sem waterfall. |
-| Edição | Substituição atômica por subcategoria | Interface simples e estado consistente. |
-| Compatibilidade | Remover `planned_expenses` no mesmo ciclo | A unidade anterior foi explicitamente substituída. |
-| Dialetos | Mesmas invariantes em SQLite e PostgreSQL | Desenvolvimento e hospedagem não podem divergir. |
+| Decisão                     | Escolha                                   | Por quê                                                 |
+| --------------------------- | ----------------------------------------- | ------------------------------------------------------- |
+| Fonte canônica              | `monthly_budget_allocations`              | Representa diretamente o modelo mental aprovado.        |
+| Total da categoria          | Soma derivada                             | Evita divergência entre total e distribuição.           |
+| Chave de conta              | `accountId + paymentMethodId`             | Permite granularidade real dentro da mesma conta.       |
+| Cartão                      | Variante exclusiva por `creditCardId`     | Preserva competência da fatura e evita forma sintética. |
+| Realizado                   | Derivado de `transactions`                | Não duplica estado nem exige conciliação manual.        |
+| Transferências no dashboard | Ler `account_transfers`                   | Usa o agregado íntegro e evita contar duas pernas.      |
+| Endpoint do dashboard       | Ampliar `GET /monthly-overview`           | Uma tela, um snapshot coerente e sem waterfall.         |
+| Edição                      | Substituição atômica por subcategoria     | Interface simples e estado consistente.                 |
+| Compatibilidade             | Remover `planned_expenses` no mesmo ciclo | A unidade anterior foi explicitamente substituída.      |
+| Dialetos                    | Mesmas invariantes em SQLite e PostgreSQL | Desenvolvimento e hospedagem não podem divergir.        |
 
 ---
 
