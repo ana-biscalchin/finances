@@ -23,7 +23,7 @@ flowchart LR
 | Domínio      | `packages/domain`   | Dinheiro, datas e classificação financeira puramente testáveis |
 | Persistência | `packages/database` | Schemas, migrations e conexões SQLite/PostgreSQL               |
 
-O diagrama representa a topologia do ADR 002. SQLite permanece no desenvolvimento; staging e produção selecionam PostgreSQL por configuração validada, com migration executada fora do startup.
+O diagrama representa a topologia do ADR 002. O desenvolvimento usa PostgreSQL 17 em um contêiner Docker local; staging e produção usam projetos Neon separados, com migration executada fora do startup da API.
 
 ## Fronteiras da arquitetura online
 
