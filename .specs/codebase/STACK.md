@@ -72,7 +72,7 @@ A API registra módulos funcionais diretamente no servidor. O domínio concentra
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev # sobe PostgreSQL local no Docker, aplica migrations e inicia web + API
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -89,12 +89,14 @@ DATABASE_URL=... pnpm --filter @finances/database db:migrate:postgres
 pnpm db:migrate
 pnpm db:seed
 pnpm db:setup
+docker compose down # encerra o PostgreSQL local sem apagar os dados
 ```
 
 Serviços locais:
 
 - Web: `http://localhost:5173`
 - API: `http://localhost:3000`
+- PostgreSQL local: `127.0.0.1:55432` (volume Docker persistente)
 
 Essas URLs são exclusivas de desenvolvimento. A produção inicial usará a URL HTTPS gratuita `*.onrender.com`, sem domínio próprio.
 

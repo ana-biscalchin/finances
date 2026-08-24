@@ -9,13 +9,14 @@
     "pnpm": ">=11.5.2"
   },
   "scripts": {
-    "dev": "pnpm --filter @finances/database build && pnpm --filter @finances/domain build && pnpm --filter @finances/shared build && pnpm --parallel --filter @finances/web --filter @finances/api dev",
-    "dev:postgres": "node scripts/dev-postgres.mjs",
+    "dev": "node scripts/dev-postgres.mjs",
+    "dev:postgres": "pnpm dev",
+    "dev:apps": "pnpm --filter @finances/database build && pnpm --filter @finances/domain build && pnpm --filter @finances/shared build && pnpm --parallel --filter @finances/web --filter @finances/api dev",
     "dev:web": "pnpm --filter @finances/web dev",
     "dev:api": "pnpm --filter @finances/api dev",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test && node --test scripts/*.test.mjs",
     "build": "pnpm -r build",
     "db:generate": "pnpm --filter @finances/database db:generate",
     "db:migrate": "pnpm --filter @finances/database db:migrate",
