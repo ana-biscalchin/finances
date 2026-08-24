@@ -1688,15 +1688,23 @@ export async function createInstallmentMetadataForTransactions(
   return installmentPurchaseId;
 }
 
-async function createInstallmentMetadataGroupsForImportedTransactions(
-  connection: DatabaseConnection,
-  items: Array<{
-    transaction: typeof transactions.$inferSelect;
-    installmentNumber: number;
-    installmentCount: number;
-  }>
-) {
-  const groups = new Map<string, typeof items>();
+type ImportedInstallmentMetadataItem = {
+  transaction: Pick<
+    typeof transactions.$inferSelect,
+    | "id"
+    | "description"
+    | "creditCardId"
+    | "eventDate"
+    | "amountCents"
+    | "budgetMonth"
+    | "creditCardBillId"
+  >;
+  installmentNumber: number;
+  installmentCount: number;
+};
+
+export function groupImportedInstallmentMetadata(items: ImportedInstallmentMetadataItem[]) {
+  const groupedPurchases = new Map<string, ImportedInstallmentMetadataItem[][]>();
 
   for (const item of items) {
     if (!item.transaction.creditCardId || item.installmentCount <= 1) {
@@ -1710,10 +1718,32 @@ async function createInstallmentMetadataGroupsForImportedTransactions(
       item.installmentCount,
       item.transaction.eventDate
     ].join("|");
-    groups.set(key, [...(groups.get(key) ?? []), item]);
+    const purchases = groupedPurchases.get(key) ?? [];
+    const purchase = purchases.find(
+      (candidate) =>
+        !candidate.some(
+          (existing) => existing.installmentNumber === item.installmentNumber
+        )
+    );
+
+    if (purchase) {
+      purchase.push(item);
+    } else {
+      purchases.push([item]);
+    }
+    groupedPurchases.set(key, purchases);
   }
 
-  for (const group of groups.values()) {
+  return [...groupedPurchases.values()].flat();
+}
+
+async function createInstallmentMetadataGroupsForImportedTransactions(
+  connection: DatabaseConnection,
+  items: ImportedInstallmentMetadataItem[]
+) {
+  const groups = groupImportedInstallmentMetadata(items);
+
+  for (const group of groups) {
     const first = group[0];
     if (!first.transaction.creditCardId) {
       continue;
