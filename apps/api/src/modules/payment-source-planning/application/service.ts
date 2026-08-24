@@ -96,8 +96,16 @@ export function createPaymentSourcePlanningService(connection: Connection, owner
         .filter((item) => categoryRows.get(item.categoryId)?.nature === "expense")
         .map((item) => item.id)
     );
+    const activeExpenseSubcategoryIds = joinedSubcategories
+      .filter(
+        (item) =>
+          item.isActive &&
+          categoryRows.get(item.categoryId)?.nature === "expense" &&
+          categoryRows.get(item.categoryId)?.isActive
+      )
+      .map((item) => item.id);
     const subcategoryIds = new Set([
-      ...expenseSubcategoryIds,
+      ...activeExpenseSubcategoryIds,
       ...plannedRows
         .filter((item) => expenseSubcategoryIds.has(item.subcategoryId))
         .map((item) => item.subcategoryId),
