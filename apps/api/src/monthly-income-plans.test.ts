@@ -1,37 +1,30 @@
 import {
   accounts,
   categories,
-  createDatabaseConnection,
   monthlyIncomePlans,
   subcategories,
   transactions,
   users
 } from "@finances/database";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildServer } from "./server.js";
+import {
+  createPostgresTestConnection,
+  postgresTestsEnabled,
+  seedPostgresTestOwner
+} from "./test-support/postgres.js";
 
-describe("monthly income plans API", () => {
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
+describePostgres("monthly income plans API", () => {
   const ownerId = "income-owner";
-  let directory: string;
-  let connection: ReturnType<typeof createDatabaseConnection>;
+  let connection: ReturnType<typeof createPostgresTestConnection>;
   let app: ReturnType<typeof buildServer>;
 
   beforeEach(async () => {
-    directory = mkdtempSync(join(tmpdir(), "finances-income-plans-"));
-    connection = createDatabaseConnection(join(directory, "test.sqlite"));
-    migrate(connection.db, { migrationsFolder: "../../packages/database/drizzle" });
+    connection = createPostgresTestConnection();
+    await seedPostgresTestOwner(connection, ownerId);
     await connection.db.insert(users).values([
-      {
-        id: ownerId,
-        username: ownerId,
-        passwordHash: "test",
-        passwordChangedAt: new Date().toISOString()
-      },
       {
         id: "other",
         username: "other",
@@ -56,7 +49,7 @@ describe("monthly income plans API", () => {
 
   afterEach(async () => {
     await app.close();
-    rmSync(directory, { recursive: true, force: true });
+    await connection.close();
   });
 
   it("atomically replaces and removes the month income plans", async () => {
