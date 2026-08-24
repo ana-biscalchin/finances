@@ -1,4 +1,4 @@
-import { categories, subcategories, users } from "@finances/database";
+import { categories, paymentMethods, subcategories, users } from "@finances/database";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "./server.js";
 import { createPostgresTestConnection, postgresTestsEnabled, removePostgresTestOwner, seedPostgresTestOwner } from "./test-support/postgres.js";
@@ -10,6 +10,9 @@ describePostgres("categories API", () => {
   beforeEach(async () => {
     connection = createPostgresTestConnection();
     await seedPostgresTestOwner(connection, "test-owner");
+    await connection.db
+      .insert(paymentMethods)
+      .values({ id: "pm-pix", name: "Pix", kind: "pix" });
     app = buildServer({
       connection,
       logger: false,
@@ -70,7 +73,11 @@ describePostgres("categories API", () => {
       await app.inject({
         method: "POST",
         url: "/accounts",
-        payload: { name: "Conta", type: "checking" }
+        payload: {
+          name: "Conta",
+          type: "checking",
+          paymentMethods: [{ paymentMethodId: "pm-pix", isDefault: true }]
+        }
       })
     ).json();
     expect(
