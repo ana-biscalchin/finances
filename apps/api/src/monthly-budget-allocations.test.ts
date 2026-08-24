@@ -3,37 +3,29 @@ import {
   accountPaymentMethods,
   accounts,
   categories,
-  createDatabaseConnection,
   monthlyBudgetAllocations,
   paymentMethods,
   subcategories,
-  transactions,
-  users
+  transactions
 } from "@finances/database";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "./server.js";
 import { createRecurrenceService } from "./application/recurrence-service.js";
+import {
+  createPostgresTestConnection,
+  postgresTestsEnabled,
+  seedPostgresTestOwner
+} from "./test-support/postgres.js";
 
-describe("monthly budget allocations API", () => {
+const describePostgres = postgresTestsEnabled ? describe : describe.skip;
+describePostgres("monthly budget allocations API", () => {
   const ownerId = "test-owner";
-  let directory: string;
-  let connection: ReturnType<typeof createDatabaseConnection>;
+  let connection: ReturnType<typeof createPostgresTestConnection>;
   let app: ReturnType<typeof buildServer>;
 
   beforeEach(async () => {
-    directory = mkdtempSync(join(tmpdir(), "finances-budget-api-"));
-    connection = createDatabaseConnection(join(directory, "test.sqlite"));
-    migrate(connection.db, { migrationsFolder: "../../packages/database/drizzle" });
-    await connection.db.insert(users).values({
-      id: ownerId,
-      username: ownerId,
-      passwordHash: "test",
-      passwordChangedAt: new Date().toISOString()
-    });
+    connection = createPostgresTestConnection();
+    await seedPostgresTestOwner(connection, ownerId);
     await connection.db.insert(accounts).values([
       { id: "nubank", ownerId, name: "Nubank", type: "checking", isActive: true },
       { id: "flash", ownerId, name: "Flash Alimentação", type: "benefit", isActive: true }
@@ -79,7 +71,7 @@ describe("monthly budget allocations API", () => {
 
   afterEach(async () => {
     await app.close();
-    rmSync(directory, { recursive: true, force: true });
+    await connection.close();
   });
 
   it("atomically replaces and removes category allocations", async () => {
@@ -349,7 +341,12 @@ describe("monthly budget allocations API", () => {
       categoryId: "work",
       name: "Salário"
     });
-    const service = createRecurrenceService(connection, ownerId);
+    const service = createRecurrenceService(
+      connection as unknown as ReturnType<
+        typeof import("@finances/database").createDatabaseConnection
+      >,
+      ownerId
+    );
     const base = {
       description: "Recorrência",
       amountCents: 10_000,
