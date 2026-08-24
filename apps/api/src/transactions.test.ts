@@ -149,6 +149,14 @@ describePostgres("canonical transactions API", () => {
     expect(transfer.statusCode).toBe(400);
   });
   it("imports opposite transaction types separately and reports invalid references", async () => {
+    await connection.db
+      .insert(categories)
+      .values({ ownerId: TEST_OWNER_ID, id: "income-category", nature: "income", name: "Receitas" })
+      .execute();
+    await connection.db
+      .insert(subcategories)
+      .values({ id: "income-subcategory", categoryId: "income-category", name: "Ajustes" })
+      .execute();
     const base = {
       eventDate: "2026-07-10",
       budgetMonth: "2026-07",
@@ -164,7 +172,7 @@ describePostgres("canonical transactions API", () => {
       url: "/simple-import/confirm",
       payload: {
         transactions: [
-          { ...base, type: "income" },
+          { ...base, type: "income", subcategoryId: "income-subcategory" },
           { ...base, type: "expense" },
           { ...base, type: "expense", accountId: "missing" }
         ]
