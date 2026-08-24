@@ -182,7 +182,7 @@ export function registerCreditCardRoutes(app: FastifyInstance, connection: Datab
     };
 
     await db.insert(creditCards).values(card);
-    return reply.code(201).send(card);
+    return reply.code(201).send(await findOwnedCreditCard(connection, ownerId, card.id));
   });
 
   app.put("/credit-cards/:id", async (request, reply) => {

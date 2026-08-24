@@ -73,6 +73,30 @@ describePostgres("credit card bill payment service", () => {
     await connection.close();
   });
 
+  it("returns database defaults when creating a credit card", async () => {
+    const app = buildServer({ connection, logger: false, testOwnerId: TEST_OWNER_ID });
+    const response = await app.inject({
+      method: "POST",
+      url: "/credit-cards",
+      payload: {
+        name: "Cartão novo",
+        closingDay: 5,
+        dueDay: 15,
+        paymentAccountId: "account-1"
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual(
+      expect.objectContaining({
+        name: "Cartão novo",
+        isDefault: false,
+        isActive: true
+      })
+    );
+    await app.close();
+  });
+
   it("records partial, minimum, and final payments using the informed date", async () => {
     const service = createBillPaymentService(connection as unknown as ReturnType<typeof import("@finances/database").createDatabaseConnection>, TEST_OWNER_ID);
     const partial = await service.pay("bill-1", "payment-key-1", {
