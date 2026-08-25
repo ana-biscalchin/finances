@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  ColorSwatch,
   Group,
   Loader,
   Modal,
@@ -18,7 +19,12 @@ import {
   TextInput,
   Title
 } from "@mantine/core";
-import { categoryNatures, getCategoryColor } from "@finances/domain";
+import {
+  categoryColorOptions,
+  categoryNatures,
+  getCategoryColor,
+  getSubcategoryColor
+} from "@finances/domain";
 import {
   IconArchive,
   IconArchiveOff,
@@ -43,6 +49,7 @@ type Category = {
   id: string;
   nature: string;
   name: string;
+  color: string;
   sortOrder: number;
   isActive: boolean;
   subcategories: Subcategory[];
@@ -58,6 +65,7 @@ type ModalState =
 type CategoryFormState = {
   name: string;
   nature: string;
+  color: string;
   sortOrder: number | string;
 };
 
@@ -126,7 +134,7 @@ export function CategoriesPage() {
     setModal({
       type: "category",
       mode: "create",
-      value: { name: "", nature: "expense", sortOrder: categories.length }
+      value: { name: "", nature: "expense", color: "blue", sortOrder: categories.length }
     });
   }
 
@@ -315,7 +323,7 @@ export function CategoriesPage() {
                   >
                     <Table.Td>
                       <Group gap="xs" wrap="nowrap">
-                        <Badge size="xs" circle color={getCategoryColor(category.id)} />
+                        <Badge size="xs" circle color={getCategoryColor(category.color)} />
                         <div>
                           <Text fw={600}>{category.name}</Text>
                           <Text size="xs" c="dimmed">
@@ -336,6 +344,7 @@ export function CategoriesPage() {
                             value: {
                               name: category.name,
                               nature: category.nature,
+                              color: category.color,
                               sortOrder: category.sortOrder
                             }
                           })
@@ -359,12 +368,12 @@ export function CategoriesPage() {
             {selectedCategory ? (
               <Table verticalSpacing="sm" highlightOnHover>
                 <Table.Tbody>
-                  {visibleSubcategories.map((sub) => (
+                  {visibleSubcategories.map((sub, index) => (
                     <Table.Tr key={sub.id}>
                       <Table.Td>
                         <Group gap="xs" wrap="nowrap">
                           <Badge
-                            color={getCategoryColor(selectedCategory.id)}
+                            color={getSubcategoryColor(selectedCategory.color, index)}
                             variant="light"
                             size="md"
                             fw={600}
@@ -549,6 +558,22 @@ function CategoryModal({
                 onChange={(value) =>
                   onChange({ ...modal, value: { ...modal.value, nature: value ?? "expense" } })
                 }
+                required
+              />
+              <Select
+                label="Cor"
+                description="As subcategorias herdam tons claros desta cor."
+                data={[...categoryColorOptions]}
+                value={modal.value.color}
+                onChange={(value) =>
+                  onChange({ ...modal, value: { ...modal.value, color: value ?? "gray" } })
+                }
+                renderOption={({ option }) => (
+                  <Group gap="sm">
+                    <ColorSwatch color={`var(--mantine-color-${option.value}-6)`} size={18} />
+                    <Text size="sm">{option.label}</Text>
+                  </Group>
+                )}
                 required
               />
               <SortOrderInput modal={modal} onChange={onChange} />

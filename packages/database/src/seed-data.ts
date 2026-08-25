@@ -29,6 +29,7 @@ export const categorySeeds = [
     id: "cat-trabalho",
     nature: "income",
     name: "Trabalho",
+    color: "green",
     subcategories: [
       { name: "Salário", behavior: "fixed" },
       { name: "Bônus", behavior: "variable" },
@@ -40,6 +41,7 @@ export const categorySeeds = [
     id: "cat-rendimentos",
     nature: "income",
     name: "Rendimentos e Resgates",
+    color: "teal",
     subcategories: [
       { name: "Resgate de investimento", behavior: "extra" },
       { name: "Dividendos e Juros", behavior: "variable" }
@@ -49,6 +51,7 @@ export const categorySeeds = [
     id: "cat-outras-receitas",
     nature: "income",
     name: "Outras Receitas",
+    color: "lime",
     subcategories: [
       { name: "Flash alimentação", behavior: "fixed" },
       { name: "Flash convênio", behavior: "fixed" },
@@ -66,6 +69,7 @@ export const categorySeeds = [
     id: "cat-moradia",
     nature: "expense",
     name: "Moradia & Casa",
+    color: "blue",
     subcategories: [
       { name: "Aluguel", behavior: "fixed" },
       { name: "Condomínio", behavior: "fixed" },
@@ -81,6 +85,7 @@ export const categorySeeds = [
     id: "cat-alimentacao",
     nature: "expense",
     name: "Alimentação",
+    color: "orange",
     subcategories: [
       { name: "Supermercado", behavior: "variable" },
       { name: "Feira e hortifruti", behavior: "variable" },
@@ -94,6 +99,7 @@ export const categorySeeds = [
     id: "cat-transporte",
     nature: "expense",
     name: "Transporte",
+    color: "yellow",
     subcategories: [
       { name: "Metrô e ônibus", behavior: "variable" },
       { name: "Uber e táxi", behavior: "variable" },
@@ -104,6 +110,7 @@ export const categorySeeds = [
     id: "cat-saude",
     nature: "expense",
     name: "Saúde e Bem-estar",
+    color: "red",
     subcategories: [
       { name: "Academia", behavior: "fixed" },
       { name: "Personal", behavior: "fixed" },
@@ -120,6 +127,7 @@ export const categorySeeds = [
     id: "cat-lazer",
     nature: "expense",
     name: "Lazer e Estilo de Vida",
+    color: "pink",
     subcategories: [
       { name: "Viagens", behavior: "variable" },
       { name: "Cinema, teatro e shows", behavior: "variable" },
@@ -134,6 +142,7 @@ export const categorySeeds = [
     id: "cat-gastos-shuri",
     nature: "expense",
     name: "Gastos Shuri",
+    color: "violet",
     subcategories: [
       { id: "subcat-shuri-racao", name: "Ração", behavior: "variable" },
       { id: "subcat-shuri-petiscos", name: "Petiscos", behavior: "variable" },
@@ -146,6 +155,7 @@ export const categorySeeds = [
     id: "cat-educacao",
     nature: "expense",
     name: "Educação e Desenvolvimento",
+    color: "cyan",
     subcategories: [
       { name: "Faculdade", behavior: "fixed" },
       { name: "Cursos", behavior: "variable" }
@@ -155,6 +165,7 @@ export const categorySeeds = [
     id: "cat-servicos",
     nature: "expense",
     name: "Impostos e Serviços Financeiros",
+    color: "grape",
     subcategories: [
       { name: "Contabilidade", behavior: "fixed" },
       { name: "Impostos (IRPF)", behavior: "fixed" },
@@ -170,6 +181,7 @@ export const categorySeeds = [
     id: "cat-aportes",
     nature: "expense",
     name: "Investimentos (Aportes)",
+    color: "indigo",
     subcategories: [
       { name: "Aporte em corretora", behavior: "variable" },
       { name: "Reserva de emergência", behavior: "fixed" },

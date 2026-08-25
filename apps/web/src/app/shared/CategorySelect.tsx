@@ -11,7 +11,7 @@ import {
 } from "@mantine/core";
 import { useState } from "react";
 import { buildCategoryGroups, renderCategoryOption, type SharedCategory } from "./transaction-ui";
-import { getCategoryColor } from "@finances/domain";
+import { getSubcategoryColor } from "@finances/domain";
 
 const emptySelectValue = "__none__";
 
@@ -217,16 +217,23 @@ export function QuickCategoryEdit({
 
   const subcategory = categories
     .flatMap((c) =>
-      c.subcategories.map((sub) => ({
+      c.subcategories.map((sub, index) => ({
         ...sub,
         categoryId: c.id,
-        categoryName: c.name
+        categoryName: c.name,
+        categoryColor: c.color,
+        subcategoryIndex: index
       }))
     )
     .find((sub) => sub.id === value);
 
   const displayLabel = subcategory ? subcategory.name : emptyOptionLabel;
-  const badgeColor = subcategory ? getCategoryColor(subcategory.categoryId) : "gray";
+  const badgeColor = subcategory
+    ? getSubcategoryColor(
+        subcategory.categoryColor ?? subcategory.categoryId,
+        subcategory.subcategoryIndex
+      )
+    : "gray";
   const categoryLabel = subcategory?.categoryName ?? "Sem categoria";
 
   if (disabled) {

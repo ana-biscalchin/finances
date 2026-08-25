@@ -8,7 +8,7 @@ import { CategorySelect } from "../shared/CategorySelect.js";
 
 const recurrenceList = z.array(recurrenceSchema);
 const targetList = z.array(z.object({ id: z.string(), name: z.string() }).passthrough());
-const categoryList = z.array(z.object({ id: z.string(), name: z.string(), nature: z.string(), subcategories: z.array(z.object({ id: z.string(), name: z.string() })) }));
+const categoryList = z.array(z.object({ id: z.string(), name: z.string(), nature: z.string(), color: z.string().optional(), subcategories: z.array(z.object({ id: z.string(), name: z.string() })) }));
 type Category = z.infer<typeof categoryList>[number];
 type Rule = z.infer<typeof recurrenceSchema>;
 export const recurrenceVisualKind = (item: { recurrenceRuleId?: string | null; installmentCount?: number | null }) => item.installmentCount ? "Parcela" : item.recurrenceRuleId ? "Recorrência confirmada" : "Previsão recorrente";

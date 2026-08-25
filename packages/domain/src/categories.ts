@@ -18,6 +18,36 @@ export function assertCategoryNature(value: string): CategoryNature {
   return value;
 }
 
+export const categoryColorOptions = [
+  { value: "blue", label: "Azul" },
+  { value: "cyan", label: "Ciano" },
+  { value: "teal", label: "Verde-azulado" },
+  { value: "green", label: "Verde" },
+  { value: "lime", label: "Lima" },
+  { value: "yellow", label: "Amarelo" },
+  { value: "orange", label: "Laranja" },
+  { value: "red", label: "Vermelho" },
+  { value: "pink", label: "Rosa" },
+  { value: "grape", label: "Uva" },
+  { value: "violet", label: "Violeta" },
+  { value: "indigo", label: "Índigo" },
+  { value: "gray", label: "Cinza" }
+] as const;
+
+export type CategoryColor = (typeof categoryColorOptions)[number]["value"];
+
+export function isCategoryColor(value: string): value is CategoryColor {
+  return categoryColorOptions.some((color) => color.value === value);
+}
+
+export function assertCategoryColor(value: string): CategoryColor {
+  if (!isCategoryColor(value)) {
+    throw new Error(`Cor de categoria inválida: ${value}`);
+  }
+
+  return value;
+}
+
 export const categoryColors: Record<string, string> = {
   "cat-trabalho": "green",
   "cat-rendimentos": "teal",
@@ -34,7 +64,18 @@ export const categoryColors: Record<string, string> = {
   "cat-aportes": "indigo"
 };
 
-export function getCategoryColor(categoryId: string | null | undefined): string {
-  if (!categoryId) return "gray";
-  return categoryColors[categoryId] ?? "gray";
+export function getCategoryColor(colorOrCategoryId: string | null | undefined): CategoryColor {
+  if (!colorOrCategoryId) return "gray";
+  if (isCategoryColor(colorOrCategoryId)) return colorOrCategoryId;
+  return (categoryColors[colorOrCategoryId] as CategoryColor | undefined) ?? "gray";
+}
+
+export function getSubcategoryColor(
+  colorOrCategoryId: string | null | undefined,
+  index: number
+): string {
+  const color = getCategoryColor(colorOrCategoryId);
+  const shades = [1, 2, 3] as const;
+  const normalizedIndex = Number.isInteger(index) && index >= 0 ? index : 0;
+  return `${color}.${shades[normalizedIndex % shades.length]}`;
 }

@@ -5,7 +5,7 @@ import {
   transactions,
   type createDatabaseConnection
 } from "@finances/database";
-import { assertCategoryNature } from "@finances/domain";
+import { assertCategoryColor, assertCategoryNature } from "@finances/domain";
 import { and, asc, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
@@ -28,6 +28,7 @@ const ownerIdFromRequest = (request: Parameters<typeof requestContextFrom>[0]) =
 type CategoryPayload = {
   name?: unknown;
   nature?: unknown;
+  color?: unknown;
   sortOrder?: unknown;
 };
 
@@ -105,6 +106,7 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
       id: crypto.randomUUID(),
       ownerId,
       ...payload,
+      color: payload.color ?? "gray",
       sortOrder: payload.sortOrder ?? (await getNextCategorySortOrder(connection, ownerId)),
       isActive: true,
       archivedAt: null
@@ -151,6 +153,7 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
       .update(categories)
       .set({
         ...payload,
+        color: payload.color ?? current.color,
         updatedAt: new Date().toISOString()
       })
       .where(and(eq(categories.ownerId, ownerId), eq(categories.id, id)));
@@ -323,6 +326,10 @@ function parseCategoryPayload(body: unknown) {
   return {
     name: parseRequiredString(payload.name, "name"),
     nature: assertCategoryNature(parseRequiredString(payload.nature, "nature")),
+    color:
+      payload.color === undefined
+        ? undefined
+        : assertCategoryColor(parseRequiredString(payload.color, "color")),
     sortOrder: parseOptionalInteger(payload.sortOrder, "sortOrder")
   };
 }

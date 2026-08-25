@@ -124,6 +124,7 @@ export const categories = pgTable(
     ownerId: ownedByUser(),
     nature: text("nature").notNull(),
     name: text("name").notNull(),
+    color: text("color").notNull().default("gray"),
     sortOrder: integer("sort_order").notNull().default(0),
     isActive: boolean("is_active").notNull().default(true),
     archivedAt: text("archived_at"),
