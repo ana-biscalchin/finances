@@ -5,9 +5,13 @@ import {
   transactions,
   type createDatabaseConnection
 } from "@finances/database";
-import { assertCategoryColor, assertCategoryNature } from "@finances/domain";
+import {
+  categoryColorOptions,
+  categoryNatures
+} from "@finances/domain";
 import { and, asc, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { z } from "zod";
 
 import {
   ConflictError,
@@ -25,12 +29,12 @@ type DatabaseConnection = ReturnType<typeof createDatabaseConnection>;
 const ownerIdFromRequest = (request: Parameters<typeof requestContextFrom>[0]) =>
   requestContextFrom(request).ownerId;
 
-type CategoryPayload = {
-  name?: unknown;
-  nature?: unknown;
-  color?: unknown;
-  sortOrder?: unknown;
-};
+const categoryPayloadSchema = z.object({
+  name: z.string().trim().min(1, "name é obrigatório."),
+  nature: z.enum(categoryNatures.map((nature) => nature.value)),
+  color: z.enum(categoryColorOptions.map((color) => color.value)).optional(),
+  sortOrder: z.number().int("sortOrder deve ser um inteiro.").optional()
+});
 
 type SubcategoryPayload = {
   categoryId?: unknown;
@@ -66,8 +70,10 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
       );
     const subcategoryRows = (
       includeInactive
-        ? await ownedSubcategories
-        : await ownedSubcategories.where(eq(subcategories.isActive, true))
+        ? await ownedSubcategories.orderBy(asc(subcategories.sortOrder), asc(subcategories.name))
+        : await ownedSubcategories
+            .where(eq(subcategories.isActive, true))
+            .orderBy(asc(subcategories.sortOrder), asc(subcategories.name))
     ).map((row) => row.subcategory);
 
     const categoryMap = new Map(
@@ -317,21 +323,13 @@ export function registerCategoryRoutes(app: FastifyInstance, connection: Databas
 }
 
 function parseCategoryPayload(body: unknown) {
-  if (!isRecord(body)) {
-    throw new ValidationError("Payload da categoria deve ser um objeto.");
+  const result = categoryPayloadSchema.safeParse(body);
+
+  if (!result.success) {
+    throw new ValidationError(result.error.issues[0]?.message ?? "Payload da categoria inválido.");
   }
 
-  const payload = body as CategoryPayload;
-
-  return {
-    name: parseRequiredString(payload.name, "name"),
-    nature: assertCategoryNature(parseRequiredString(payload.nature, "nature")),
-    color:
-      payload.color === undefined
-        ? undefined
-        : assertCategoryColor(parseRequiredString(payload.color, "color")),
-    sortOrder: parseOptionalInteger(payload.sortOrder, "sortOrder")
-  };
+  return result.data;
 }
 
 function parseSubcategoryPayload(body: unknown) {

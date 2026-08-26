@@ -18,6 +18,7 @@ export function assertCategoryNature(value: string): CategoryNature {
   return value;
 }
 
+/** Controlled category color palette exposed to API and UI consumers. */
 export const categoryColorOptions = [
   { value: "blue", label: "Azul" },
   { value: "cyan", label: "Ciano" },
@@ -34,12 +35,18 @@ export const categoryColorOptions = [
   { value: "gray", label: "Cinza" }
 ] as const;
 
+/** A supported parent-category color name. */
 export type CategoryColor = (typeof categoryColorOptions)[number]["value"];
 
+/** Returns whether a value belongs to the controlled category palette. */
 export function isCategoryColor(value: string): value is CategoryColor {
   return categoryColorOptions.some((color) => color.value === value);
 }
 
+/**
+ * Validates and returns a category color.
+ * @throws If the color is outside the controlled palette.
+ */
 export function assertCategoryColor(value: string): CategoryColor {
   if (!isCategoryColor(value)) {
     throw new Error(`Cor de categoria inválida: ${value}`);
@@ -64,12 +71,17 @@ export const categoryColors: Record<string, string> = {
   "cat-aportes": "indigo"
 };
 
+/** Resolves a persisted color or the legacy color associated with a seeded category ID. */
 export function getCategoryColor(colorOrCategoryId: string | null | undefined): CategoryColor {
   if (!colorOrCategoryId) return "gray";
   if (isCategoryColor(colorOrCategoryId)) return colorOrCategoryId;
   return (categoryColors[colorOrCategoryId] as CategoryColor | undefined) ?? "gray";
 }
 
+/**
+ * Derives a light, stable shade from a parent color and the subcategory display index.
+ * @param index - Zero-based position after subcategories are sorted for display.
+ */
 export function getSubcategoryColor(
   colorOrCategoryId: string | null | undefined,
   index: number
