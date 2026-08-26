@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  ColorSwatch,
   Group,
   Loader,
   Modal,
@@ -18,7 +19,12 @@ import {
   TextInput,
   Title
 } from "@mantine/core";
-import { categoryNatures, getCategoryColor } from "@finances/domain";
+import {
+  categoryColorOptions,
+  categoryNatures,
+  getCategoryColor,
+  getSubcategoryColor
+} from "@finances/domain";
 import {
   IconArchive,
   IconArchiveOff,
@@ -28,6 +34,7 @@ import {
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { fromDisplayPosition, toDisplayPosition } from "./category-sort-order.js";
 import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
 
 type Subcategory = {
@@ -43,6 +50,7 @@ type Category = {
   id: string;
   nature: string;
   name: string;
+  color: string;
   sortOrder: number;
   isActive: boolean;
   subcategories: Subcategory[];
@@ -58,6 +66,7 @@ type ModalState =
 type CategoryFormState = {
   name: string;
   nature: string;
+  color: string;
   sortOrder: number | string;
 };
 
@@ -126,7 +135,12 @@ export function CategoriesPage() {
     setModal({
       type: "category",
       mode: "create",
-      value: { name: "", nature: "expense", sortOrder: categories.length }
+      value: {
+        name: "",
+        nature: "expense",
+        color: "blue",
+        sortOrder: toDisplayPosition(categories.length)
+      }
     });
   }
 
@@ -142,7 +156,7 @@ export function CategoriesPage() {
         categoryId: selectedCategory.id,
         name: "",
         behavior: "variable",
-        sortOrder: visibleSubcategories.length
+        sortOrder: toDisplayPosition(visibleSubcategories.length)
       }
     });
   }
@@ -315,7 +329,7 @@ export function CategoriesPage() {
                   >
                     <Table.Td>
                       <Group gap="xs" wrap="nowrap">
-                        <Badge size="xs" circle color={getCategoryColor(category.id)} />
+                        <Badge size="xs" circle color={getCategoryColor(category.color)} />
                         <div>
                           <Text fw={600}>{category.name}</Text>
                           <Text size="xs" c="dimmed">
@@ -336,7 +350,8 @@ export function CategoriesPage() {
                             value: {
                               name: category.name,
                               nature: category.nature,
-                              sortOrder: category.sortOrder
+                              color: category.color,
+                              sortOrder: toDisplayPosition(category.sortOrder)
                             }
                           })
                         }
@@ -359,12 +374,12 @@ export function CategoriesPage() {
             {selectedCategory ? (
               <Table verticalSpacing="sm" highlightOnHover>
                 <Table.Tbody>
-                  {visibleSubcategories.map((sub) => (
+                  {visibleSubcategories.map((sub, index) => (
                     <Table.Tr key={sub.id}>
                       <Table.Td>
                         <Group gap="xs" wrap="nowrap">
                           <Badge
-                            color={getCategoryColor(selectedCategory.id)}
+                            color={getSubcategoryColor(selectedCategory.color, index)}
                             variant="light"
                             size="md"
                             fw={600}
@@ -390,7 +405,7 @@ export function CategoriesPage() {
                                 categoryId: sub.categoryId,
                                 name: sub.name,
                                 behavior: sub.behavior,
-                                sortOrder: sub.sortOrder
+                                sortOrder: toDisplayPosition(sub.sortOrder)
                               }
                             })
                           }
@@ -551,6 +566,22 @@ function CategoryModal({
                 }
                 required
               />
+              <Select
+                label="Cor"
+                description="As subcategorias herdam tons claros desta cor."
+                data={[...categoryColorOptions]}
+                value={modal.value.color}
+                onChange={(value) =>
+                  onChange({ ...modal, value: { ...modal.value, color: value ?? "gray" } })
+                }
+                renderOption={({ option }) => (
+                  <Group gap="sm">
+                    <ColorSwatch color={`var(--mantine-color-${option.value}-6)`} size={18} />
+                    <Text size="sm">{option.label}</Text>
+                  </Group>
+                )}
+                required
+              />
               <SortOrderInput modal={modal} onChange={onChange} />
             </>
           ) : null}
@@ -638,8 +669,8 @@ function SortOrderInput({
 
   return (
     <NumberInput
-      label="Ordem"
-      min={0}
+      label="Posição"
+      min={1}
       value={modal.value.sortOrder}
       onChange={(value) => onChange(updateModalSortOrder(modal, value))}
     />
@@ -693,7 +724,7 @@ function getSaveUrl(modal: ModalState) {
 
 function buildPayload(modal: ModalState) {
   if (modal.mode === "merge") return { targetSubcategoryId: modal.targetSubcategoryId };
-  return { ...modal.value, sortOrder: parseSortOrder(modal.value.sortOrder) };
+  return { ...modal.value, sortOrder: fromDisplayPosition(modal.value.sortOrder) };
 }
 
 function getPreferredSelection(modal: ModalState, saved: Partial<Category & Subcategory>) {
@@ -736,14 +767,6 @@ function normalizeCategoryName(name: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
-}
-
-function parseSortOrder(value: number | string) {
-  if (typeof value === "number") return Number.isInteger(value) ? value : Math.round(value);
-  if (!value.trim()) return undefined;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed)) throw new Error("Ordem inválida.");
-  return parsed;
 }
 
 function getNatureLabel(nature: string) {

@@ -123,6 +123,7 @@ export const categories = sqliteTable(
     ownerId: ownedByUser(),
     nature: text("nature").notNull(),
     name: text("name").notNull(),
+    color: text("color").notNull().default("gray"),
     sortOrder: integer("sort_order").notNull().default(0),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     archivedAt: text("archived_at"),

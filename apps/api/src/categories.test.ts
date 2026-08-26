@@ -30,9 +30,10 @@ describePostgres("categories API", () => {
       await app.inject({
         method: "POST",
         url: "/categories",
-        payload: { nature: "expense", name: "Casa" }
+        payload: { nature: "expense", name: "Casa", color: "blue" }
       })
     ).json();
+    expect(category.color).toBe("blue");
     expect(
       (
         await app.inject({
@@ -42,9 +43,43 @@ describePostgres("categories API", () => {
         })
       ).statusCode
     ).toBe(201);
+    const listedCategory = (await app.inject({ method: "GET", url: "/categories" })).json()[0];
+    expect(listedCategory.color).toBe("blue");
+    expect(listedCategory.subcategories).toHaveLength(1);
+  });
+
+  it("rejects colors outside the controlled palette", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/categories",
+      payload: { nature: "expense", name: "Casa", color: "#228be6" }
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("lists subcategories by configured order", async () => {
+    const category = (
+      await app.inject({
+        method: "POST",
+        url: "/categories",
+        payload: { nature: "expense", name: "Casa", color: "blue" }
+      })
+    ).json();
+
+    for (const payload of [
+      { categoryId: category.id, name: "Depois", behavior: "variable", sortOrder: 2 },
+      { categoryId: category.id, name: "Primeiro", behavior: "fixed", sortOrder: 0 }
+    ]) {
+      expect(
+        (await app.inject({ method: "POST", url: "/subcategories", payload })).statusCode
+      ).toBe(201);
+    }
+
+    const listedCategory = (await app.inject({ method: "GET", url: "/categories" })).json()[0];
     expect(
-      (await app.inject({ method: "GET", url: "/categories" })).json()[0].subcategories
-    ).toHaveLength(1);
+      listedCategory.subcategories.map((subcategory: { name: string }) => subcategory.name)
+    ).toEqual(["Primeiro", "Depois"]);
   });
 
   it("moves transactions and budget allocations when merging subcategories", async () => {

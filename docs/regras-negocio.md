@@ -42,6 +42,8 @@ Esta é a referência canônica das regras financeiras atuais da Carteira da Ana
 - Lançamentos manuais e importados são realizados (`confirmed`) por padrão. `canceled` não entra em saldos ou agregações.
 - Despesa de consumo em conta exige uma forma ativa associada. Compra no cartão usa somente o cartão.
 - Categorias e subcategorias usam IDs internos, podem ser renomeadas e preservam o histórico.
+- A cor pertence à categoria pai; subcategorias herdam automaticamente tons claros dessa cor e não
+  possuem configuração de cor independente.
 - Exclusão de lançamento é definitiva. Arquivamento de cadastros continua restaurável quando aplicável.
 - O escopo monetário atual é exclusivamente BRL.
 

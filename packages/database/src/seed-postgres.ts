@@ -78,6 +78,7 @@ try {
           ownerId: localUser.id,
           nature: category.nature,
           name: category.name,
+          color: category.color,
           sortOrder: categorySortOrder
         })
         .onConflictDoNothing()

@@ -1,10 +1,11 @@
 import { Badge, Text } from "@mantine/core";
-import { getCategoryColor } from "@finances/domain";
+import { getSubcategoryColor } from "@finances/domain";
 
 export type SharedCategory = {
   id: string;
   nature: string;
   name: string;
+  color?: string;
   subcategories: Array<{ id: string; name: string }>;
 };
 
@@ -19,10 +20,10 @@ export function buildCategoryGroups(categories: SharedCategory[], filterNatures?
   return filtered
     .map((category) => ({
       group: category.name,
-      items: category.subcategories.map<CategoryOption>((sub) => ({
+      items: category.subcategories.map<CategoryOption>((sub, index) => ({
         value: sub.id,
         label: sub.name,
-        color: getCategoryColor(category.id)
+        color: getSubcategoryColor(category.color ?? category.id, index)
       }))
     }))
     .filter((g) => g.items.length > 0);

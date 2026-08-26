@@ -78,6 +78,7 @@ for (const [categorySortOrder, category] of categorySeeds.entries()) {
       ownerId,
       nature: category.nature,
       name: category.name,
+      color: category.color,
       sortOrder: categorySortOrder
     })
     .onConflictDoUpdate({
@@ -85,6 +86,7 @@ for (const [categorySortOrder, category] of categorySeeds.entries()) {
       set: {
         nature: category.nature,
         name: category.name,
+        color: category.color,
         sortOrder: categorySortOrder,
         updatedAt: now
       }
