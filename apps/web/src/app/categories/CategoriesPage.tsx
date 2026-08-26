@@ -34,6 +34,7 @@ import {
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { fromDisplayPosition, toDisplayPosition } from "./category-sort-order.js";
 import { getErrorMessage, getResponseError, reportClientError } from "../shared/errors";
 
 type Subcategory = {
@@ -134,7 +135,12 @@ export function CategoriesPage() {
     setModal({
       type: "category",
       mode: "create",
-      value: { name: "", nature: "expense", color: "blue", sortOrder: categories.length }
+      value: {
+        name: "",
+        nature: "expense",
+        color: "blue",
+        sortOrder: toDisplayPosition(categories.length)
+      }
     });
   }
 
@@ -150,7 +156,7 @@ export function CategoriesPage() {
         categoryId: selectedCategory.id,
         name: "",
         behavior: "variable",
-        sortOrder: visibleSubcategories.length
+        sortOrder: toDisplayPosition(visibleSubcategories.length)
       }
     });
   }
@@ -345,7 +351,7 @@ export function CategoriesPage() {
                               name: category.name,
                               nature: category.nature,
                               color: category.color,
-                              sortOrder: category.sortOrder
+                              sortOrder: toDisplayPosition(category.sortOrder)
                             }
                           })
                         }
@@ -399,7 +405,7 @@ export function CategoriesPage() {
                                 categoryId: sub.categoryId,
                                 name: sub.name,
                                 behavior: sub.behavior,
-                                sortOrder: sub.sortOrder
+                                sortOrder: toDisplayPosition(sub.sortOrder)
                               }
                             })
                           }
@@ -663,8 +669,8 @@ function SortOrderInput({
 
   return (
     <NumberInput
-      label="Ordem"
-      min={0}
+      label="Posição"
+      min={1}
       value={modal.value.sortOrder}
       onChange={(value) => onChange(updateModalSortOrder(modal, value))}
     />
@@ -718,7 +724,7 @@ function getSaveUrl(modal: ModalState) {
 
 function buildPayload(modal: ModalState) {
   if (modal.mode === "merge") return { targetSubcategoryId: modal.targetSubcategoryId };
-  return { ...modal.value, sortOrder: parseSortOrder(modal.value.sortOrder) };
+  return { ...modal.value, sortOrder: fromDisplayPosition(modal.value.sortOrder) };
 }
 
 function getPreferredSelection(modal: ModalState, saved: Partial<Category & Subcategory>) {
@@ -761,14 +767,6 @@ function normalizeCategoryName(name: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
-}
-
-function parseSortOrder(value: number | string) {
-  if (typeof value === "number") return Number.isInteger(value) ? value : Math.round(value);
-  if (!value.trim()) return undefined;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed)) throw new Error("Ordem inválida.");
-  return parsed;
 }
 
 function getNatureLabel(nature: string) {
