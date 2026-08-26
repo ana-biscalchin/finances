@@ -7,8 +7,7 @@ services:
     region: ohio
     autoDeployTrigger: checksPass
     buildCommand: pnpm install --frozen-lockfile && pnpm build
-    preDeployCommand: pnpm --filter @finances/database db:migrate:postgres
-    startCommand: pnpm --filter @finances/api start
+    startCommand: pnpm --filter @finances/database db:migrate:postgres && pnpm --filter @finances/api start
     healthCheckPath: /health/ready
     envVars:
       - key: NODE_VERSION
