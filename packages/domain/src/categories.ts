@@ -32,6 +32,16 @@ export const categoryColorOptions = [
   { value: "grape", label: "Uva" },
   { value: "violet", label: "Violeta" },
   { value: "indigo", label: "Índigo" },
+  { value: "navy", label: "Azul-marinho" },
+  { value: "turquoise", label: "Turquesa" },
+  { value: "emerald", label: "Esmeralda" },
+  { value: "olive", label: "Oliva" },
+  { value: "amber", label: "Âmbar" },
+  { value: "coral", label: "Coral" },
+  { value: "burgundy", label: "Bordô" },
+  { value: "plum", label: "Ameixa" },
+  { value: "brown", label: "Marrom" },
+  { value: "slate", label: "Ardósia" },
   { value: "gray", label: "Cinza" }
 ] as const;
 
@@ -78,8 +88,13 @@ export function getCategoryColor(colorOrCategoryId: string | null | undefined): 
   return (categoryColors[colorOrCategoryId] as CategoryColor | undefined) ?? "gray";
 }
 
+/** Resolves the darker shade used to display a parent category on a light background. */
+export function getCategoryDisplayColor(colorOrCategoryId: string | null | undefined): string {
+  return `${getCategoryColor(colorOrCategoryId)}.7`;
+}
+
 /**
- * Derives a light, stable shade from a parent color and the subcategory display index.
+ * Derives a contrasting, stable shade from a parent color and the subcategory display index.
  * @param index - Zero-based position after subcategories are sorted for display.
  */
 export function getSubcategoryColor(
@@ -87,7 +102,7 @@ export function getSubcategoryColor(
   index: number
 ): string {
   const color = getCategoryColor(colorOrCategoryId);
-  const shades = [1, 2, 3] as const;
+  const shades = [7, 8, 6] as const;
   const normalizedIndex = Number.isInteger(index) && index >= 0 ? index : 0;
   return `${color}.${shades[normalizedIndex % shades.length]}`;
 }

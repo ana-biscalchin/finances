@@ -22,7 +22,7 @@ import {
 import {
   categoryColorOptions,
   categoryNatures,
-  getCategoryColor,
+  getCategoryDisplayColor,
   getSubcategoryColor
 } from "@finances/domain";
 import {
@@ -329,7 +329,7 @@ export function CategoriesPage() {
                   >
                     <Table.Td>
                       <Group gap="xs" wrap="nowrap">
-                        <Badge size="xs" circle color={getCategoryColor(category.color)} />
+                        <Badge size="xs" circle color={getCategoryDisplayColor(category.color)} />
                         <div>
                           <Text fw={600}>{category.name}</Text>
                           <Text size="xs" c="dimmed">
@@ -568,7 +568,7 @@ function CategoryModal({
               />
               <Select
                 label="Cor"
-                description="As subcategorias herdam tons claros desta cor."
+                description="As subcategorias herdam variações desta cor com contraste para fundo claro."
                 data={[...categoryColorOptions]}
                 value={modal.value.color}
                 onChange={(value) =>
@@ -576,7 +576,7 @@ function CategoryModal({
                 }
                 renderOption={({ option }) => (
                   <Group gap="sm">
-                    <ColorSwatch color={`var(--mantine-color-${option.value}-6)`} size={18} />
+                    <ColorSwatch color={`var(--mantine-color-${option.value}-7)`} size={18} />
                     <Text size="sm">{option.label}</Text>
                   </Group>
                 )}
