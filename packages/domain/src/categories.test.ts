@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   assertCategoryColor,
   assertCategoryNature,
+  categoryColorOptions,
   getCategoryColor,
+  getCategoryDisplayColor,
   getSubcategoryColor,
   isCategoryColor,
   isCategoryNature
@@ -24,6 +26,23 @@ describe("category natures", () => {
 });
 
 describe("category colors", () => {
+  it("offers an expanded palette with dark custom color families", () => {
+    expect(categoryColorOptions.map((color) => color.value)).toEqual(
+      expect.arrayContaining([
+        "navy",
+        "turquoise",
+        "emerald",
+        "olive",
+        "amber",
+        "coral",
+        "burgundy",
+        "plum",
+        "brown",
+        "slate"
+      ])
+    );
+  });
+
   it("accepts only colors from the controlled palette", () => {
     expect(isCategoryColor("blue")).toBe(true);
     expect(isCategoryColor("#228be6")).toBe(false);
@@ -36,13 +55,18 @@ describe("category colors", () => {
     expect(getCategoryColor("unknown-category")).toBe("gray");
   });
 
-  it("derives light shades from the parent color in a stable cycle", () => {
+  it("uses a dark shade to display a parent category", () => {
+    expect(getCategoryDisplayColor("lime")).toBe("lime.7");
+    expect(getCategoryDisplayColor("cat-moradia")).toBe("blue.7");
+  });
+
+  it("derives contrasting medium-dark shades from the parent color in a stable cycle", () => {
     expect([0, 1, 2, 3, 4].map((index) => getSubcategoryColor("blue", index))).toEqual([
-      "blue.1",
-      "blue.2",
-      "blue.3",
-      "blue.1",
-      "blue.2"
+      "blue.7",
+      "blue.8",
+      "blue.6",
+      "blue.7",
+      "blue.8"
     ]);
   });
 });
